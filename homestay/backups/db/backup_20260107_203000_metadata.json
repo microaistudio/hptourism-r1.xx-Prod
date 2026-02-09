@@ -1,0 +1,10 @@
+{
+  "id": "backup_20260107_203000",
+  "createdAt": "2026-01-07T20:30:00.039Z",
+  "type": "hybrid",
+  "status": "failed",
+  "databaseFile": "/home/subhash.thakur.india/Projects/hptourism-rc6/backups/db/backup_20260107_203000_database.sql.gz",
+  "envBackedUp": true,
+  "error": "File sync failed: Command failed: rsync -av --delete \"/home/subhash.thakur.india/Projects/hptourism-rc6j/local-object-storage/\" \"/home/subhash.thakur.india/Projects/hptourism-rc6/backups/files/\"\nrsync: [receiver] stat \"/home/subhash.thakur.india/Projects/hptourism-rc6/backups/files/property-photos/.0727ae97-e3e3-4bf4-9aff-03ee84376459.2prGOx\" failed: No such file or directory (2)\nrsync: [receiver] rename \"/home/subhash.thakur.india/Projects/hptourism-rc6/backups/files/property-photos/.0727ae97-e3e3-4bf4-9aff-03ee84376459.2prGOx\" -> \"property-photos/0727ae97-e3e3-4bf4-9aff-03ee84376459\": No such file or directory (2)\nrsync error: some files/attrs were not transferred (see previous errors) (code 23) at main.c(1338) [sender=3.2.7]\n",
+  "duration": 505
+}

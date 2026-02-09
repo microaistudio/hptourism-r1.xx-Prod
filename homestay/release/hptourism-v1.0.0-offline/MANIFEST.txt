@@ -1,0 +1,21 @@
+HP Tourism Homestay Portal - Offline Package
+=============================================
+Version: 1.0.0
+Build Date: 2026-02-01 09:35:52
+Build Machine: hptourism-stg26
+
+Contents:
+- deploy/           Installer scripts
+- dist/             Compiled application
+- node_modules/     Dependencies (offline install)
+- shared/           Shared code
+- migrations/       Database migrations
+- Database/         Seed data SQL files
+- package.json      Project metadata
+- ecosystem.config.cjs  PM2 configuration
+- .env.example      Environment template
+
+Installation:
+  sudo bash deploy/install.sh
+
+For detailed instructions, see deploy/README.md

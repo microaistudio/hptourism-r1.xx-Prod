@@ -1,0 +1,305 @@
+import { useLocation } from "wouter";
+import { useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { APP_VERSION, SERVER_ID } from "@/config/version";
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarGroupLabel,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarHeader,
+  SidebarFooter,
+} from "@/components/ui/sidebar";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { getNavigationForRole, type NavItem } from "@/config/navigation";
+import { ServiceSelector } from "@/components/service-selector";
+import { useServiceOptional } from "@/contexts/service-context";
+import type { User, HomestayApplication } from "@shared/schema";
+
+export function AppSidebar() {
+  // Sidebar component for navigation
+  const [location, setLocation] = useLocation();
+
+  const { data: userData } = useQuery<{ user: User }>({
+    queryKey: ["/api/auth/me"],
+  });
+
+  const user = userData?.user;
+
+  const { data: ownerApplicationsData } = useQuery<{ applications: HomestayApplication[] }>({
+    queryKey: ["/api/applications"],
+    enabled: user?.role === "property_owner",
+    staleTime: 30 * 1000,
+  });
+
+  const { data: legacySettingData } = useQuery<{ enabled: boolean }>({
+    queryKey: ["/api/settings/enable-legacy-registrations"],
+    staleTime: 60 * 1000,
+  });
+  const legacyRegistrationEnabled = legacySettingData?.enabled !== false;
+
+  const ownerPrimaryApplication =
+    user?.role === "property_owner"
+      ? ownerApplicationsData?.applications?.[0] ?? null
+      : null;
+  const ownerHasCertificate =
+    !!ownerPrimaryApplication &&
+    ownerPrimaryApplication.status === "approved" &&
+    !!ownerPrimaryApplication.certificateNumber;
+  const navigation = getNavigationForRole(user?.role || 'property_owner');
+  const { data: daInspections } = useQuery<{ reportSubmitted: boolean }[]>({
+    queryKey: ["/api/da/inspections"],
+    enabled: user?.role === "dealing_assistant",
+  });
+
+  // Fetch Legacy RC applications for DA to show badge
+  const { data: daApplications } = useQuery<HomestayApplication[]>({
+    queryKey: ["/api/da/applications"],
+    enabled: user?.role === "dealing_assistant",
+    staleTime: 30 * 1000,
+  });
+
+  // Count Legacy RC applications that need attention
+  const legacyRCCounts = useMemo(() => {
+    if (user?.role !== "dealing_assistant" || !daApplications) {
+      return { newSubmissions: 0, total: 0 };
+    }
+    const legacyApps = daApplications.filter((app) =>
+      app.applicationNumber?.startsWith('LG-HS-')
+    );
+    const newSubmissions = legacyApps.filter((app) =>
+      ['legacy_rc_review', 'under_scrutiny', 'submitted'].includes(app.status ?? '')
+    ).length;
+    return { newSubmissions, total: legacyApps.length };
+  }, [daApplications, user?.role]);
+
+  const pendingInspectionCount =
+    user?.role === "dealing_assistant"
+      ? (daInspections ?? []).filter((order) => !order.reportSubmitted).length
+      : 0;
+  const navigationSections = useMemo(() => {
+    let sections = navigation;
+
+    // Add inspection badge for DA
+    if (user?.role === "dealing_assistant" && pendingInspectionCount > 0) {
+      sections = sections.map((section) => ({
+        ...section,
+        items: section.items.map((item) => {
+          if (item.url === "/da/inspections") {
+            return {
+              ...item,
+              badge: pendingInspectionCount > 99 ? "99+" : String(pendingInspectionCount),
+            };
+          }
+          return item;
+        }),
+      }));
+    }
+
+    // Add Legacy RC count badge for DA
+    if (user?.role === "dealing_assistant" && legacyRCCounts.newSubmissions > 0) {
+      sections = sections.map((section) => ({
+        ...section,
+        items: section.items.map((item) => {
+          if (item.url === "/da/legacy") {
+            return {
+              ...item,
+              badge: legacyRCCounts.newSubmissions > 99 ? "99+" : String(legacyRCCounts.newSubmissions),
+              badgeVariant: "success", // Green for new submissions
+            };
+          }
+          return item;
+        }),
+      }));
+    }
+
+    return sections;
+  }, [navigation, pendingInspectionCount, legacyRCCounts, user?.role]);
+
+  // Filter out Existing RC nav item if disabled
+  const filteredNavigationSections = useMemo(() => {
+    if (legacyRegistrationEnabled || user?.role !== "property_owner") {
+      return navigationSections;
+    }
+    return navigationSections.map((section) => ({
+      ...section,
+      items: section.items.filter((item) => item.url !== "/existing-owner"),
+    }));
+  }, [navigationSections, legacyRegistrationEnabled, user?.role]);
+
+  const getUserInitials = (name: string) => {
+    return name
+      .split(' ')
+      .map(n => n[0])
+      .join('')
+      .toUpperCase()
+      .slice(0, 2);
+  };
+
+  const getRoleLabel = (role: string) => {
+    const labels: Record<string, string> = {
+      property_owner: 'Property Owner',
+      district_officer: 'District Officer',
+      state_officer: 'State Officer',
+      admin: 'Administrator',
+      system_admin: 'System Admin',
+    };
+    return labels[role] || 'User';
+  };
+
+  const navigateTo = (url: string) => {
+    const [base, hash] = url.split("#");
+    if (hash) {
+      if (location !== base) {
+        setLocation(base);
+        setTimeout(() => {
+          const target = document.getElementById(hash);
+          if (target) {
+            target.scrollIntoView({ behavior: "smooth", block: "start" });
+          }
+        }, 120);
+      } else {
+        const target = document.getElementById(hash);
+        if (target) {
+          target.scrollIntoView({ behavior: "smooth", block: "start" });
+        } else {
+          window.location.hash = hash;
+        }
+      }
+      return;
+    }
+    if (location !== url) {
+      setLocation(url);
+    }
+  };
+
+  const handleNavClick = (item: NavItem) => {
+    if (user?.role === "property_owner" && ownerPrimaryApplication) {
+      if (item.url === "/applications/new" || item.url === "/existing-owner") {
+        navigateTo(`/applications/${ownerPrimaryApplication.id}`);
+        return;
+      }
+      if (item.url === "/dashboard?filter=approved") {
+        if (!ownerHasCertificate) {
+          return;
+        }
+        navigateTo(`/applications/${ownerPrimaryApplication.id}#registration-certificate`);
+        return;
+      }
+    }
+    navigateTo(item.url);
+  };
+
+  if (!user) {
+    return null;
+  }
+
+  // Check if user should see service selector
+  const isOfficer = user?.role && ['dealing_assistant', 'district_tourism_officer', 'district_officer', 'state_officer', 'admin', 'super_admin', 'system_admin'].includes(user.role);
+  const isOwner = user?.role === 'property_owner';
+  const serviceContext = useServiceOptional();
+
+  // Get owner's enabled services (if owner) - default to ['homestay'] if not set
+  const ownerEnabledServices = isOwner
+    ? (user.enabledServices as string[] | null) ?? ["homestay"]
+    : undefined;
+
+  return (
+    <Sidebar>
+      <SidebarHeader className="p-4 border-b">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-md bg-primary flex items-center justify-center">
+            <span className="text-lg font-bold text-primary-foreground">HP</span>
+          </div>
+          <div className="flex-1 min-w-0">
+            <h2 className="text-base font-semibold truncate">HP Tourism</h2>
+            <p className="text-sm text-muted-foreground truncate">eServices Portal</p>
+          </div>
+        </div>
+        {/* Service Selector - For officers (all services) and owners (their enabled services) */}
+        {serviceContext && (isOfficer || isOwner) && (
+          <div className="mt-3">
+            <ServiceSelector
+              className="w-full justify-between"
+              allowedServices={isOwner ? ownerEnabledServices : undefined}
+            />
+          </div>
+        )}
+      </SidebarHeader>
+
+      <SidebarContent>
+        {filteredNavigationSections.map((section) => (
+          <SidebarGroup key={section.title}>
+            <SidebarGroupLabel>{section.title}</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {section.items.map((item) => {
+                  const isActive = location === item.url;
+                  const isDownloadRcEntry =
+                    user?.role === "property_owner" && item.url === "/dashboard?filter=approved";
+                  const disableDownloadRc =
+                    isDownloadRcEntry && (!ownerPrimaryApplication || !ownerHasCertificate);
+                  return (
+                    <SidebarMenuItem key={item.url}>
+                      <SidebarMenuButton
+                        onClick={() => {
+                          if (disableDownloadRc) {
+                            return;
+                          }
+                          handleNavClick(item);
+                        }}
+                        isActive={isActive}
+                        disabled={disableDownloadRc}
+                        data-testid={`nav-${item.title.toLowerCase().replace(/\s+/g, '-')}`}
+                      >
+                        <item.icon className="w-4 h-4" />
+                        <span>{item.title}</span>
+                        {item.badge && (
+                          <span className={`ml-auto text-xs px-2 py-0.5 rounded-full font-medium ${item.badgeVariant === "success"
+                            ? "bg-emerald-500 text-white"
+                            : item.badgeVariant === "warning"
+                              ? "bg-amber-500 text-white"
+                              : "bg-primary text-primary-foreground"
+                            }`}>
+                            {item.badge}
+                          </span>
+                        )}
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  );
+                })}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        ))}
+      </SidebarContent>
+
+      <SidebarFooter className="p-4 border-t">
+        <div className="flex items-center gap-3">
+          <Avatar className="w-9 h-9">
+            <AvatarFallback className="text-sm bg-primary/10">
+              {getUserInitials(user.fullName)}
+            </AvatarFallback>
+          </Avatar>
+          <div className="flex-1 min-w-0">
+            <p className="text-base font-medium truncate">{user.fullName}</p>
+            <p className="text-sm text-muted-foreground truncate">
+              {getRoleLabel(user.role)}
+            </p>
+          </div>
+        </div>
+        {/* Version Badge */}
+        <div className="mt-3 pt-3 border-t border-dashed flex items-center justify-between text-xs text-muted-foreground">
+          <span className="flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
+            HomeStay-Portal v{APP_VERSION}
+          </span>
+        </div>
+      </SidebarFooter>
+    </Sidebar>
+  );
+}

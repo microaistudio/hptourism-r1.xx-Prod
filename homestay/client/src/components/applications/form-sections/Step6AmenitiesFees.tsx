@@ -1,0 +1,370 @@
+import { Dispatch, SetStateAction } from "react";
+import { UseFormReturn } from "react-hook-form";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Badge } from "@/components/ui/badge";
+import { ApplicationSummaryCard } from "@/components/application/application-summary";
+import type { ApplicationForm } from "@/lib/application-schema";
+import type { CategoryType } from "@shared/fee-calculator";
+import { FEATURE_FLAGS } from "@/config/features";
+
+interface Amenity {
+    id: string;
+    label: string;
+    icon: React.ComponentType<{ className?: string }>;
+}
+
+interface FeeCalculation {
+    baseFee: number;
+    validityDiscount: number;
+    femaleOwnerDiscount: number;
+    pangiDiscount: number;
+    totalFee: number;
+    savingsAmount: number;
+    savingsPercentage: number;
+}
+
+interface UpgradeFeeInfo {
+    previousCategory: CategoryType;
+    previousCategoryFee: number;
+    newCategoryFee: number;
+    upgradeFee: number;
+}
+
+import { format } from "date-fns";
+
+interface Step6AmenitiesFeesProps {
+    form: UseFormReturn<ApplicationForm>;
+    selectedAmenities: Record<string, boolean>;
+    setSelectedAmenities: Dispatch<SetStateAction<Record<string, boolean>>>;
+    AMENITIES: Amenity[];
+    MANDATORY_AMENITY_IDS: Set<string>;
+    category: CategoryType;
+    locationType: string;
+    certificateValidityYears: string;
+    fees: FeeCalculation;
+    getCategoryBadge: (cat: string) => { label: string; variant: "default" | "secondary" | "outline" };
+    LOCATION_LABEL_MAP: Record<string, string>;
+    totalRooms: number;
+    activeDraftApplication: any;
+    correctionId: string | null;
+    selectedAmenitiesCount: number;
+    isUpgrade?: boolean;
+    upgradeFeeInfo?: UpgradeFeeInfo;
+    isFixedValidity?: boolean;
+    fixedValidityDate?: Date;
+}
+
+export function Step6AmenitiesFees({
+    form,
+    selectedAmenities,
+    setSelectedAmenities,
+    AMENITIES,
+    MANDATORY_AMENITY_IDS,
+    category,
+    locationType,
+    certificateValidityYears,
+    fees,
+    getCategoryBadge,
+    LOCATION_LABEL_MAP,
+    totalRooms,
+    activeDraftApplication,
+    correctionId,
+    selectedAmenitiesCount,
+    isUpgrade = false,
+    upgradeFeeInfo,
+    isFixedValidity,
+    fixedValidityDate,
+}: Step6AmenitiesFeesProps) {
+    return (
+        <div className="space-y-6">
+            {/* SECTION 1: Property Amenities - Hidden for policy compliance */}
+            {FEATURE_FLAGS.SHOW_AMENITIES_SELECTION && (
+                <div className="rounded-xl overflow-hidden shadow-lg border border-gray-200">
+                    <div className="bg-gradient-to-r from-slate-700 to-slate-800 text-white p-4">
+                        <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center">
+                                <span className="text-lg font-bold">1</span>
+                            </div>
+                            <div>
+                                <h2 className="text-xl font-semibold">Property Amenities</h2>
+                                <p className="text-slate-300 text-sm">Select available amenities at your property</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div className="bg-white p-6">
+                        <p className="text-sm text-gray-500 mb-4">
+                            CCTV surveillance and fire-safety equipment remain locked because you confirmed them in the safety checklist. Other amenities are optional.
+                        </p>
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                            {AMENITIES.map((amenity) => {
+                                const IconComponent = amenity.icon;
+                                const isMandatory = MANDATORY_AMENITY_IDS.has(amenity.id);
+                                const isChecked = selectedAmenities[amenity.id] || false;
+                                return (
+                                    <div
+                                        key={amenity.id}
+                                        className={`flex items-center space-x-3 p-3 border rounded-lg transition-all ${isMandatory
+                                            ? "opacity-90 border-dashed bg-muted/50 cursor-not-allowed"
+                                            : isChecked
+                                                ? "border-primary bg-primary/5 shadow-sm"
+                                                : "hover:border-gray-300 hover:shadow-sm cursor-pointer"
+                                            }`}
+                                        data-testid={`checkbox-amenity-${amenity.id}`}
+                                    >
+                                        <Checkbox
+                                            checked={isChecked}
+                                            disabled={isMandatory}
+                                            onCheckedChange={(checked) =>
+                                                !isMandatory && setSelectedAmenities(prev => ({ ...prev, [amenity.id]: !!checked }))
+                                            }
+                                        />
+                                        <label
+                                            className={`flex items-center gap-2 flex-1 ${isMandatory ? "cursor-not-allowed" : "cursor-pointer"}`}
+                                            onClick={() => {
+                                                if (isMandatory) return;
+                                                setSelectedAmenities(prev => ({ ...prev, [amenity.id]: !prev[amenity.id] }));
+                                            }}
+                                        >
+                                            <IconComponent className="w-4 h-4 text-primary" />
+                                            <span className="text-sm font-medium">{amenity.label}</span>
+                                            {isMandatory && (
+                                                <Badge variant="outline" className="text-[10px] uppercase ml-auto">
+                                                    Mandatory
+                                                </Badge>
+                                            )}
+                                        </label>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+
+
+            {/* SECTION 3: Certificate Validity */}
+            <div className="rounded-xl overflow-hidden shadow-lg border border-gray-200">
+                <div className="bg-gradient-to-r from-slate-600 to-slate-700 text-white p-4">
+                    <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center">
+                            <span className="text-lg font-bold">2</span>
+                        </div>
+                        <div>
+                            <h2 className="text-xl font-semibold">Certificate Validity Period</h2>
+                            <p className="text-slate-200 text-sm">
+                                {isFixedValidity ? "Validity aligned with existing registration" : "Choose your registration duration"}
+                            </p>
+                        </div>
+                    </div>
+                </div>
+                <div className="bg-white p-6">
+                    {isFixedValidity ? (
+                        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                            <div className="flex items-start gap-3">
+                                <div className="mt-1 bg-blue-100 p-2 rounded-full">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-blue-600"><circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" /></svg>
+                                </div>
+                                <div>
+                                    <h3 className="font-semibold text-blue-900 mb-1">Validity Linked to Existing License</h3>
+                                    <p className="text-sm text-blue-800 mb-2">
+                                        For adding rooms, the validity period aligns with your existing registration cycle.
+                                        {fixedValidityDate && (
+                                            <span className="block mt-1 font-medium">
+                                                Expires on: {format(fixedValidityDate, "dd MMM yyyy")}
+                                            </span>
+                                        )}
+                                    </p>
+                                    <div className="mt-3 inline-flex items-center px-3 py-1 bg-white border border-blue-200 rounded text-sm text-blue-700 font-medium shadow-sm">
+                                        Fee Calculated for: {certificateValidityYears} Year{certificateValidityYears !== "1" ? "s" : ""}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    ) : (
+                        <FormField
+                            control={form.control}
+                            name="certificateValidityYears"
+                            render={({ field }) => (
+                                <FormItem>
+                                    <FormControl>
+                                        <RadioGroup
+                                            onValueChange={field.onChange}
+                                            value={field.value}
+                                            className="grid grid-cols-1 md:grid-cols-2 gap-4"
+                                        >
+                                            <div className={`flex items-start space-x-3 p-4 border-2 rounded-lg cursor-pointer transition-all hover-elevate ${field.value === "1" ? "border-primary bg-primary/5" : "border-border"}`}>
+                                                <RadioGroupItem value="1" id="validity-1" className="mt-1" />
+                                                <label htmlFor="validity-1" className="flex-1 cursor-pointer">
+                                                    <div className="font-medium mb-1">1 Year (Standard)</div>
+                                                    <div className="text-sm text-muted-foreground">
+                                                        Annual fee: ₹{fees.baseFee.toFixed(0)}
+                                                    </div>
+                                                </label>
+                                            </div>
+                                            <div className={`flex items-start space-x-3 p-4 border-2 rounded-lg cursor-pointer transition-all hover-elevate ${field.value === "3" ? "border-primary bg-primary/5" : "border-border"}`}>
+                                                <RadioGroupItem value="3" id="validity-3" className="mt-1" />
+                                                <label htmlFor="validity-3" className="flex-1 cursor-pointer">
+                                                    <div className="font-medium mb-1 flex items-center gap-2">
+                                                        3 Years (Lump Sum)
+                                                        <Badge variant="default" className="text-xs">10% OFF</Badge>
+                                                    </div>
+                                                    <div className="text-sm text-muted-foreground">
+                                                        Save ₹{((fees.baseFee * 3 * 0.10)).toFixed(0)} with 3-year payment
+                                                    </div>
+                                                </label>
+                                            </div>
+                                        </RadioGroup>
+                                    </FormControl>
+                                    <FormDescription>
+                                        Choose certificate validity period. 3-year lump sum payment receives 10% discount
+                                    </FormDescription>
+                                    <FormMessage />
+                                </FormItem>
+                            )}
+                        />
+                    )}
+                </div>
+            </div>
+
+            {/* SECTION 4: Fee Summary */}
+            <div className="rounded-xl overflow-hidden shadow-lg border border-gray-200">
+                <div className="bg-gradient-to-r from-emerald-600 to-teal-600 text-white p-4">
+                    <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center">
+                            <span className="text-lg font-bold">3</span>
+                        </div>
+                        <div>
+                            <h2 className="text-xl font-semibold">Registration Fee Summary</h2>
+                            <p className="text-emerald-100 text-sm">Final fee calculation with applicable discounts</p>
+                        </div>
+                    </div>
+                </div>
+                <div className="bg-white p-6">
+                    <div className="bg-gradient-to-br from-emerald-50 to-teal-50 p-6 rounded-lg border border-emerald-200">
+                        <div className="space-y-3">
+                            <div className="flex justify-between items-center">
+                                <span className="text-muted-foreground">Category</span>
+                                <Badge variant={getCategoryBadge(category).variant}>
+                                    {getCategoryBadge(category).label}
+                                </Badge>
+                            </div>
+                            <div className="flex justify-between items-center">
+                                <span className="text-muted-foreground">Location Type</span>
+                                <span className="font-medium text-sm">{LOCATION_LABEL_MAP[locationType] || "—"}</span>
+                            </div>
+                            <div className="flex justify-between items-center">
+                                <span className="text-muted-foreground">Certificate Validity</span>
+                                <span className="font-medium">{certificateValidityYears} {certificateValidityYears === "1" ? "year" : "years"}</span>
+                            </div>
+                            <div className="border-t pt-3 mt-3">
+                                {isUpgrade && upgradeFeeInfo ? (
+                                    /* Upgrade Fee Breakdown */
+                                    <>
+                                        <div className="flex justify-between">
+                                            <span className="text-muted-foreground">
+                                                New Category Fee ({getCategoryBadge(category).label})
+                                            </span>
+                                            <span className="font-medium">₹{upgradeFeeInfo.newCategoryFee.toFixed(0)}</span>
+                                        </div>
+                                        <div className="flex justify-between mt-2">
+                                            <span className="text-muted-foreground">
+                                                Fee Already Paid ({getCategoryBadge(upgradeFeeInfo.previousCategory).label})
+                                            </span>
+                                            <span className="font-medium text-green-600">−₹{upgradeFeeInfo.previousCategoryFee.toFixed(0)}</span>
+                                        </div>
+                                        <div className="border-t pt-2 mt-2">
+                                            <div className="flex justify-between">
+                                                <span className="text-muted-foreground font-medium">Upgrade Amount</span>
+                                                <span className="font-medium">₹{upgradeFeeInfo.upgradeFee.toFixed(0)}</span>
+                                            </div>
+                                        </div>
+                                    </>
+                                ) : (
+                                    /* Regular Fee Display */
+                                    <>
+                                        <div className="flex justify-between">
+                                            <span className="text-muted-foreground">Base Fee (Annual)</span>
+                                            <span className="font-medium">₹{fees.baseFee.toFixed(0)}</span>
+                                        </div>
+                                        {certificateValidityYears === "3" && (
+                                            <div className="flex justify-between mt-2">
+                                                <span className="text-muted-foreground">Total ({certificateValidityYears} years)</span>
+                                                <span className="font-medium">₹{(fees.baseFee * 3).toFixed(0)}</span>
+                                            </div>
+                                        )}
+                                    </>
+                                )}
+                            </div>
+                            {(fees.validityDiscount > 0 || fees.femaleOwnerDiscount > 0 || fees.pangiDiscount > 0) && (
+                                <div className="border-t pt-3 mt-3">
+                                    <div className="text-sm font-medium mb-2 text-green-600 dark:text-green-400">Discounts Applied:</div>
+                                    {fees.validityDiscount > 0 && (
+                                        <div className="flex justify-between text-sm">
+                                            <span className="text-muted-foreground">3-year lump sum (10%)</span>
+                                            <span className="text-green-600 dark:text-green-400">-₹{fees.validityDiscount.toFixed(0)}</span>
+                                        </div>
+                                    )}
+                                    {fees.femaleOwnerDiscount > 0 && (
+                                        <div className="flex justify-between text-sm mt-1">
+                                            <span className="text-muted-foreground">Female owner (5%)</span>
+                                            <span className="text-green-600 dark:text-green-400">-₹{fees.femaleOwnerDiscount.toFixed(0)}</span>
+                                        </div>
+                                    )}
+                                    {fees.pangiDiscount > 0 && (
+                                        <div className="flex justify-between text-sm mt-1">
+                                            <span className="text-muted-foreground">Pangi sub-division (50%)</span>
+                                            <span className="text-green-600 dark:text-green-400">-₹{fees.pangiDiscount.toFixed(0)}</span>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                            <div className="pt-3 border-t flex justify-between text-lg">
+                                <span className="font-semibold">Total Payable</span>
+                                <span className="font-bold text-primary" data-testid="text-total-fee">₹{fees.totalFee.toFixed(0)}</span>
+                            </div>
+                            {fees.savingsAmount > 0 && (
+                                <div className="bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800 rounded-lg p-3 mt-3">
+                                    <p className="text-sm text-green-800 dark:text-green-200 font-medium">
+                                        ✨ You save ₹{fees.savingsAmount.toFixed(0)} ({fees.savingsPercentage.toFixed(1)}%)
+                                    </p>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    <ApplicationSummaryCard
+                        className="bg-muted/50 border-0 shadow-none mt-6"
+                        highlightCategoryBadge={false}
+                        application={{
+                            applicationNumber: activeDraftApplication?.applicationNumber ?? correctionId ?? undefined,
+                            propertyName: form.watch("propertyName") || undefined,
+                            address: form.watch("address") || undefined,
+                            district: form.watch("district") || undefined,
+                            tehsil: form.watch("tehsil") || undefined,
+                            tehsilOther: form.watch("tehsilOther") || undefined,
+                            pincode: form.watch("pincode") || undefined,
+                            ownerName: form.watch("ownerName") || undefined,
+                            ownerMobile: form.watch("ownerMobile") || undefined,
+                            totalRooms,
+                            category: form.watch("category") || undefined,
+                        }}
+                        owner={{
+                            name: form.watch("ownerName"),
+                            mobile: form.watch("ownerMobile"),
+                            email: form.watch("ownerEmail"),
+                        }}
+                        extraRows={[
+                            { label: "Amenities", value: `${selectedAmenitiesCount} selected` },
+                        ]}
+                    />
+                </div>
+            </div>
+        </div>
+    );
+}

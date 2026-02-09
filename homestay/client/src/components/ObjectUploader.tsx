@@ -1,0 +1,608 @@
+import { useState, useRef, useEffect, useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { Button } from "@/components/ui/button";
+import { Upload, X, FileText, Loader2 } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+import imageCompression from "browser-image-compression";
+import {
+  DEFAULT_UPLOAD_POLICY,
+  type UploadPolicy,
+} from "@shared/uploadPolicy";
+
+export interface UploadedFileMetadata {
+  id?: string; // Optional ID for existing documents
+  filePath: string;
+  fileName: string;
+  fileSize: number;
+  mimeType: string;
+  description?: string;
+  verificationStatus?: 'pending' | 'verified' | 'rejected' | 'objection_raised' | 'needs_correction';
+  verificationNotes?: string;
+}
+
+interface ObjectUploaderProps {
+  label: string;
+  accept?: string;
+  multiple?: boolean;
+  maxFiles?: number;
+  fileType?: string;
+  category?: "documents" | "photos";
+  onUploadComplete: (files: UploadedFileMetadata[]) => void;
+  existingFiles?: UploadedFileMetadata[];
+  className?: string;
+  isMissing?: boolean; // Show subtle indication when mandatory upload is missing
+  showDescription?: boolean;
+  hideNote?: boolean; // Hide the per-item file size note (for consolidated notices)
+  restrictedMode?: boolean; // If true, only allows editing rejected/new files
+}
+
+export function ObjectUploader({
+  label,
+  accept,
+  multiple = false,
+  maxFiles = 1,
+  fileType = "document",
+  category = "documents",
+  onUploadComplete,
+  existingFiles = [],
+  className = "",
+  isMissing = false,
+  showDescription = false,
+  hideNote = false,
+  restrictedMode = false,
+}: ObjectUploaderProps) {
+  const { toast } = useToast();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+  const [processingStatus, setProcessingStatus] = useState<string>("");
+  const [uploadedFiles, setUploadedFiles] = useState<UploadedFileMetadata[]>(existingFiles);
+  const { data: uploadPolicyData } = useQuery<UploadPolicy>({
+    queryKey: ["/api/settings/upload-policy"],
+    staleTime: 5 * 60 * 1000,
+  });
+  const uploadPolicy = uploadPolicyData ?? DEFAULT_UPLOAD_POLICY;
+  const categoryPolicy = uploadPolicy[category];
+  const allowedMimeSet = useMemo(
+    () => new Set(categoryPolicy.allowedMimeTypes.map((mime) => mime.toLowerCase())),
+    [categoryPolicy.allowedMimeTypes],
+  );
+  const allowedExtensionSet = useMemo(
+    () =>
+      new Set(
+        categoryPolicy.allowedExtensions.map((ext) =>
+          ext.toLowerCase(),
+        ),
+      ),
+    [categoryPolicy.allowedExtensions],
+  );
+
+  // Use policy-based limits from admin config (fetched from /api/settings/upload-policy)
+  const documentsPolicy = uploadPolicy.documents;
+  const photosPolicy = uploadPolicy.photos;
+  const IMG_TARGET_SIZE_MB = 0.5; // Compression target for images
+
+  const derivedAccept = useMemo(() => {
+    const entries = new Set<string>();
+
+    categoryPolicy.allowedExtensions.forEach((ext) => {
+      if (ext && typeof ext === "string") {
+        entries.add(ext.toLowerCase());
+      }
+    });
+
+    categoryPolicy.allowedMimeTypes.forEach((mime) => {
+      if (mime && typeof mime === "string") {
+        entries.add(mime.toLowerCase());
+      }
+    });
+
+    if (entries.size === 0) {
+      return undefined;
+    }
+
+    return Array.from(entries).join(",");
+  }, [categoryPolicy.allowedExtensions, categoryPolicy.allowedMimeTypes]);
+
+  const effectiveAccept = accept ?? derivedAccept;
+
+  const getExtension = (name: string) => {
+    const lastDot = name.lastIndexOf(".");
+    if (lastDot === -1 || lastDot === name.length - 1) {
+      return "";
+    }
+    return name.slice(lastDot).toLowerCase();
+  };
+
+  const normalizeMime = (mime: string | undefined) =>
+    (mime || "").split(";")[0].trim().toLowerCase();
+
+  // Map common extensions to MIME types for custom accept validation
+  const extensionToMime: Record<string, string[]> = {
+    '.pdf': ['application/pdf'],
+    '.jpg': ['image/jpeg', 'image/jpg'],
+    '.jpeg': ['image/jpeg', 'image/jpg'],
+    '.png': ['image/png'],
+    '.gif': ['image/gif'],
+    '.webp': ['image/webp'],
+  };
+
+  const isMimeAllowed = (mime: string) => {
+    const normalized = normalizeMime(mime);
+
+    // If a custom accept prop is provided with extensions, validate against those
+    if (accept) {
+      const customExtensions = accept.split(',')
+        .filter(ext => ext.startsWith('.'))
+        .map(ext => ext.toLowerCase().trim());
+      if (customExtensions.length > 0) {
+        // Build set of allowed MIME types from extensions
+        const allowedMimes = new Set<string>();
+        customExtensions.forEach(ext => {
+          const mimes = extensionToMime[ext];
+          if (mimes) {
+            mimes.forEach(m => allowedMimes.add(m));
+          }
+        });
+        // If we found MIME types for the extensions, validate against them
+        if (allowedMimes.size > 0) {
+          return allowedMimes.has(normalized);
+        }
+        // If no MIME mapping found, allow any MIME for custom accept
+        return true;
+      }
+    }
+
+    // Fall back to default policy validation
+    if (!normalized) {
+      return allowedMimeSet.size === 0;
+    }
+    if (allowedMimeSet.size === 0) {
+      return true;
+    }
+    if (allowedMimeSet.has(normalized)) {
+      return true;
+    }
+    // Accept image/jpg when only image/jpeg is configured (common alias)
+    if (
+      normalized === "image/jpg" &&
+      allowedMimeSet.has("image/jpeg")
+    ) {
+      return true;
+    }
+    return false;
+  };
+
+  const isExtensionAllowed = (extension: string) => {
+    // If a custom accept prop is provided, validate against that instead of the default policy
+    if (accept) {
+      const customExtensions = accept.split(',')
+        .filter(ext => ext.startsWith('.'))
+        .map(ext => ext.toLowerCase().trim());
+      if (customExtensions.length > 0) {
+        return customExtensions.includes(extension.toLowerCase());
+      }
+    }
+    // Fall back to default policy validation
+    if (!allowedExtensionSet.size) {
+      return true;
+    }
+    return allowedExtensionSet.has(extension.toLowerCase());
+  };
+
+  const appendLocalUploadParams = (
+    url: string,
+    params: Record<string, string | undefined>,
+  ) => {
+    try {
+      const hasProtocol = /^https?:\/\//i.test(url);
+      const target = new URL(
+        url,
+        hasProtocol ? undefined : window.location.origin,
+      );
+      Object.entries(params).forEach(([key, value]) => {
+        if (value) {
+          target.searchParams.set(key, value);
+        }
+      });
+      if (hasProtocol) {
+        return target.toString();
+      }
+      return `${target.pathname}${target.search}${target.hash}`;
+    } catch {
+      return url;
+    }
+  };
+
+  const formatBytes = (bytes: number) => {
+    if (!Number.isFinite(bytes) || bytes <= 0) {
+      return "0 B";
+    }
+    const units = ["B", "KB", "MB", "GB"];
+    const index = Math.min(
+      Math.floor(Math.log(bytes) / Math.log(1024)),
+      units.length - 1,
+    );
+    const value = bytes / Math.pow(1024, index);
+    return `${value % 1 === 0 ? value : value.toFixed(1)} ${units[index]}`;
+  };
+
+  // Sync internal state with existingFiles prop changes
+  useEffect(() => {
+    setUploadedFiles(existingFiles);
+  }, [existingFiles]);
+
+  const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files || []);
+    if (files.length === 0) {
+      return;
+    }
+
+    const remainingSlots = maxFiles - uploadedFiles.length;
+    if (files.length > remainingSlots) {
+      toast({
+        title: "Too many files",
+        description: `You can only upload ${remainingSlots} more file(s)`,
+        variant: "destructive",
+      });
+      event.target.value = "";
+      return;
+    }
+
+    const processedFiles: File[] = [];
+    const skippedMessages: string[] = [];
+
+    setUploading(true);
+
+    for (const file of files) {
+      setProcessingStatus(`Processing ${file.name}...`);
+      const extension = getExtension(file.name);
+      const normalizedMime = normalizeMime(file.type) || "application/octet-stream";
+
+      // Validation Logic - uses admin policy values
+      let isValidSize = false;
+      const isPdf = normalizedMime === 'application/pdf';
+      const isImage = normalizedMime.startsWith('image/');
+
+      if (isPdf) {
+        // PDFs use documents policy
+        const maxSizeMB = documentsPolicy.maxFileSizeMB;
+        if (file.size <= maxSizeMB * 1024 * 1024) {
+          isValidSize = true;
+        } else {
+          skippedMessages.push(`Oops! ${file.name} is too large (${formatBytes(file.size)}). Please keep PDF documents under ${maxSizeMB}MB.`);
+        }
+      } else if (isImage) {
+        // Images use photos policy
+        const maxSizeMB = photosPolicy.maxFileSizeMB;
+        if (file.size <= maxSizeMB * 1024 * 1024) {
+          isValidSize = true;
+        } else {
+          skippedMessages.push(`That photo is a bit too heavy! ${file.name} is ${formatBytes(file.size)}. Please use an image under ${maxSizeMB}MB.`);
+        }
+      } else {
+        // Fallback to category policy for other types
+        if (file.size <= categoryPolicy.maxFileSizeMB * 1024 * 1024) {
+          isValidSize = true;
+        } else {
+          skippedMessages.push(`${file.name} exceeds the ${categoryPolicy.maxFileSizeMB}MB limit.`);
+        }
+      }
+
+      if (!isValidSize) continue;
+
+      if (!isExtensionAllowed(extension)) {
+        skippedMessages.push(`Sorry, we can't accept ${file.name}. Please try a valid file type.`);
+        continue;
+      }
+
+      if (!isMimeAllowed(normalizedMime)) {
+        skippedMessages.push(`Sorry, the file type of ${file.name} isn't supported.`);
+        continue;
+      }
+
+      // Compression Logic for Images
+      if (isImage) {
+        try {
+          // If already small enough, skip compression
+          if (file.size <= IMG_TARGET_SIZE_MB * 1024 * 1024) {
+            processedFiles.push(file);
+            continue;
+          }
+
+          const options = {
+            maxSizeMB: IMG_TARGET_SIZE_MB,
+            maxWidthOrHeight: 1920,
+            useWebWorker: true
+          };
+
+          const compressedBlob = await imageCompression(file, options);
+          // Convert Blob back to File to preserve properties
+          const compressedFile = new File([compressedBlob], file.name, {
+            type: file.type,
+            lastModified: Date.now()
+          });
+
+          processedFiles.push(compressedFile);
+        } catch (error) {
+          console.error("Compression failed:", error);
+          // Fallback to original if compression fails, but warn user if it's huge?
+          // For now, let's just push original but it might be rejected by backend policy if strict.
+          // Or we could skip it.
+          skippedMessages.push(`Failed to compress ${file.name}. Please try a smaller image.`);
+        }
+      } else {
+        processedFiles.push(file);
+      }
+    }
+
+    setProcessingStatus("");
+
+    if (skippedMessages.length > 0) {
+      toast({
+        title: "Some files were skipped",
+        description: skippedMessages.join("\n"),
+        variant: "destructive",
+      });
+    }
+
+    if (processedFiles.length === 0) {
+      setUploading(false);
+      event.target.value = "";
+      return;
+    }
+
+    try {
+      const uploadedMetadata: UploadedFileMetadata[] = [];
+
+      for (const file of processedFiles) {
+        setProcessingStatus(`Uploading ${file.name}...`);
+        const normalizedMime = normalizeMime(file.type) || "application/octet-stream";
+        const params = new URLSearchParams({
+          fileType,
+          category,
+          fileName: file.name,
+          fileSize: file.size.toString(),
+          mimeType: normalizedMime,
+        });
+
+        const urlResponse = await fetch(`/api/upload-url?${params.toString()}`, {
+          credentials: "include",
+        });
+        if (!urlResponse.ok) {
+          const errorText = await urlResponse.text();
+          throw new Error(errorText || `Failed to prepare upload for ${file.name}`);
+        }
+
+        const { uploadUrl, filePath } = await urlResponse.json();
+        const uploadTarget =
+          uploadUrl.startsWith("/api/local-object/upload")
+            ? appendLocalUploadParams(uploadUrl, {
+              category,
+              name: file.name,
+              size: file.size.toString(),
+              mime: normalizedMime,
+            })
+            : uploadUrl;
+
+        const uploadResponse = await fetch(uploadTarget, {
+          method: "PUT",
+          body: file, // This is the compressed file if it was an image
+          credentials: "include",
+          headers: {
+            "Content-Type": normalizedMime,
+          },
+        });
+
+        if (!uploadResponse.ok) {
+          const errorText = await uploadResponse.text();
+          throw new Error(errorText || `Failed to upload ${file.name}`);
+        }
+
+        uploadedMetadata.push({
+          filePath,
+          fileName: file.name,
+          fileSize: file.size,
+          mimeType: normalizedMime,
+        });
+      }
+
+      const newFiles = [...uploadedFiles, ...uploadedMetadata];
+      setUploadedFiles(newFiles);
+      onUploadComplete(newFiles);
+
+      toast({
+        title: "Upload successful",
+        description: `${uploadedMetadata.length} file(s) uploaded successfully`,
+      });
+    } catch (error) {
+      console.error("Upload error:", error);
+      toast({
+        title: "Upload failed",
+        description: error instanceof Error ? error.message : "Failed to upload files",
+        variant: "destructive",
+      });
+    } finally {
+      setUploading(false);
+      setProcessingStatus("");
+      event.target.value = "";
+    }
+  };
+
+  const removeFile = (index: number) => {
+    const file = uploadedFiles[index];
+    // In restricted mode, only forbid removing VERIFIED files
+    // Rejected, pending, or undefined status files can be removed/replaced
+    if (restrictedMode && file.id && file.verificationStatus === 'verified') {
+      toast({
+        title: "Action Restricted",
+        description: "This document has been verified and cannot be modified.",
+        variant: "destructive"
+      });
+      return;
+    }
+    const newFiles = uploadedFiles.filter((_, i) => i !== index);
+    setUploadedFiles(newFiles);
+    onUploadComplete(newFiles);
+  };
+
+  const updateFileDescription = (index: number, description: string) => {
+    const newFiles = [...uploadedFiles];
+    newFiles[index] = { ...newFiles[index], description };
+    setUploadedFiles(newFiles);
+    onUploadComplete(newFiles);
+  };
+
+  const formatFileSize = (bytes: number) => {
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+  };
+
+  const hasExistingFiles = uploadedFiles.length > 0;
+  const buttonLabel = hasExistingFiles
+    ? (uploadedFiles.length < maxFiles ? "Add More" : "Replace")
+    : label;
+
+  return (
+    <div className={className}>
+      <div className="space-y-2">
+        {hasExistingFiles && (
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Current Documents:</label>
+            {uploadedFiles.map((file, index) => {
+              const isRejected = file.verificationStatus === 'rejected' || file.verificationStatus === 'objection_raised' || file.verificationStatus === 'needs_correction';
+              const isVerified = file.verificationStatus === 'verified';
+              // Only lock documents that are EXPLICITLY verified (not undefined/pending)
+              // Documents with undefined verificationStatus should remain editable
+              const isLocked = restrictedMode && file.id && isVerified;
+
+              return (
+                <div
+                  key={index}
+                  className={`border rounded-md bg-card transition-colors ${isRejected ? "border-amber-400 bg-amber-50/50" : isVerified ? "border-green-200 bg-green-50/30" : ""
+                    }`}
+                >
+                  <div className={`flex flex-col gap-2 p-3`}>
+                    <div className={`flex items-center justify-between gap-3 ${showDescription ? 'flex-wrap md:flex-nowrap' : ''}`}>
+                      {/* File info */}
+                      <div className="flex items-center gap-3 min-w-0 shrink-0">
+                        <FileText className={`w-5 h-5 flex-shrink-0 ${isRejected ? "text-amber-600" : isVerified ? "text-green-600" : "text-primary"}`} />
+                        <div className="min-w-0">
+                          <span className="text-sm font-medium truncate block max-w-[150px]">{file.fileName}</span>
+                          <span className="text-xs text-muted-foreground">{formatFileSize(file.fileSize)}</span>
+                        </div>
+                      </div>
+
+                      {/* Description input - inline */}
+                      {showDescription && (
+                        <div className="flex-1 min-w-[200px]">
+                          <input
+                            type="text"
+                            placeholder="Document Info"
+                            value={file.description || ""}
+                            onChange={(e) => updateFileDescription(index, e.target.value)}
+                            disabled={isLocked}
+                            className="w-full text-sm border border-gray-300 rounded-md px-3 py-1.5 focus:border-primary focus:ring-1 focus:ring-primary focus:outline-none bg-gray-50 placeholder:text-gray-400 disabled:opacity-50"
+                          />
+                        </div>
+                      )}
+
+                      {/* Actions */}
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          asChild
+                          data-testid={`button-view-file-${index}`}
+                        >
+                          <a
+                            href={`/api/object-storage/view?path=${encodeURIComponent(file.filePath)}&mime=${encodeURIComponent(file.mimeType)}&filename=${encodeURIComponent(file.fileName)}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            View
+                          </a>
+                        </Button>
+                        {!isLocked && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => removeFile(index)}
+                            data-testid={`button-remove-file-${index}`}
+                            className={isRejected ? "text-amber-700 hover:text-amber-900 hover:bg-amber-100" : ""}
+                          >
+                            {isRejected ? <span className="text-xs font-semibold mr-1">Replace</span> : null}
+                            <X className="w-4 h-4" />
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                    {/* Rejection/Verification Notes */}
+                    {(file.verificationNotes || isRejected) && (
+                      <div className={`text-xs p-2 rounded mt-1 ${isRejected ? "bg-amber-100/50 text-amber-800" : "bg-muted text-muted-foreground"}`}>
+                        <p className="font-semibold">{isRejected ? "Correction Required:" : "Note:"}</p>
+                        <p>{file.verificationNotes || "Please update this document."}</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+      {/* Only hide upload button if ALL existing documents are VERIFIED in restrictedMode */}
+      {!((restrictedMode && uploadedFiles.length >= maxFiles && uploadedFiles.every(f => f.id && f.verificationStatus === 'verified'))) && (
+        <div className="space-y-1">
+
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant={hasExistingFiles ? "secondary" : isMissing ? "outline" : "outline"}
+              className={isMissing ? "border-orange-400 text-orange-600 hover:text-orange-700 hover:border-orange-500" : ""}
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploading || uploadedFiles.length >= maxFiles}
+              data-testid={`button-upload-${label.toLowerCase().replace(/\s+/g, "-")}`}
+            >
+              {uploading ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  {processingStatus || "Uploading..."}
+                </>
+              ) : (
+                <>
+                  <Upload className="w-4 h-4 mr-2" />
+                  {buttonLabel}
+                </>
+              )}
+            </Button>
+            {uploadedFiles.length > 0 && (
+              <span className="text-sm text-muted-foreground">
+                {uploadedFiles.length} / {maxFiles} file(s)
+              </span>
+            )}
+          </div>
+          {/* Helper text regarding limits */}
+          {!hideNote && (
+            <p className="text-xs text-muted-foreground ml-1">
+              Note: Documents max 5MB (PDF). Photos max 10MB (we'll automatically optimize them for you!).
+            </p>
+          )}
+        </div>
+      )}
+
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept={effectiveAccept}
+        multiple={multiple}
+        onChange={handleFileSelect}
+        className="hidden"
+      />
+    </div>
+  );
+}

@@ -1,0 +1,27 @@
+# Node.js
+**/node_modules/
+**/dist/
+**/dist-new/
+**/client/dist-debug/
+**/client/dist-new/
+
+# Environments & Secret
+.env
+.env.*
+!.env.example
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Large runtime data (keeping specific backups/deploy-packages as requested but ignoring generic ones if any)
+**/local-object-storage/
+**/tmp/
+**/logs/
+**/attached_assets/
+
+# PM2 & Tools
+.pm2/
+.history/
+.gemini/
+.agent/

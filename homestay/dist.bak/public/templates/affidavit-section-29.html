@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Affidavit under Section 29 - HP Tourism Act 2002</title>
+    <style>
+        @media print {
+            @page {
+                size: A4;
+                margin: 10mm;
+            }
+
+            body {
+                margin: 0;
+                padding: 0;
+            }
+
+            .no-print {
+                display: none;
+            }
+
+            .page-wrapper {
+                margin: 0;
+                box-shadow: none;
+            }
+
+            .outer-border {
+                margin: 0;
+            }
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: Georgia, 'Times New Roman', Times, serif;
+            font-size: 11px;
+            line-height: 1.4;
+            background: #f1f5f9;
+            margin: 0;
+            padding: 15px;
+            color: #1e293b;
+        }
+
+        .print-controls {
+            max-width: 210mm;
+            margin: 0 auto 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .preview-text {
+            color: #64748b;
+            font-size: 14px;
+        }
+
+        .print-btn {
+            background: #059669;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            box-shadow: 0 4px 12px rgba(5, 150, 105, 0.3);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .print-btn:hover {
+            background: #047857;
+        }
+
+        .page-wrapper {
+            max-width: 210mm;
+            margin: 0 auto;
+            background: white;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+        }
+
+        .outer-border {
+            border: 3px solid #1e293b;
+            margin: 15px;
+        }
+
+        .inner-border {
+            border: 1px solid #94a3b8;
+            margin: 4px;
+            padding: 15px;
+        }
+
+        /* Header Styles */
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .emblem-circle {
+            width: 48px;
+            height: 48px;
+            border: 2px solid #cbd5e1;
+            border-radius: 50%;
+            margin: 0 auto 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #f8fafc;
+            font-size: 20px;
+        }
+
+        .dept-name {
+            font-size: 12px;
+            font-weight: 600;
+            color: #475569;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 2px;
+        }
+
+        .dept-sub {
+            font-size: 10px;
+            color: #64748b;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            margin-bottom: 8px;
+        }
+
+        .decorative-divider {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+
+        .divider-line {
+            width: 48px;
+            height: 1px;
+            background: #94a3b8;
+        }
+
+        .divider-diamond {
+            width: 6px;
+            height: 6px;
+            border: 1px solid #94a3b8;
+            transform: rotate(45deg);
+        }
+
+        .title {
+            font-size: 16px;
+            font-weight: bold;
+            letter-spacing: 1px;
+            margin-bottom: 4px;
+        }
+
+        .title-underline {
+            border-bottom: 2px solid #1e293b;
+            padding-bottom: 2px;
+        }
+
+        .subtitle {
+            font-size: 14px;
+            font-weight: 600;
+            color: #475569;
+        }
+
+        .reference {
+            font-size: 12px;
+            color: #64748b;
+            margin-top: 2px;
+        }
+
+        /* Form Fields */
+        .deponent-box {
+            background: #f8fafc;
+            padding: 10px;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            margin-bottom: 12px;
+            line-height: 1.8;
+        }
+
+        .fill-blank {
+            border-bottom: 1px solid #94a3b8;
+            min-width: 140px;
+            display: inline-block;
+            margin: 0 4px;
+            background: white;
+            padding: 1px 4px;
+            text-align: center;
+        }
+
+        .fill-blank.short {
+            min-width: 40px;
+        }
+
+        .fill-blank.long {
+            min-width: 140px;
+        }
+
+        .fill-blank.xlarge {
+            min-width: 300px;
+        }
+
+        .relation-text {
+            font-weight: 600;
+            color: #475569;
+            margin: 0 4px;
+        }
+
+        /* Content */
+        .content {
+            text-align: justify;
+        }
+
+        .declaration-title {
+            font-weight: 600;
+            margin-bottom: 12px;
+        }
+
+        ol.declarations {
+            list-style: none;
+            padding: 0;
+            margin: 0 0 16px 0;
+        }
+
+        ol.declarations li {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 8px;
+        }
+
+        ol.declarations li .num {
+            font-weight: bold;
+            color: #475569;
+            flex-shrink: 0;
+        }
+
+        /* Signature Section */
+        .signature-section {
+            margin-top: 24px;
+            display: flex;
+            justify-content: flex-end;
+        }
+
+        .signature-box {
+            text-align: center;
+            width: 250px;
+        }
+
+        .signature-line {
+            border-bottom: 1px solid #1e293b;
+            height: 32px;
+            margin-bottom: 4px;
+        }
+
+        .signature-label {
+            font-weight: bold;
+            font-size: 10px;
+        }
+
+        /* Verification */
+        .verification {
+            margin-top: 16px;
+            padding-top: 12px;
+            border-top: 2px solid #cbd5e1;
+        }
+
+        .verification h2 {
+            font-size: 12px;
+            font-weight: bold;
+            margin-bottom: 8px;
+            letter-spacing: 1px;
+        }
+
+        .verification h2 span {
+            border-bottom: 2px solid #475569;
+            padding-bottom: 4px;
+        }
+
+        /* Footer Notes */
+        .footer-note {
+            margin-top: 50px;
+            font-size: 12px;
+            color: #64748b;
+            border-top: 1px dashed #cbd5e1;
+            padding-top: 16px;
+        }
+
+        .footer-note strong {
+            display: block;
+            margin-bottom: 8px;
+        }
+
+        .footer-note ul {
+            margin: 0;
+            padding-left: 20px;
+        }
+
+        .footer-note li {
+            margin-bottom: 4px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="print-controls no-print">
+        <span class="preview-text">Preview - Print or Save as PDF for official use</span>
+        <button class="print-btn" onclick="window.print()">
+            🖨️ Print / Save PDF
+        </button>
+    </div>
+
+    <div class="page-wrapper">
+        <div class="outer-border">
+            <div class="inner-border">
+
+                <!-- Header -->
+                <div class="header">
+                    <div class="emblem-circle">🏛️</div>
+                    <p class="dept-name">Government of Himachal Pradesh</p>
+                    <p class="dept-sub">Department of Tourism & Civil Aviation</p>
+
+                    <div class="decorative-divider">
+                        <div class="divider-line"></div>
+                        <div class="divider-diamond"></div>
+                        <div class="divider-line"></div>
+                    </div>
+
+                    <h1 class="title">
+                        <span class="title-underline">FORMAT OF AFFIDAVIT</span>
+                    </h1>
+                    <p class="subtitle">Under Section 29</p>
+                    <p class="reference">Himachal Pradesh Tourism Development & Registration Act, 2002</p>
+                </div>
+
+                <!-- Content -->
+                <div class="content">
+
+                    <!-- Deponent Details -->
+                    <div class="deponent-box">
+                        <p>
+                            I, <span class="fill-blank long"></span>,
+                            <span class="relation-text">S/o / D/o / W/o</span>
+                            <span class="fill-blank long"></span>,
+                        </p>
+                        <p>
+                            Age <span class="fill-blank short"></span> years,
+                            R/o <span class="fill-blank xlarge"></span>
+                        </p>
+                    </div>
+
+                    <p class="declaration-title">do hereby solemnly affirm and declare as under:</p>
+
+                    <!-- Declarations -->
+                    <ol class="declarations">
+                        <li>
+                            <span class="num">1.</span>
+                            <span>That I have not been convicted of any offence under Chapters XIV and XVI of the Indian
+                                Penal Code, 1860, or under any of the provisions of this Act, or of any offence
+                                punishable under any law providing for the prevention of hoarding, smuggling, or
+                                profiteering, or adulteration of food or drugs, or corruption.</span>
+                        </li>
+                        <li>
+                            <span class="num">2.</span>
+                            <span>That I have not been declared an insolvent by a court of competent
+                                jurisdiction.</span>
+                        </li>
+                        <li>
+                            <span class="num">3.</span>
+                            <span>That my name has not been removed from the register on the grounds mentioned in
+                                Section 29 of the <strong>Himachal Pradesh Tourism Development and Registration Act,
+                                    2002</strong>.</span>
+                        </li>
+                    </ol>
+
+                    <!-- First Signature -->
+                    <div class="signature-section">
+                        <div class="signature-box">
+                            <div class="signature-line"></div>
+                            <p class="signature-label">DEPONENT</p>
+                        </div>
+                    </div>
+
+                    <!-- Verification -->
+                    <div class="verification">
+                        <h2><span>VERIFICATION</span></h2>
+                        <p>
+                            Verified that the contents of the above affidavit of mine are true and correct
+                            to the best of my knowledge and belief. Nothing has been concealed therein.
+                        </p>
+                        <p style="margin-top: 12px;">
+                            Signed and verified at <span class="fill-blank"></span>
+                            on dated <span class="fill-blank"></span>.
+                        </p>
+                    </div>
+
+                    <!-- Final Signature -->
+                    <div class="signature-section" style="margin-top: 24px;">
+                        <div class="signature-box">
+                            <div class="signature-line"></div>
+                            <p class="signature-label">DEPONENT</p>
+                        </div>
+                    </div>
+
+                </div>
+
+                <!-- Footer Notes -->
+                <div class="footer-note">
+                    <strong>IMPORTANT NOTES:</strong>
+                    <ul>
+                        <li>This affidavit should be executed on non-judicial stamp paper of appropriate value as
+                            applicable in Himachal Pradesh.</li>
+                        <li>The affidavit should be attested by a Notary Public or First Class Magistrate.</li>
+                        <li>Reference: Section 29 of HP Tourism Development & Registration Act, 2002</li>
+                    </ul>
+                </div>
+
+            </div>
+        </div>
+    </div>
+</body>
+
+</html>

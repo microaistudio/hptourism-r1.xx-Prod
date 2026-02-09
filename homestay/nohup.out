@@ -1,0 +1,49 @@
+nohup: ignoring input
+
+> hptourism-homestay@1.0.3 dev
+> PORT=${PORT:-5057} NODE_ENV=development tsx server/index.ts
+
+[dotenv@17.2.3] injecting env (49) from .env -- tip: 👥 sync secrets across teammates & machines: https://dotenvx.com/ops
+[2026-02-04 03:30:14.139 +0000] [32mINFO[39m (2380600): [36m[captcha] configuration[39m
+    [35mmodule[39m: "captcha-settings"
+[2026-02-04 03:30:14.899 +0000] [34mDEBUG[39m (2380600): [36m[logging] bootstrap configuration[39m
+    [35mpretty[39m: true
+    [35mfile[39m: {
+      "enabled": false,
+      "path": "/home/subhash.thakur.india/Projects/hptourism/homestay/logs/app.log",
+      "maxSizeMB": 10,
+      "maxFiles": 7,
+      "interval": "1d"
+    }
+[2026-02-04 03:30:14.940 +0000] [32mINFO[39m (2380600): [36mEnsured portal_base_url column exists on himkosh_transactions[39m
+    [35mmodule[39m: "himkosh"
+[2026-02-04 03:30:15.005 +0000] [32mINFO[39m (2380600): [36m[himkosh] Payment gateway routes registered[39m
+    [35mmodule[39m: "routes"
+[2026-02-04 03:30:15.014 +0000] [32mINFO[39m (2380600): [36m[ccavenue] Payment gateway routes registered[39m
+    [35mmodule[39m: "routes"
+[2026-02-04 03:30:15.014 +0000] [32mINFO[39m (2380600): [36mFetching stats from https://eservices.himachaltourism.gov.in/[39m
+    [35mmodule[39m: "scraper"
+[2026-02-04 03:30:15.057 +0000] [32mINFO[39m (2380600): [36mScheduler started - will scrape every hour[39m
+    [35mmodule[39m: "scraper"
+[2026-02-04 03:30:15.057 +0000] [32mINFO[39m (2380600): [36m[scraper] Production stats scraper initialized[39m
+    [35mmodule[39m: "routes"
+node:events:502
+      throw er; // Unhandled 'error' event
+      ^
+
+Error: listen EADDRINUSE: address already in use 0.0.0.0:5040
+    at Server.setupListenHandle [as _listen2] (node:net:1908:16)
+    at listenInCluster (node:net:1965:12)
+    at doListen (node:net:2139:7)
+    at process.processTicksAndRejections (node:internal/process/task_queues:83:21)
+Emitted 'error' event on Server instance at:
+    at emitErrorNT (node:net:1944:8)
+    at process.processTicksAndRejections (node:internal/process/task_queues:82:21) {
+  code: 'EADDRINUSE',
+  errno: -98,
+  syscall: 'listen',
+  address: '0.0.0.0',
+  port: 5040
+}
+
+Node.js v20.19.6

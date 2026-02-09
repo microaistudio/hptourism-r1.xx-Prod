@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Form-C Undertaking - HP Home Stay Scheme 2025</title>
+    <style>
+        @media print {
+            @page {
+                size: A4;
+                margin: 10mm;
+            }
+
+            body {
+                margin: 0;
+                padding: 0;
+            }
+
+            .no-print {
+                display: none;
+            }
+
+            .page-wrapper {
+                margin: 0;
+                box-shadow: none;
+            }
+
+            .outer-border {
+                margin: 0;
+            }
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: Georgia, 'Times New Roman', Times, serif;
+            font-size: 11px;
+            line-height: 1.4;
+            background: #f1f5f9;
+            margin: 0;
+            padding: 15px;
+            color: #1e293b;
+        }
+
+        .print-controls {
+            max-width: 210mm;
+            margin: 0 auto 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .preview-text {
+            color: #64748b;
+            font-size: 14px;
+        }
+
+        .print-btn {
+            background: #059669;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            box-shadow: 0 4px 12px rgba(5, 150, 105, 0.3);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .print-btn:hover {
+            background: #047857;
+        }
+
+        .page-wrapper {
+            max-width: 210mm;
+            margin: 0 auto;
+            background: white;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+        }
+
+        .outer-border {
+            border: 3px solid #1e293b;
+            margin: 15px;
+        }
+
+        .inner-border {
+            border: 1px solid #94a3b8;
+            margin: 4px;
+            padding: 15px;
+        }
+
+        /* Header Styles */
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .emblem-circle {
+            width: 48px;
+            height: 48px;
+            border: 2px solid #cbd5e1;
+            border-radius: 50%;
+            margin: 0 auto 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #f8fafc;
+            font-size: 20px;
+        }
+
+        .dept-name {
+            font-size: 12px;
+            font-weight: 600;
+            color: #475569;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 2px;
+        }
+
+        .dept-sub {
+            font-size: 10px;
+            color: #64748b;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            margin-bottom: 8px;
+        }
+
+        .decorative-divider {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+
+        .divider-line {
+            width: 48px;
+            height: 1px;
+            background: #94a3b8;
+        }
+
+        .divider-diamond {
+            width: 6px;
+            height: 6px;
+            border: 1px solid #94a3b8;
+            transform: rotate(45deg);
+        }
+
+        .title {
+            font-size: 16px;
+            font-weight: bold;
+            letter-spacing: 1px;
+            margin-bottom: 4px;
+        }
+
+        .title-underline {
+            border-bottom: 2px solid #1e293b;
+            padding-bottom: 2px;
+        }
+
+        .subtitle {
+            font-size: 11px;
+            color: #64748b;
+            margin-bottom: 4px;
+        }
+
+        .undertaking-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #475569;
+        }
+
+        /* Address Section */
+        .to-address {
+            margin-bottom: 30px;
+        }
+
+        .to-address p {
+            margin: 0;
+            line-height: 1.6;
+        }
+
+        .to-label {
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+
+        .address-content {
+            padding-left: 24px;
+        }
+
+        /* Undertaking Title */
+        .section-title {
+            text-align: center;
+            margin-bottom: 24px;
+        }
+
+        .section-title h2 {
+            font-size: 18px;
+            font-weight: bold;
+            letter-spacing: 1px;
+            margin: 0;
+        }
+
+        .section-title h2 span {
+            border-bottom: 2px solid #1e293b;
+            padding-bottom: 4px;
+        }
+
+        /* Form Fields */
+        .deponent-box {
+            background: #f8fafc;
+            padding: 10px;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            margin-bottom: 12px;
+            line-height: 1.8;
+        }
+
+        .fill-blank {
+            border-bottom: 1px solid #94a3b8;
+            min-width: 140px;
+            display: inline-block;
+            margin: 0 4px;
+            background: white;
+            padding: 1px 4px;
+            text-align: center;
+        }
+
+        .fill-blank.short {
+            min-width: 40px;
+        }
+
+        .fill-blank.medium {
+            min-width: 100px;
+        }
+
+        .fill-blank.long {
+            min-width: 140px;
+        }
+
+        .fill-blank.xlarge {
+            min-width: 300px;
+        }
+
+
+        .relation-text {
+            font-weight: 600;
+            color: #475569;
+            margin: 0 4px;
+        }
+
+        /* Content */
+        .content {
+            text-align: justify;
+        }
+
+        .undertaking-text {
+            margin-bottom: 16px;
+        }
+
+        /* Signature Section */
+        .signature-section {
+            margin-top: 32px;
+            display: flex;
+            justify-content: flex-end;
+        }
+
+        .signature-box {
+            text-align: center;
+            width: 280px;
+        }
+
+        .signature-line {
+            border-bottom: 1px solid #1e293b;
+            height: 32px;
+            margin-bottom: 4px;
+        }
+
+        .signature-label {
+            font-weight: bold;
+            font-size: 10px;
+            line-height: 1.2;
+        }
+
+        /* Place Date Section */
+        .place-date {
+            margin-top: 24px;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 24px;
+        }
+
+        .place-date p {
+            margin: 0;
+        }
+
+        .place-date .label {
+            font-weight: 600;
+        }
+
+        /* Footer Notes */
+        .footer-note {
+            margin-top: 50px;
+            font-size: 12px;
+            color: #64748b;
+            border-top: 1px dashed #cbd5e1;
+            padding-top: 16px;
+        }
+
+        .footer-note strong {
+            display: block;
+            margin-bottom: 8px;
+        }
+
+        .footer-note ul {
+            margin: 0;
+            padding-left: 20px;
+        }
+
+        .footer-note li {
+            margin-bottom: 4px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="print-controls no-print">
+        <span class="preview-text">Preview - Print or Save as PDF for official use</span>
+        <button class="print-btn" onclick="window.print()">
+            🖨️ Print / Save PDF
+        </button>
+    </div>
+
+    <div class="page-wrapper">
+        <div class="outer-border">
+            <div class="inner-border">
+
+                <!-- Header -->
+                <div class="header">
+                    <div class="emblem-circle">🏛️</div>
+                    <p class="dept-name">Government of Himachal Pradesh</p>
+                    <p class="dept-sub">Department of Tourism & Civil Aviation</p>
+
+                    <div class="decorative-divider">
+                        <div class="divider-line"></div>
+                        <div class="divider-diamond"></div>
+                        <div class="divider-line"></div>
+                    </div>
+
+                    <h1 class="title">
+                        <span class="title-underline">FORM-C</span>
+                    </h1>
+                    <p class="subtitle">[See ANNEXURE-I (13) and ANNEXURE-II (4)]</p>
+                    <p class="undertaking-title">FORMAT FOR UNDERTAKING</p>
+                </div>
+
+                <!-- Content -->
+                <div class="content">
+
+                    <!-- To Address -->
+                    <div class="to-address">
+                        <p class="to-label">To,</p>
+                        <div class="address-content">
+                            <p>The Prescribed Authority,</p>
+                            <p>Office of the District Tourism Development Authority,</p>
+                            <p>District <span class="fill-blank medium"></span>, Himachal Pradesh.</p>
+                        </div>
+                    </div>
+
+                    <!-- Undertaking Title -->
+                    <div class="section-title">
+                        <h2><span>UNDERTAKING</span></h2>
+                    </div>
+
+                    <!-- Deponent Details -->
+                    <div class="deponent-box">
+                        <p>
+                            I, <span class="fill-blank long"></span>,
+                            <span class="relation-text">S/o / D/o / W/o</span>
+                            <span class="fill-blank long"></span>,
+                        </p>
+                        <p>
+                            Age <span class="fill-blank short"></span> years,
+                            R/o <span class="fill-blank xlarge"></span>.
+                        </p>
+                    </div>
+
+                    <!-- Undertaking Text -->
+                    <p class="undertaking-text">
+                        I have read and understood all the terms and conditions mentioned in the
+                        <strong>Himachal Pradesh Home Stay Rules, 2025</strong> with respect to the
+                        approval and registration of the Home Stay Unit/Establishment and hereby
+                        agree to abide by them.
+                    </p>
+
+                    <p class="undertaking-text">
+                        The information and documents provided are correct and authentic to the
+                        best of my knowledge.
+                    </p>
+
+                    <p class="undertaking-text">
+                        I further declare that if there is any false statement or suppression of
+                        any material fact with the intention to mislead the prescribed authority
+                        at my end, I shall be liable for penal action as warranted by the
+                        <strong>Himachal Pradesh Tourism Development and Registration Act, 2002</strong>
+                        and the rules made thereunder.
+                    </p>
+
+                    <!-- Signature -->
+                    <div class="signature-section">
+                        <div class="signature-box">
+                            <div class="signature-line"></div>
+                            <p class="signature-label">
+                                (Signature and Name of the Owner<br>in Block Letters)
+                            </p>
+                        </div>
+                    </div>
+
+                    <!-- Place and Date -->
+                    <div class="place-date">
+                        <p>
+                            <span class="label">Place:</span> <span class="fill-blank" style="min-width: 180px;"></span>
+                        </p>
+                        <p>
+                            <span class="label">Date:</span> <span class="fill-blank" style="min-width: 180px;"></span>
+                        </p>
+                    </div>
+
+                </div>
+
+                <!-- Footer Notes -->
+                <div class="footer-note">
+                    <strong>IMPORTANT NOTES:</strong>
+                    <ul>
+                        <li>This undertaking must be signed by the applicant/owner.</li>
+                        <li>Submit along with the Home Stay registration application (Form-A).</li>
+                        <li>Reference: HP Home Stay Rules, 2025 - ANNEXURE-I & ANNEXURE-II</li>
+                    </ul>
+                </div>
+
+            </div>
+        </div>
+    </div>
+</body>
+
+</html>

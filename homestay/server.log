@@ -1,0 +1,38 @@
+
+> hptourism-portal@0.8.2 start
+> NODE_ENV=production node dist/index.js
+
+[dotenv@17.2.3] injecting env (45) from .env -- tip: 🔐 encrypt with Dotenvx: https://dotenvx.com
+[2026-01-16 02:34:43.434 +0000] [32mINFO[39m (1364183): [36m[captcha] configuration[39m
+    [35mmodule[39m: "captcha-settings"
+[2026-01-16 02:34:43.446 +0000] [34mDEBUG[39m (1364183): [36m[logging] bootstrap configuration[39m
+    [35mpretty[39m: true
+    [35mfile[39m: {
+      "enabled": false,
+      "path": "/home/subhash.thakur.india/Projects/hptourism-rc7/logs/app.log",
+      "maxSizeMB": 10,
+      "maxFiles": 7,
+      "interval": "1d"
+    }
+[2026-01-16 02:34:43.510 +0000] [32mINFO[39m (1364183): [36m[himkosh] Payment gateway routes registered[39m
+    [35mmodule[39m: "routes"
+[2026-01-16 02:34:43.512 +0000] [32mINFO[39m (1364183): [36mFetching stats from https://eservices.himachaltourism.gov.in/[39m
+    [35mmodule[39m: "scraper"
+[2026-01-16 02:34:43.628 +0000] [32mINFO[39m (1364183): [36mScheduler started - will scrape every hour[39m
+    [35mmodule[39m: "scraper"
+[2026-01-16 02:34:43.628 +0000] [32mINFO[39m (1364183): [36m[scraper] Production stats scraper initialized[39m
+    [35mmodule[39m: "routes"
+[2026-01-16 02:34:43.634 +0000] [32mINFO[39m (1364183): [36mserver started[39m
+    [35mport[39m: 5057
+    [35mhost[39m: "0.0.0.0"
+[2026-01-16 02:34:43.716 +0000] [32mINFO[39m (1364183): [36mEnsured portal_base_url column exists on himkosh_transactions[39m
+    [35mmodule[39m: "himkosh"
+[2026-01-16 02:34:43.755 +0000] [32mINFO[39m (1364183): [36mBackup scheduler started[39m
+    [35mmodule[39m: "backup-scheduler"
+    [35mschedule[39m: "0 2 * * *"
+    [35mdescription[39m: "Daily at 2:00 AM"
+[2026-01-16 02:34:43.921 +0000] [32mINFO[39m (1364183): [36mParsed stats[39m
+    [35mmodule[39m: "scraper"
+[2026-01-16 02:34:43.924 +0000] [32mINFO[39m (1364183): [36mSuccessfully scraped and saved stats[39m
+    [35mmodule[39m: "scraper"
+Killed

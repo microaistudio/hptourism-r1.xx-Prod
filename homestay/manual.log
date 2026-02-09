@@ -1,0 +1,22 @@
+[dotenv@17.2.3] injecting env (50) from .env -- tip: ⚙️  specify custom .env file path with { path: '/custom/path/.env' }
+[Routes] Registering /api/test...
+[2026-02-01 06:28:49.679 +0000] [32mINFO[39m (1299336): [36m[captcha] configuration[39m
+    [35mmodule[39m: "captcha-settings"
+[2026-02-01 06:28:49.697 +0000] [34mDEBUG[39m (1299336): [36m[logging] bootstrap configuration[39m
+    [35mpretty[39m: true
+    [35mfile[39m: {
+      "enabled": false,
+      "path": "/home/subhash.thakur.india/Projects/hptourism/homestay/logs/app.log",
+      "maxSizeMB": 10,
+      "maxFiles": 7,
+      "interval": "1d"
+    }
+file:///home/subhash.thakur.india/Projects/hptourism/homestay/dist/index.js:20142
+  const adminRouter = createAdminRouter();
+                      ^
+
+ReferenceError: createAdminRouter is not defined
+    at registerRoutes (file:///home/subhash.thakur.india/Projects/hptourism/homestay/dist/index.js:20142:23)
+    at async file:///home/subhash.thakur.india/Projects/hptourism/homestay/dist/index.js:21620:18
+
+Node.js v20.19.6

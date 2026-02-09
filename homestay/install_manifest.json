@@ -1,0 +1,51 @@
+{
+  "version": "1.0.5",
+  "generatedAt": "2026-02-06T00:33:08.183Z",
+  "environment": {
+    "nodeEnv": "production",
+    "port": "5040",
+    "appUrl": "undefined",
+    "databaseConnected": true
+  },
+  "files": {
+    "critical": [
+      {
+        "name": "package.json",
+        "exists": true,
+        "size": 6117
+      },
+      {
+        "name": ".env",
+        "exists": true,
+        "size": 2680
+      },
+      {
+        "name": "dist/index.js",
+        "exists": true,
+        "size": 954730
+      },
+      {
+        "name": "dist/public/index.html",
+        "exists": true,
+        "size": 3083
+      },
+      {
+        "name": "ecosystem.config.cjs",
+        "exists": true,
+        "size": 1876
+      },
+      {
+        "name": "scripts/verify-env.ts",
+        "exists": true,
+        "size": 3746
+      }
+    ],
+    "serverDist": true,
+    "clientDist": true
+  },
+  "system": {
+    "nodeVersion": "v20.19.6",
+    "hostname": "hptourism-stg26",
+    "platform": "linux"
+  }
+}

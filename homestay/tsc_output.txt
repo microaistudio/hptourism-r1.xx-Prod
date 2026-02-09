@@ -1,0 +1,121 @@
+server/db-storage.ts(94,50): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(value: { mobile: string | SQL<unknown> | Placeholder<string, any>; fullName: string | SQL<unknown> | Placeholder<string, any>; id?: string | SQL<unknown> | Placeholder<...> | undefined; ... 19 more ...; updatedAt?: SQL<...> | ... 3 more ... | undefined; }): PgInsertBase<...>', gave the following error.
+    Argument of type '{ username: string | null; mobile: string; fullName: string; role: "property_owner" | "admin_rc" | "admin" | "super_admin" | "system_admin" | "dealing_assistant" | "district_tourism_officer" | "district_officer" | "state_officer"; ... 14 more ...; enabledServices?: { ...; } | ... 1 more ... | undefined; }' is not assignable to parameter of type '{ mobile: string | SQL<unknown> | Placeholder<string, any>; fullName: string | SQL<unknown> | Placeholder<string, any>; id?: string | SQL<unknown> | Placeholder<string, any> | undefined; ... 19 more ...; updatedAt?: SQL<...> | ... 3 more ... | undefined; }'.
+      Types of property 'enabledServices' are incompatible.
+        Type '{ [x: number]: string; length: number; toString: () => string; toLocaleString: { (): string; (locales: string | string[], options?: (NumberFormatOptions & DateTimeFormatOptions) | undefined): string; }; ... 37 more ...; readonly [Symbol.unscopables]: { ...; }; } | null | undefined' is not assignable to type 'string[] | SQL<unknown> | Placeholder<string, any> | null | undefined'.
+          Type '{ [x: number]: string; length: number; toString: () => string; toLocaleString: { (): string; (locales: string | string[], options?: (NumberFormatOptions & DateTimeFormatOptions) | undefined): string; }; ... 37 more ...; readonly [Symbol.unscopables]: { ...; }; }' is not assignable to type 'string[] | SQL<unknown> | Placeholder<string, any> | null | undefined'.
+            Type '{ [x: number]: string; length: number; toString: () => string; toLocaleString: { (): string; (locales: string | string[], options?: (NumberFormatOptions & DateTimeFormatOptions) | undefined): string; }; ... 37 more ...; readonly [Symbol.unscopables]: { ...; }; }' is not assignable to type 'string[]'.
+              The types returned by 'pop()' are incompatible between these types.
+                Type 'unknown' is not assignable to type 'string | undefined'.
+  Overload 2 of 2, '(values: { mobile: string | SQL<unknown> | Placeholder<string, any>; fullName: string | SQL<unknown> | Placeholder<string, any>; id?: string | SQL<unknown> | Placeholder<...> | undefined; ... 19 more ...; updatedAt?: SQL<...> | ... 3 more ... | undefined; }[]): PgInsertBase<...>', gave the following error.
+    Argument of type '{ username: string | null; mobile: string; fullName: string; role: "property_owner" | "admin_rc" | "admin" | "super_admin" | "system_admin" | "dealing_assistant" | "district_tourism_officer" | "district_officer" | "state_officer"; ... 14 more ...; enabledServices?: { ...; } | ... 1 more ... | undefined; }' is not assignable to parameter of type '{ mobile: string | SQL<unknown> | Placeholder<string, any>; fullName: string | SQL<unknown> | Placeholder<string, any>; id?: string | SQL<unknown> | Placeholder<string, any> | undefined; ... 19 more ...; updatedAt?: SQL<...> | ... 3 more ... | undefined; }[]'.
+      Type '{ username: string | null; mobile: string; fullName: string; role: "property_owner" | "admin_rc" | "admin" | "super_admin" | "system_admin" | "dealing_assistant" | "district_tourism_officer" | "district_officer" | "state_officer"; ... 14 more ...; enabledServices?: { ...; } | ... 1 more ... | undefined; }' is missing the following properties from type '{ mobile: string | SQL<unknown> | Placeholder<string, any>; fullName: string | SQL<unknown> | Placeholder<string, any>; id?: string | SQL<unknown> | Placeholder<string, any> | undefined; ... 19 more ...; updatedAt?: SQL<...> | ... 3 more ... | undefined; }[]': length, pop, push, concat, and 35 more.
+server/db-storage.ts(499,54): error TS2345: Argument of type '{}' is not assignable to parameter of type 'string'.
+server/himkosh/routes.ts(446,7): error TS2322: Type 'number | undefined' is not assignable to type 'number'.
+  Type 'undefined' is not assignable to type 'number'.
+server/routes.ts(5,8): error TS2300: Duplicate identifier 'bcrypt'.
+server/routes.ts(6,10): error TS2300: Duplicate identifier 'eq'.
+server/routes.ts(85,8): error TS2300: Duplicate identifier 'bcrypt'.
+server/routes.ts(86,10): error TS2300: Duplicate identifier 'eq'.
+server/routes.ts(89,10): error TS2300: Duplicate identifier 'createAdminStatsRouter'.
+server/routes.ts(89,40): error TS2307: Cannot find module './routes/admin-stats' or its corresponding type declarations.
+server/routes.ts(118,10): error TS2300: Duplicate identifier 'createAdminStatsRouter'.
+server/routes.ts(463,31): error TS2339: Property 'users' does not exist on type '{}'.
+server/routes.ts(469,31): error TS2339: Property 'users' does not exist on type '{}'.
+server/routes.ts(1076,43): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(value: { applicationId: string | SQL<unknown> | Placeholder<string, any>; officerId: string | SQL<unknown> | Placeholder<string, any>; action: string | SQL<...> | Placeholder<...>; ... 5 more ...; issuesFound?: string[] | ... 3 more ... | undefined; }): PgInsertBase<...>', gave the following error.
+    Object literal may only specify known properties, and 'userId' does not exist in type '{ applicationId: string | SQL<unknown> | Placeholder<string, any>; officerId: string | SQL<unknown> | Placeholder<string, any>; action: string | SQL<unknown> | Placeholder<...>; ... 5 more ...; issuesFound?: string[] | ... 3 more ... | undefined; }'.
+  Overload 2 of 2, '(values: { applicationId: string | SQL<unknown> | Placeholder<string, any>; officerId: string | SQL<unknown> | Placeholder<string, any>; action: string | SQL<...> | Placeholder<...>; ... 5 more ...; issuesFound?: string[] | ... 3 more ... | undefined; }[]): PgInsertBase<...>', gave the following error.
+    Object literal may only specify known properties, and 'id' does not exist in type '{ applicationId: string | SQL<unknown> | Placeholder<string, any>; officerId: string | SQL<unknown> | Placeholder<string, any>; action: string | SQL<unknown> | Placeholder<...>; ... 5 more ...; issuesFound?: string[] | ... 3 more ... | undefined; }[]'.
+server/routes/admin/reports.ts(387,23): error TS7034: Variable 'conditions' implicitly has type 'any[]' in some locations where its type cannot be determined.
+server/routes/admin/reports.ts(390,45): error TS7005: Variable 'conditions' implicitly has an 'any[]' type.
+server/routes/adventure-sports.ts(119,69): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(value: { category: string | SQL<unknown> | Placeholder<string, any>; district: string | SQL<unknown> | Placeholder<string, any>; userId: string | SQL<unknown> | Placeholder<...>; ... 140 more ...; formCompletionTimeSeconds?: number | ... 3 more ... | undefined; }): PgInsertBase<...>', gave the following error.
+    Type 'number' is not assignable to type 'string | SQL<unknown> | Placeholder<string, any>'.
+  Overload 2 of 2, '(values: { category: string | SQL<unknown> | Placeholder<string, any>; district: string | SQL<unknown> | Placeholder<string, any>; userId: string | SQL<unknown> | Placeholder<...>; ... 140 more ...; formCompletionTimeSeconds?: number | ... 3 more ... | undefined; }[]): PgInsertBase<...>', gave the following error.
+    Object literal may only specify known properties, and 'userId' does not exist in type '{ category: string | SQL<unknown> | Placeholder<string, any>; district: string | SQL<unknown> | Placeholder<string, any>; userId: string | SQL<unknown> | Placeholder<...>; ... 140 more ...; formCompletionTimeSeconds?: number | ... 3 more ... | undefined; }[]'.
+server/routes/adventure-sports.ts(298,17): error TS2353: Object literal may only specify known properties, and 'submissionDate' does not exist in type '{ category?: string | SQL<unknown> | PgColumn<ColumnBaseConfig<ColumnDataType, string>, {}, {}> | undefined; district?: string | SQL<...> | PgColumn<...> | undefined; ... 141 more ...; formCompletionTimeSeconds?: number | ... 3 more ... | undefined; }'.
+server/routes/applications/existing-owners.ts(248,41): error TS2339: Property 'systemSettings' does not exist on type '{}'.
+server/routes/applications/existing-owners.ts(411,41): error TS2339: Property 'systemSettings' does not exist on type '{}'.
+server/routes/applications/owner.ts(739,11): error TS2322: Type 'string' is not assignable to type '"male" | "female" | "other" | undefined'.
+server/routes/applications/owner.ts(903,66): error TS18046: 'error' is of type 'unknown'.
+server/routes/auth/hpsso.ts(252,25): error TS2339: Property 'role' does not exist on type 'Session & Partial<SessionData>'.
+server/routes/auth/hpsso.ts(568,21): error TS2339: Property 'role' does not exist on type 'Session & Partial<SessionData>'.
+server/routes/da.ts(517,34): error TS2304: Cannot find name 'sql'.
+server/routes/da.ts(521,47): error TS2339: Property 'actorId' does not exist on type 'PgTableWithColumns<{ name: "application_actions"; schema: undefined; columns: { id: PgColumn<{ name: "id"; tableName: "application_actions"; dataType: "string"; columnType: "PgVarchar"; data: string; driverParam: string; ... 8 more ...; generated: undefined; }, {}, { ...; }>; ... 7 more ...; createdAt: PgColumn<...>...'.
+server/routes/da.ts(522,25): error TS2304: Cannot find name 'gte'.
+server/routes/dev-tools.ts(37,28): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(value: { mobile: string | SQL<unknown> | Placeholder<string, any>; fullName: string | SQL<unknown> | Placeholder<string, any>; id?: string | SQL<unknown> | Placeholder<...> | undefined; ... 19 more ...; updatedAt?: SQL<...> | ... 3 more ... | undefined; }): PgInsertBase<...>', gave the following error.
+    Object literal may only specify known properties, and 'isEmailVerified' does not exist in type '{ mobile: string | SQL<unknown> | Placeholder<string, any>; fullName: string | SQL<unknown> | Placeholder<string, any>; id?: string | SQL<unknown> | Placeholder<string, any> | undefined; ... 19 more ...; updatedAt?: SQL<...> | ... 3 more ... | undefined; }'.
+  Overload 2 of 2, '(values: { mobile: string | SQL<unknown> | Placeholder<string, any>; fullName: string | SQL<unknown> | Placeholder<string, any>; id?: string | SQL<unknown> | Placeholder<...> | undefined; ... 19 more ...; updatedAt?: SQL<...> | ... 3 more ... | undefined; }[]): PgInsertBase<...>', gave the following error.
+    Object literal may only specify known properties, and 'id' does not exist in type '{ mobile: string | SQL<unknown> | Placeholder<string, any>; fullName: string | SQL<unknown> | Placeholder<string, any>; id?: string | SQL<unknown> | Placeholder<string, any> | undefined; ... 19 more ...; updatedAt?: SQL<...> | ... 3 more ... | undefined; }[]'.
+server/routes/dev-tools.ts(384,69): error TS18046: 'error' is of type 'unknown'.
+server/routes/dtdo.ts(173,60): error TS18048: 'user' is possibly 'undefined'.
+server/routes/dtdo.ts(348,21): error TS2353: Object literal may only specify known properties, and 'inspectionDate' does not exist in type 'Partial<{ id: string; category: string; district: string; createdAt: Date | null; updatedAt: Date | null; userId: string; status: string | null; applicationNumber: string; applicationKind: "new_registration" | ... 5 more ... | "change_ownership"; ... 134 more ...; formCompletionTimeSeconds: number | null; }>'.
+server/routes/dtdo.ts(380,21): error TS2353: Object literal may only specify known properties, and 'inspectionDate' does not exist in type 'NotificationTriggerOptions'.
+server/routes/dtdo.ts(384,35): error TS2345: Argument of type '"inspection_assigned"' is not assignable to parameter of type 'NotificationEventId'.
+server/routes/dtdo.ts(496,30): error TS2304: Cannot find name 'HomestayApplication'.
+server/routes/dtdo.ts(509,76): error TS2304: Cannot find name 'HomestayApplication'.
+server/routes/dtdo.ts(779,17): error TS2353: Object literal may only specify known properties, and 'entityId' does not exist in type '{ userId: string; applicationId?: string | null | undefined; type: string; title: string; message: string; }'.
+server/routes/dtdo.ts(812,60): error TS18048: 'user' is possibly 'undefined'.
+server/routes/dtdo.ts(894,75): error TS2367: This comparison appears to be unintentional because the types '"pending" | "refunded" | null' and '"completed"' have no overlap.
+server/routes/dtdo.ts(1195,85): error TS2304: Cannot find name 'HomestayApplication'.
+server/routes/grievances.ts(93,42): error TS2339: Property 'grievances' does not exist on type '{}'.
+server/routes/grievances.ts(134,37): error TS2339: Property 'grievanceAuditLog' does not exist on type '{}'.
+server/routes/grievances.ts(164,50): error TS2339: Property 'grievances' does not exist on type '{}'.
+server/routes/grievances.ts(171,51): error TS2339: Property 'grievances' does not exist on type '{}'.
+server/routes/grievances.ts(194,42): error TS2339: Property 'grievances' does not exist on type '{}'.
+server/routes/grievances.ts(205,41): error TS2339: Property 'grievanceComments' does not exist on type '{}'.
+server/routes/grievances.ts(274,17): error TS2322: Type 'string | null' is not assignable to type 'string | undefined'.
+  Type 'null' is not assignable to type 'string | undefined'.
+server/routes/grievances.ts(300,42): error TS2339: Property 'grievances' does not exist on type '{}'.
+server/routes/grievances.ts(349,21): error TS2322: Type 'string | null' is not assignable to type 'string | undefined'.
+  Type 'null' is not assignable to type 'string | undefined'.
+server/routes/grievances.ts(376,42): error TS2339: Property 'grievances' does not exist on type '{}'.
+server/routes/grievances.ts(418,21): error TS2322: Type 'string | null' is not assignable to type 'string | undefined'.
+  Type 'null' is not assignable to type 'string | undefined'.
+server/routes/helpers/legacy.ts(37,52): error TS2345: Argument of type '{}' is not assignable to parameter of type 'string'.
+server/routes/settings.ts(25,44): error TS2339: Property 'systemSettings' does not exist on type '{}'.
+server/routes/settings.ts(51,32): error TS2339: Property 'user' does not exist on type 'Request<ParamsDictionary, any, any, ParsedQs, Record<string, any>>'.
+server/routes/settings.ts(56,36): error TS2339: Property 'user' does not exist on type 'Request<ParamsDictionary, any, any, ParsedQs, Record<string, any>>'.
+server/routes/settings.ts(73,44): error TS2339: Property 'systemSettings' does not exist on type '{}'.
+server/routes/settings.ts(95,32): error TS2339: Property 'user' does not exist on type 'Request<ParamsDictionary, any, any, ParsedQs, Record<string, any>>'.
+server/routes/settings.ts(100,36): error TS2339: Property 'user' does not exist on type 'Request<ParamsDictionary, any, any, ParsedQs, Record<string, any>>'.
+server/routes/settings.ts(115,44): error TS2339: Property 'systemSettings' does not exist on type '{}'.
+server/routes/settings.ts(137,32): error TS2339: Property 'user' does not exist on type 'Request<ParamsDictionary, any, any, ParsedQs, Record<string, any>>'.
+server/routes/settings.ts(142,36): error TS2339: Property 'user' does not exist on type 'Request<ParamsDictionary, any, any, ParsedQs, Record<string, any>>'.
+server/routes/settings.ts(157,44): error TS2339: Property 'systemSettings' does not exist on type '{}'.
+server/routes/settings.ts(179,32): error TS2339: Property 'user' does not exist on type 'Request<ParamsDictionary, any, any, ParsedQs, Record<string, any>>'.
+server/routes/settings.ts(184,36): error TS2339: Property 'user' does not exist on type 'Request<ParamsDictionary, any, any, ParsedQs, Record<string, any>>'.
+server/routes/settings.ts(199,44): error TS2339: Property 'systemSettings' does not exist on type '{}'.
+server/routes/settings.ts(215,32): error TS2339: Property 'user' does not exist on type 'Request<ParamsDictionary, any, any, ParsedQs, Record<string, any>>'.
+server/routes/test-runner.ts(112,36): error TS2339: Property 'users' does not exist on type '{}'.
+server/routes/test-runner.ts(121,46): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(value: { mobile: string | SQL<unknown> | Placeholder<string, any>; fullName: string | SQL<unknown> | Placeholder<string, any>; id?: string | SQL<unknown> | Placeholder<...> | undefined; ... 19 more ...; updatedAt?: SQL<...> | ... 3 more ... | undefined; }): PgInsertBase<...>', gave the following error.
+    Object literal may only specify known properties, and 'isVerified' does not exist in type '{ mobile: string | SQL<unknown> | Placeholder<string, any>; fullName: string | SQL<unknown> | Placeholder<string, any>; id?: string | SQL<unknown> | Placeholder<string, any> | undefined; ... 19 more ...; updatedAt?: SQL<...> | ... 3 more ... | undefined; }'.
+  Overload 2 of 2, '(values: { mobile: string | SQL<unknown> | Placeholder<string, any>; fullName: string | SQL<unknown> | Placeholder<string, any>; id?: string | SQL<unknown> | Placeholder<...> | undefined; ... 19 more ...; updatedAt?: SQL<...> | ... 3 more ... | undefined; }[]): PgInsertBase<...>', gave the following error.
+    Object literal may only specify known properties, and 'id' does not exist in type '{ mobile: string | SQL<unknown> | Placeholder<string, any>; fullName: string | SQL<unknown> | Placeholder<string, any>; id?: string | SQL<unknown> | Placeholder<string, any> | undefined; ... 19 more ...; updatedAt?: SQL<...> | ... 3 more ... | undefined; }[]'.
+server/routes/test-runner.ts(142,17): error TS2322: Type '"submitted"' is not assignable to type '"draft"'.
+server/routes/test-runner.ts(143,27): error TS2339: Property 'submittedAt' does not exist on type '{ userId: string; applicationNumber: string; applicationKind: ApplicationKind; propertyName: string; category: "gold"; locationType: "gm"; totalRooms: number; district: string; tehsil: string; ... 13 more ...; attachedWashrooms: number; }'.
+server/routes/test-runner.ts(147,31): error TS2339: Property 'paymentStatus' does not exist on type '{ userId: string; applicationNumber: string; applicationKind: ApplicationKind; propertyName: string; category: "gold"; locationType: "gm"; totalRooms: number; district: string; tehsil: string; ... 13 more ...; attachedWashrooms: number; }'.
+server/routes/test-runner.ts(148,31): error TS2339: Property 'paymentAmount' does not exist on type '{ userId: string; applicationNumber: string; applicationKind: ApplicationKind; propertyName: string; category: "gold"; locationType: "gm"; totalRooms: number; district: string; tehsil: string; ... 13 more ...; attachedWashrooms: number; }'.
+server/routes/test-runner.ts(149,31): error TS2339: Property 'paymentDate' does not exist on type '{ userId: string; applicationNumber: string; applicationKind: ApplicationKind; propertyName: string; category: "gold"; locationType: "gm"; totalRooms: number; district: string; tehsil: string; ... 13 more ...; attachedWashrooms: number; }'.
+server/routes/test-runner.ts(150,31): error TS2339: Property 'paymentId' does not exist on type '{ userId: string; applicationNumber: string; applicationKind: ApplicationKind; propertyName: string; category: "gold"; locationType: "gm"; totalRooms: number; district: string; tehsil: string; ... 13 more ...; attachedWashrooms: number; }'.
+server/routes/test-runner.ts(264,36): error TS2339: Property 'users' does not exist on type '{}'.
+server/routes/test-runner.ts(272,46): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(value: { mobile: string | SQL<unknown> | Placeholder<string, any>; fullName: string | SQL<unknown> | Placeholder<string, any>; id?: string | SQL<unknown> | Placeholder<...> | undefined; ... 19 more ...; updatedAt?: SQL<...> | ... 3 more ... | undefined; }): PgInsertBase<...>', gave the following error.
+    Object literal may only specify known properties, and 'isVerified' does not exist in type '{ mobile: string | SQL<unknown> | Placeholder<string, any>; fullName: string | SQL<unknown> | Placeholder<string, any>; id?: string | SQL<unknown> | Placeholder<string, any> | undefined; ... 19 more ...; updatedAt?: SQL<...> | ... 3 more ... | undefined; }'.
+  Overload 2 of 2, '(values: { mobile: string | SQL<unknown> | Placeholder<string, any>; fullName: string | SQL<unknown> | Placeholder<string, any>; id?: string | SQL<unknown> | Placeholder<...> | undefined; ... 19 more ...; updatedAt?: SQL<...> | ... 3 more ... | undefined; }[]): PgInsertBase<...>', gave the following error.
+    Object literal may only specify known properties, and 'id' does not exist in type '{ mobile: string | SQL<unknown> | Placeholder<string, any>; fullName: string | SQL<unknown> | Placeholder<string, any>; id?: string | SQL<unknown> | Placeholder<string, any> | undefined; ... 19 more ...; updatedAt?: SQL<...> | ... 3 more ... | undefined; }[]'.
+server/services/backup-scheduler.ts(18,20): error TS2503: Cannot find namespace 'cron'.
+server/services/backup-scheduler.ts(102,9): error TS2353: Object literal may only specify known properties, and 'scheduled' does not exist in type 'TaskOptions'.
+server/services/backup-service.ts(37,5): error TS2300: Duplicate identifier 'lastBackupStatus'.
+server/services/backup-service.ts(38,5): error TS2300: Duplicate identifier 'lastBackupStatus'.
+server/services/migration/schema-registry.ts(74,25): error TS2345: Argument of type '{}' is not assignable to parameter of type 'string'.
+server/services/migration/schema-registry.ts(119,5): error TS2322: Type '{} | null' is not assignable to type 'string | null'.
+  Type '{}' is not assignable to type 'string'.
+server/storage.ts(134,11): error TS2322: Type '{ id: `${string}-${string}-${string}-${string}-${string}`; fullName: string; firstName: string | null; lastName: string | null; username: string | null; email: string | null; alternatePhone: string | null; ... 15 more ...; enabledServices?: { ...; } | ... 1 more ... | undefined; }' is not assignable to type '{ id: string; mobile: string; fullName: string; firstName: string | null; lastName: string | null; username: string | null; email: string | null; alternatePhone: string | null; designation: string | null; ... 13 more ...; updatedAt: Date | null; }'.
+  Types of property 'ssoId' are incompatible.
+    Type 'string | null | undefined' is not assignable to type 'string | null'.
+      Type 'undefined' is not assignable to type 'string | null'.
+shared/schema.ts(1592,21): error TS2322: Type 'boolean' is not assignable to type 'never'.

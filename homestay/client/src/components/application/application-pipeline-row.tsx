@@ -1,0 +1,183 @@
+import { useMemo, type KeyboardEvent } from "react";
+import { format, formatDistanceToNow } from "date-fns";
+import type { ApplicationKind, HomestayApplication } from "@shared/schema";
+import { ApplicationKindBadge, getApplicationKindLabel, isServiceApplication } from "@/components/application/application-kind-badge";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { ArrowRight, Home, Phone, MapPin, Calendar, User } from "lucide-react";
+import { useLocation } from "wouter";
+import { isCorrectionRequiredStatus } from "@/constants/workflow";
+import { cn } from "@/lib/utils";
+
+const CATEGORY_VARIANTS: Record<string, { color: string; bg: string }> = {
+  diamond: { color: "text-blue-600 dark:text-blue-400", bg: "bg-blue-50 dark:bg-blue-950/20" },
+  gold: { color: "text-yellow-600 dark:text-yellow-400", bg: "bg-yellow-50 dark:bg-yellow-950/20" },
+  silver: { color: "text-gray-600 dark:text-gray-400", bg: "bg-gray-50 dark:bg-gray-950/20" },
+};
+
+const STATUS_VARIANTS: Record<string, { label: string; bg: string }> = {
+  submitted: { label: "Submitted", bg: "bg-blue-50 dark:bg-blue-950/20" },
+  under_scrutiny: { label: "Under Scrutiny", bg: "bg-orange-50 dark:bg-orange-950/20" },
+  forwarded_to_dtdo: { label: "Forwarded to DTDO", bg: "bg-green-50 dark:bg-green-950/20" },
+  reverted_to_applicant: { label: "Sent Back", bg: "bg-red-50 dark:bg-red-950/20" },
+  reverted_by_dtdo: { label: "DTDO Reverted", bg: "bg-rose-50 dark:bg-rose-950/20" },
+  objection_raised: { label: "DTDO Objection", bg: "bg-rose-50 dark:bg-rose-950/20" },
+  dtdo_review: { label: "DTDO Review", bg: "bg-purple-50 dark:bg-purple-950/20" },
+  inspection_scheduled: { label: "Inspection Scheduled", bg: "bg-indigo-50 dark:bg-indigo-950/20" },
+  inspection_under_review: { label: "Inspection Review", bg: "bg-yellow-50 dark:bg-yellow-950/20" },
+  approved: { label: "Approved", bg: "bg-emerald-50 dark:bg-emerald-950/20" },
+  rejected: { label: "Rejected", bg: "bg-rose-50 dark:bg-rose-950/20" },
+  draft: { label: "Draft", bg: "bg-slate-50 dark:bg-slate-900/40" },
+};
+
+const renderCategoryBadge = (category?: string | null) => {
+  const key = (category || "silver").toLowerCase();
+  const variant = CATEGORY_VARIANTS[key] || CATEGORY_VARIANTS.silver;
+  return (
+    <Badge variant="outline" className={`${variant.bg} capitalize`}>
+      {category || "silver"}
+    </Badge>
+  );
+};
+
+const renderStatusBadge = (status?: string | null) => {
+  if (!status) {
+    return <Badge variant="outline">Pending</Badge>;
+  }
+  const config = STATUS_VARIANTS[status] || {
+    label: status.replace(/_/g, " "),
+    bg: "bg-muted/40",
+  };
+  return (
+    <Badge variant="outline" className={config.bg}>
+      {config.label}
+    </Badge>
+  );
+};
+
+const getCorrectionStateMeta = (application: PipelineApplication) => {
+  if (!isCorrectionRequiredStatus(application.status)) {
+    return null;
+  }
+  const resubmitted = Boolean(application.latestCorrection?.createdAt);
+  const relative =
+    resubmitted && application.latestCorrection?.createdAt
+      ? formatDistanceToNow(new Date(application.latestCorrection.createdAt), { addSuffix: true })
+      : null;
+  return {
+    label: resubmitted ? "Owner resubmitted" : "Waiting on owner",
+    className: resubmitted
+      ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30"
+      : "bg-amber-50 text-amber-700 dark:bg-amber-950/30",
+    relative,
+  };
+};
+
+export type PipelineApplication = HomestayApplication & {
+  ownerName: string;
+  ownerMobile: string;
+  latestCorrection?: {
+    createdAt: string;
+    feedback?: string | null;
+  } | null;
+};
+
+interface ApplicationPipelineRowProps {
+  application: PipelineApplication;
+  actionLabel: string;
+  applicationIds: string[];
+  hideAction?: boolean;
+  baseUrl?: string;
+}
+
+export function ApplicationPipelineRow({ application, actionLabel, applicationIds, hideAction, baseUrl = "/da/applications" }: ApplicationPipelineRowProps) {
+  const applicationKind = application.applicationKind as ApplicationKind | undefined;
+  const legacyOnboarding = Boolean((application as any)?.serviceContext?.legacyOnboarding);
+  const isService = legacyOnboarding || isServiceApplication(applicationKind);
+  const serviceLabel = legacyOnboarding ? "RC Registration" : getApplicationKindLabel(applicationKind);
+  const [, navigate] = useLocation();
+  const queueParam = useMemo(() => encodeURIComponent(applicationIds.join(",")), [applicationIds]);
+  const targetUrl = `${baseUrl}/${application.id}?queue=${queueParam}`;
+  const correctionState = getCorrectionStateMeta(application);
+
+  const handleNavigate = () => {
+    navigate(targetUrl);
+  };
+
+  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      handleNavigate();
+    }
+  };
+
+  return (
+    <div
+      className="px-4 py-3 border-b border-border hover:bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-inset cursor-pointer transition-colors"
+      tabIndex={0}
+      role="button"
+      onClick={handleNavigate}
+      onKeyDown={handleKeyDown}
+    >
+      <div className="flex items-center justify-between gap-4">
+        {/* Left side: Icon + Property info */}
+        <div className="flex items-center gap-3 min-w-0 flex-1">
+          {/* Home icon */}
+          <div className="flex-shrink-0 w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center">
+            <Home className="w-5 h-5 text-amber-600" />
+          </div>
+
+          <div className="min-w-0 flex-1">
+            {/* Line 1: Property name + badges */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="font-semibold">{application.propertyName || "Untitled Homestay"}</span>
+              {renderCategoryBadge(application.category)}
+              {renderStatusBadge(application.status)}
+              {correctionState && (
+                <Badge className={`${correctionState.className} border text-[10px] px-1.5 py-0`}>
+                  {correctionState.label}
+                </Badge>
+              )}
+            </div>
+
+            {/* Line 2: Owner, mobile, location, date */}
+            <div className="flex items-center gap-4 text-xs text-muted-foreground mt-1">
+              <span className="flex items-center gap-1">
+                <User className="w-3 h-3" />
+                {application.ownerName}
+              </span>
+              <span className="hidden sm:flex items-center gap-1">
+                <Phone className="w-3 h-3" />
+                {application.ownerMobile}
+              </span>
+              <span className="hidden md:flex items-center gap-1">
+                <MapPin className="w-3 h-3" />
+                {application.district}
+              </span>
+              <span className="hidden lg:flex items-center gap-1">
+                <Calendar className="w-3 h-3" />
+                {application.submittedAt ? format(new Date(application.submittedAt), "MMM dd, yyyy") : "—"}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Right side: Action button */}
+        {!hideAction && (
+          <Button
+            size="sm"
+            data-testid={`button-review-${application.id}`}
+            className="flex-shrink-0"
+            onClick={(event) => {
+              event.stopPropagation();
+              handleNavigate();
+            }}
+          >
+            {actionLabel || "Start scrutiny"}
+            <ArrowRight className="w-4 h-4 ml-1" />
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+}

@@ -1,0 +1,70 @@
+HP Tourism Homestay Portal - Release Notes
+==========================================
+
+Version: v1.0.6
+Date: 2026-02-06
+
+Summary
+-------
+This patch fixes the Payment Reports district filter for District Officers.
+
+Bug Fixes
+---------
+1. DTDO District Filter
+   - District Tourism Officers (DTDOs) now see only their assigned district.
+   - District dropdown is locked to their jurisdiction.
+   - "All Districts" option hidden for DTDOs.
+   - Clear Filters preserves district for DTDOs.
+   - Admins/Super Admins can still select any district.
+
+Technical Updates
+-----------------
+- Bumped package version to 1.0.6.
+- Added user role-based district filtering in Payment Reports.
+
+Instructions for Upgrade
+------------------------
+1. Deploy code (v1.0.6).
+2. Restart PM2: `pm2 restart hptourism-prod`
+3. Verify DTDO can only see their district in Payment Reports.
+
+
+---
+Previously:
+
+Version: v1.0.5
+Date: 2026-02-06
+
+Summary
+-------
+This update focuses on operational stability, enhancing the Maintenance Mode functionality, improving Payment Pause messaging, and adding production-readiness verification tools.
+
+New Features
+------------
+1. Enhanced Maintenance Mode
+   - Replaced hardcoded redirect with a dedicated, branded Maintenance Page.
+   - Added "Bypass Key" functionality for administrators to access the site during maintenance/lockdown.
+   - Configurable messages (Presets or Custom) via System Controls.
+
+2. Payment Pause Messaging
+   - Payment-related errors (e.g., when pipeline is paused) now display as a prominent Red Alert directly above the Payment button.
+   - Removed generic "Toast" notifications in favor of persistent, inline warnings.
+   - Fixed raw error code display ("code spilling") to show only clean, human-readable messages.
+
+3. Production Verification Script
+   - Added `scripts/verify-env.ts` utility.
+   - Allows administrators to audit the Production server environment (DB connection, Payment Mode, System Status) before going live.
+
+4. System Controls
+   - Updated Admin UI to support new Maintenance Message configuration.
+
+Technical Updates
+-----------------
+- Bumped package version to 1.0.5.
+- Added type-safe environment checks.
+
+Instructions for Upgrade
+------------------------
+1. Deploy code (v1.0.5).
+2. Run `npx tsx scripts/verify-env.ts` to ensure environment safety.
+3. Configure Maintenance/Payment messages in System Controls.

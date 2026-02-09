@@ -1,0 +1,10 @@
+{
+  "id": "backup_20260106_203000",
+  "createdAt": "2026-01-06T20:30:00.037Z",
+  "type": "hybrid",
+  "status": "success",
+  "databaseFile": "/home/subhash.thakur.india/Projects/hptourism-rc6/backups/db/backup_20260106_203000_database.sql.gz",
+  "envBackedUp": true,
+  "filesSynced": true,
+  "duration": 458
+}

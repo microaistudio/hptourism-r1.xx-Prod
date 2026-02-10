@@ -99,6 +99,15 @@ type SummaryStats = {
     district: string | null;
 };
 
+type DistrictPerformanceRow = {
+    district: string;
+    totalApplications: number;
+    avgTimeSeconds: number | null;
+    approved: number;
+    rejected: number;
+    pending: number;
+};
+
 type OperationsData = {
     processingTime: {
         totalApproved: number;
@@ -119,6 +128,7 @@ type OperationsData = {
         avgReversions: string;
         maxReversions: number;
         rejectionRate: string;
+        totalRejected: number;
     };
     categoryBreakdown: Array<{ category: string | null; count: number; avgProcessingDays: string }>;
     statusBreakdown: Array<{ status: string | null; count: number }>;
@@ -278,6 +288,19 @@ export default function PaymentReportsPage() {
             const res = await apiRequest("GET", `/api/admin/reports/operations?${params.toString()}`);
             return res.json();
         },
+    });
+
+    // District Performance Report (New)
+    const {
+        data: districtPerformance,
+        isLoading: performanceLoading,
+    } = useQuery<DistrictPerformanceRow[]>({
+        queryKey: ["reports-district-performance"],
+        queryFn: async () => {
+            const res = await apiRequest("GET", `/api/admin/reports/district-performance`);
+            return res.json();
+        },
+        enabled: activeTab === "performance",
     });
 
     // Helper to format seconds to human readable
@@ -582,11 +605,12 @@ export default function PaymentReportsPage() {
 
             {/* Report Tabs */}
             <Tabs value={activeTab} onValueChange={setActiveTab}>
-                <TabsList className="grid w-full grid-cols-4">
+                <TabsList className="grid w-full grid-cols-5">
                     <TabsTrigger value="operations">Operations</TabsTrigger>
                     <TabsTrigger value="collections">Collection by DDO</TabsTrigger>
                     <TabsTrigger value="payments">Approved Payments</TabsTrigger>
                     <TabsTrigger value="refundable">Refundable</TabsTrigger>
+                    {!isDTDO && <TabsTrigger value="performance">District Performance</TabsTrigger>}
                 </TabsList>
 
                 {/* Operations Tab */}
@@ -607,22 +631,32 @@ export default function PaymentReportsPage() {
                                         <CardHeader className="pb-2">
                                             <CardTitle className="text-sm font-medium flex items-center gap-2">
                                                 <BarChart3 className="h-4 w-4 text-purple-500" />
-                                                Total Applications
+                                                Application Pipeline
                                             </CardTitle>
-                                            <CardDescription>For selected period</CardDescription>
+                                            <CardDescription>Status breakdown</CardDescription>
                                         </CardHeader>
                                         <CardContent>
                                             <div className="text-3xl font-bold text-purple-600">
                                                 {operationsData.corrections.totalApplications}
                                             </div>
-                                            <div className="text-sm text-muted-foreground mt-2 space-y-1">
-                                                <div className="flex justify-between">
-                                                    <span>Approved:</span>
-                                                    <span className="text-green-600 font-medium">{operationsData.processingTime.totalApproved}</span>
+                                            <p className="text-xs text-muted-foreground mb-3">Total Submitted</p>
+
+                                            <div className="space-y-2 text-sm">
+                                                <div className="flex justify-between items-center bg-green-50 p-1.5 rounded text-green-700">
+                                                    <span>Approved</span>
+                                                    <span className="font-bold">{operationsData.processingTime.totalApproved}</span>
                                                 </div>
-                                                <div className="flex justify-between">
-                                                    <span>Rejected:</span>
-                                                    <span className="text-red-600">{operationsData.corrections.rejectionRate}%</span>
+                                                <div className="flex justify-between items-center bg-red-50 p-1.5 rounded text-red-700">
+                                                    <span>Rejected</span>
+                                                    <div className="text-right">
+                                                        <span className="font-bold block">{operationsData.corrections.totalRejected}</span>
+                                                    </div>
+                                                </div>
+                                                <div className="flex justify-between items-center bg-orange-50 p-1.5 rounded text-orange-700">
+                                                    <span>Pending</span>
+                                                    <span className="font-bold">
+                                                        {Math.max(0, operationsData.corrections.totalApplications - operationsData.processingTime.totalApproved - operationsData.corrections.totalRejected)}
+                                                    </span>
                                                 </div>
                                             </div>
                                         </CardContent>
@@ -663,9 +697,9 @@ export default function PaymentReportsPage() {
                                         <CardHeader className="pb-2">
                                             <CardTitle className="text-sm font-medium flex items-center gap-2">
                                                 <Timer className="h-4 w-4 text-emerald-500" />
-                                                Form Fill Time
+                                                Avg Form Fill Time
                                             </CardTitle>
-                                            <CardDescription>Time spent by user on form</CardDescription>
+                                            <CardDescription>User time on application form</CardDescription>
                                         </CardHeader>
                                         <CardContent>
                                             <div className="text-3xl font-bold text-emerald-600">
@@ -693,31 +727,29 @@ export default function PaymentReportsPage() {
                                         <CardHeader className="pb-2">
                                             <CardTitle className="text-sm font-medium flex items-center gap-2">
                                                 <RefreshCcw className="h-4 w-4 text-orange-500" />
-                                                Corrections & Reversions
+                                                Quality & Corrections
                                             </CardTitle>
-                                            <CardDescription>Send-back and correction rates</CardDescription>
+                                            <CardDescription>Sent back for rework</CardDescription>
                                         </CardHeader>
                                         <CardContent>
                                             <div className="text-3xl font-bold text-orange-600">
                                                 {operationsData.corrections.correctionRate}%
                                             </div>
-                                            <p className="text-xs text-muted-foreground">Correction Rate</p>
-                                            <div className="text-sm text-muted-foreground mt-2 space-y-1">
-                                                <div className="flex justify-between">
-                                                    <span>Total Apps:</span>
-                                                    <span>{operationsData.corrections.totalApplications}</span>
+                                            <p className="text-xs text-muted-foreground mb-3">Correction Rate</p>
+
+                                            <div className="space-y-2 text-sm text-muted-foreground">
+                                                <div className="flex justify-between border-b pb-1">
+                                                    <span>Sent Back:</span>
+                                                    <span className="font-medium text-foreground">{operationsData.corrections.totalWithCorrections} apps</span>
                                                 </div>
-                                                <div className="flex justify-between">
-                                                    <span>With Corrections:</span>
-                                                    <span>{operationsData.corrections.totalWithCorrections}</span>
+                                                <div className="flex justify-between pt-1">
+                                                    <span>Avg Revisions:</span>
+                                                    <span className="font-medium text-foreground">{operationsData.corrections.avgReversions}</span>
                                                 </div>
-                                                <div className="flex justify-between">
-                                                    <span>Avg Reversions:</span>
-                                                    <span>{operationsData.corrections.avgReversions}</span>
-                                                </div>
-                                                <div className="flex justify-between text-red-600">
-                                                    <span>Rejection Rate:</span>
-                                                    <span>{operationsData.corrections.rejectionRate}%</span>
+
+                                                <div className="pt-2 text-xs bg-slate-50 p-2 rounded mt-2">
+                                                    <span className="block text-slate-500 mb-1">Interpretation:</span>
+                                                    Lower rate indicates better application quality from owners.
                                                 </div>
                                             </div>
                                         </CardContent>
@@ -1089,6 +1121,68 @@ export default function PaymentReportsPage() {
                         </CardContent>
                     </Card>
                 </TabsContent>
+
+                {/* District Performance Tab - Only for HQ/Admins */}
+                {!isDTDO && (
+                    <TabsContent value="performance">
+                        <Card>
+                            <CardHeader>
+                                <CardTitle className="flex items-center gap-2">
+                                    <BarChart3 className="h-5 w-5 text-primary" />
+                                    District-wise Performance
+                                </CardTitle>
+                                <CardDescription>
+                                    Overview of application status and processing efficiency across all districts.
+                                </CardDescription>
+                            </CardHeader>
+                            <CardContent>
+                                {performanceLoading ? (
+                                    <div className="space-y-2">
+                                        <Skeleton className="h-10 w-full" />
+                                        <Skeleton className="h-10 w-full" />
+                                        <Skeleton className="h-10 w-full" />
+                                    </div>
+                                ) : (
+                                    <div className="rounded-md border">
+                                        <Table>
+                                            <TableHeader>
+                                                <TableRow>
+                                                    <TableHead>District</TableHead>
+                                                    <TableHead className="text-right">Total Apps</TableHead>
+                                                    <TableHead className="text-right text-orange-600">Pending</TableHead>
+                                                    <TableHead className="text-right text-green-600">Approved</TableHead>
+                                                    <TableHead className="text-right text-red-600">Rejected</TableHead>
+                                                    <TableHead className="text-right">Avg Form Time</TableHead>
+                                                </TableRow>
+                                            </TableHeader>
+                                            <TableBody>
+                                                {districtPerformance?.map((row) => (
+                                                    <TableRow key={row.district}>
+                                                        <TableCell className="font-medium">{row.district}</TableCell>
+                                                        <TableCell className="text-right font-bold">{row.totalApplications}</TableCell>
+                                                        <TableCell className="text-right">{row.pending}</TableCell>
+                                                        <TableCell className="text-right">{row.approved}</TableCell>
+                                                        <TableCell className="text-right">{row.rejected}</TableCell>
+                                                        <TableCell className="text-right font-mono text-muted-foreground">
+                                                            {formatDuration(row.avgTimeSeconds || 0)}
+                                                        </TableCell>
+                                                    </TableRow>
+                                                ))}
+                                                {!districtPerformance?.length && (
+                                                    <TableRow>
+                                                        <TableCell colSpan={6} className="h-24 text-center">
+                                                            No data available.
+                                                        </TableCell>
+                                                    </TableRow>
+                                                )}
+                                            </TableBody>
+                                        </Table>
+                                    </div>
+                                )}
+                            </CardContent>
+                        </Card>
+                    </TabsContent>
+                )}
             </Tabs>
         </div>
     );

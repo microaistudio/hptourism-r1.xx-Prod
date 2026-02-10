@@ -741,6 +741,12 @@ export default function NewApplication() {
     (updater: (rows: Type2Row[]) => Type2Row[]) => setType2RowsBase((rows) => enforceRoomAndBedLimits(updater(rows))),
     [],
   );
+  // Timer state management
+  const timerRef = useRef(0);
+  const [initialTimerValue, setInitialTimerValue] = useState(0);
+  const handleTimerTick = useCallback((val: number) => {
+    timerRef.current = val;
+  }, []);
   const [syncAttachedBaths, setSyncAttachedBaths] = useState(true);
   const derivedRoomCalcMode = roomCalcModeSettingData?.mode ?? DEFAULT_ROOM_CALC_MODE.mode;
   const [roomCalcMode, setRoomCalcMode] = useState<RoomCalculationMode>(derivedRoomCalcMode);
@@ -1517,6 +1523,14 @@ export default function NewApplication() {
 
   const hydrateFormFromSource = (source: Partial<HomestayApplication> | DraftForm | null | undefined) => {
     if (!source) return;
+
+    // Restore timer if available
+    const savedTime = (source as any).formCompletionTimeSeconds;
+    if (typeof savedTime === 'number' && savedTime > 0) {
+      setInitialTimerValue(savedTime);
+      timerRef.current = savedTime;
+    }
+
     const defaults = form.getValues();
     const explicitFirst = (source as any).ownerFirstName as string | undefined;
     const explicitLast = (source as any).ownerLastName as string | undefined;
@@ -2473,6 +2487,13 @@ export default function NewApplication() {
         isPangiSubDivision: district === "Chamba" && resolvedDraftTehsil === "Pangi",
         currentPage: step, // Save the current page/step for resume functionality
         documents: documentsPayload,
+        // Analytics: Save timer to draft
+        formCompletionTimeSeconds:
+          timerRef.current ||
+          parseInt(
+            localStorage.getItem(`hptourism_timer_${draftId || sessionInstanceId}`) || "0",
+            10,
+          ),
       };
 
       if (draftId) {
@@ -2758,9 +2779,12 @@ export default function NewApplication() {
         submittedAt: new Date().toISOString(),
         documents: documentsPayload,
         // Analytics: Time spent filling the form
-        formCompletionTimeSeconds: draftId
-          ? parseInt(localStorage.getItem(`hptourism_timer_${draftId}`) || "0", 10)
-          : 0,
+        formCompletionTimeSeconds:
+          timerRef.current ||
+          parseInt(
+            localStorage.getItem(`hptourism_timer_${draftId || sessionInstanceId}`) || "0",
+            10,
+          ),
       };
 
       const response = await apiRequest("POST", "/api/applications", payload);
@@ -2769,9 +2793,7 @@ export default function NewApplication() {
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/applications"] });
       // Clear timer from localStorage after successful submission
-      if (draftId) {
-        clearApplicationTimer(draftId);
-      }
+      clearApplicationTimer(draftId || sessionInstanceId);
       toast({
         title: isCorrectionMode ? "Application resubmitted successfully!" : "Application submitted successfully!",
         description: isCorrectionMode
@@ -3402,6 +3424,8 @@ export default function NewApplication() {
           <ApplicationTimer
             applicationId={draftId || sessionInstanceId}
             isSubmitted={false}
+            initialTime={initialTimerValue}
+            onTick={handleTimerTick}
           />
         </div>
 

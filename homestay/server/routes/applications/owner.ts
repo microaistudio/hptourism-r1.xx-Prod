@@ -906,8 +906,18 @@ export function createOwnerApplicationsRouter({ getRoomRateBandsSetting }: Owner
 
   router.post("/", requireAuth, async (req, res) => {
     try {
+      // DEBUG: Log received formCompletionTimeSeconds
+      console.log("[owner:create] req.body.formCompletionTimeSeconds:", req.body.formCompletionTimeSeconds, "type:", typeof req.body.formCompletionTimeSeconds);
+      ownerLog.info(
+        { formCompletionTimeSeconds: req.body.formCompletionTimeSeconds },
+        "[owner:create] Received application submission"
+      );
+
       const userId = req.session.userId!;
       const validatedData = ownerSubmittableSchema.parse(req.body);
+
+      // DEBUG: Log parsed formCompletionTimeSeconds
+      console.log("[owner:create] validatedData.formCompletionTimeSeconds:", validatedData.formCompletionTimeSeconds, "type:", typeof validatedData.formCompletionTimeSeconds);
 
       const totalRooms =
         (validatedData.singleBedRooms || 0) +
@@ -1122,11 +1132,25 @@ export function createOwnerApplicationsRouter({ getRoomRateBandsSetting }: Owner
         // Analytics: Time spent filling the form (from client-side timer)
         formCompletionTimeSeconds: (() => {
           const val = validatedData.formCompletionTimeSeconds;
-          if (typeof val !== "number") return undefined;
-          // Fix for overflow: If value > 2,000,000 (approx 23 days), it's likely a timestamp, not seconds.
-          // Postgres Integer max is ~2.14 billion, but seconds duration shouldn't be that high anyway.
-          if (val > 2000000000) return 0; // Prevent "out of range" error
-          return val;
+          // If client sends a valid positive number, use it
+          if (typeof val === "number" && val > 0) {
+            // Fix for overflow: If value > 2,000,000 (approx 23 days), it's likely a timestamp, not seconds.
+            if (val > 2000000000) return 0;
+            return val;
+          }
+          // SERVER-SIDE FALLBACK: Calculate from createdAt → now
+          // This handles cases where the browser cached old JS that doesn't send the timer value
+          if (existingApp?.createdAt) {
+            const createdMs = new Date(existingApp.createdAt).getTime();
+            const nowMs = Date.now();
+            const diffSeconds = Math.round((nowMs - createdMs) / 1000);
+            // Only use if reasonable (> 30 seconds, < 24 hours)
+            if (diffSeconds > 30 && diffSeconds < 86400) {
+              console.log("[owner:create] Using server-side fallback for formCompletionTimeSeconds:", diffSeconds, "seconds (createdAt-based)");
+              return diffSeconds;
+            }
+          }
+          return undefined;
         })(),
       };
 
@@ -1610,6 +1634,13 @@ export function createOwnerApplicationsRouter({ getRoomRateBandsSetting }: Owner
         status: newStatus,
         submittedAt: new Date(),
         updatedAt: new Date(),
+        // Analytics: Fix form completion time for manual submit
+        formCompletionTimeSeconds: application.createdAt ? (() => {
+          const createdMs = new Date(application.createdAt).getTime();
+          const nowMs = Date.now();
+          const diff = Math.round((nowMs - createdMs) / 1000);
+          return (diff > 0 && diff < 2000000000) ? diff : 0;
+        })() : undefined,
       } as Partial<HomestayApplication>);
 
       await logApplicationAction({

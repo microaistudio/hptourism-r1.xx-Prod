@@ -49,7 +49,8 @@ import {
   lgdTehsils,
   lgdBlocks,
   lgdGramPanchayats,
-  lgdUrbanBodies
+  lgdUrbanBodies,
+  districtBaselineStats,
 } from "@shared/schema";
 import {
   DEFAULT_UPLOAD_POLICY,
@@ -154,6 +155,7 @@ import { createAuthRouter, createProfileRouter } from "./routes/auth";
 import { hpssoRouter } from "./routes/auth/hpsso";
 import { validateHPSSOToken } from "./services/hpsso";
 import testRunnerRoutes from "./routes/test-runner";
+import baselineStatsRouter from "./routes/admin/baseline-stats";
 
 import { createPaymentsRouter } from "./routes/payments";
 import { createDtdoRouter } from "./routes/dtdo";
@@ -677,6 +679,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.use("/api/admin", createAdminSeedRouter());
   app.use("/api/admin", createAdminReportsRouter());
   app.use("/api", createAdminLegacyRcRouter());
+  app.use("/api/admin", baselineStatsRouter);
 
   // Admin Application Actions (Reactivate etc.)
   const { default: adminAppActionsRouter } = await import("./routes/admin/application-actions");
@@ -1592,15 +1595,50 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
-      // 4. Combine counts
+      // 4. Fetch Baseline/Offline Stats (Manual Processing June '25 - Jan '26)
+      // These are district-specific, so we can filter them correctly.
+      let baselineTotal = 0;
+      let baselineApproved = 0;
+      let baselineRejected = 0;
+      let baselinePending = 0;
+
+      const baselineStats = await db.select().from(districtBaselineStats);
+
+      baselineStats.forEach(stat => {
+        let include = false;
+        if (isGlobalView) {
+          include = true;
+        } else if (user.district) {
+          const covered = getDistrictsCoveredBy(user.district);
+          // Simple case-insensitive match
+          if (covered.some(d => d.toLowerCase() === stat.district.toLowerCase())) {
+            include = true;
+          }
+        }
+
+        if (include) {
+          baselineTotal += stat.totalCount;
+          baselineApproved += stat.approvedCount;
+          baselineRejected += stat.rejectedCount;
+          baselinePending += stat.pendingCount;
+        }
+      });
+
+      // 5. Combine counts (Realtime + Legacy + Baseline)
       const stats = {
-        totalApplications: realtime.total + (parseInt(legacy.total) || 0),
-        approvedApplications: realtime.approved + (parseInt(legacy.approved) || 0),
-        rejectedApplications: realtime.rejected + (parseInt(legacy.rejected) || 0),
-        pendingApplications: realtime.pending + (parseInt(legacy.pending) || 0),
+        totalApplications: realtime.total + (parseInt(legacy.total) || 0) + baselineTotal,
+        approvedApplications: realtime.approved + (parseInt(legacy.approved) || 0) + baselineApproved,
+        rejectedApplications: realtime.rejected + (parseInt(legacy.rejected) || 0) + baselineRejected,
+        pendingApplications: realtime.pending + (parseInt(legacy.pending) || 0) + baselinePending,
         scrapedAt: new Date(),
         realtime,
-        legacy
+        legacy,
+        baseline: {
+          total: baselineTotal,
+          approved: baselineApproved,
+          rejected: baselineRejected,
+          pending: baselinePending
+        }
       };
 
       res.json({ stats });

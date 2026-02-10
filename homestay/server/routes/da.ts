@@ -23,7 +23,7 @@ import {
     DEFAULT_MAX_REVERT_COUNT,
 } from "@shared/appSettings";
 import { isLegacyApplication as isLegacyApplicationRecord } from "@shared/legacy";
-import { desc, eq, and, inArray, or, ne, ilike } from "drizzle-orm";
+import { desc, eq, and, inArray, or, ne, ilike, isNull } from "drizzle-orm";
 
 const routeLog = logger.child({ module: "routes/da" });
 
@@ -48,24 +48,24 @@ export function registerDaRoutes(router: Router) {
                     ilike(homestayApplications.district, '%chamba%'),
                     ilike(homestayApplications.tehsil, '%pangi%')
                 );
-            } else if (districtLower.includes('kaza') || districtLower.includes('spiti')) {
+            } else if (districtLower.includes('kaza')) {
                 // Group C: Kaza Pipeline (Lahaul-Spiti district, Spiti tehsil)
+                // Note: We check 'kaza' specifically. 'spiti' matches 'Lahaul and Spiti' district name.
                 districtCondition = and(
                     ilike(homestayApplications.district, '%lahaul%'),
                     ilike(homestayApplications.tehsil, '%spiti%')
-                );
-            } else if (districtLower.includes('chamba')) {
-                // Group C: Chamba Main Pipeline (Chamba district EXCLUDING Pangi)
-                // Bharmour is explicitly merged into Chamba now
-                districtCondition = and(
-                    ilike(homestayApplications.district, '%chamba%'),
-                    ne(homestayApplications.tehsil, 'Pangi') // Exclude Pangi
                 );
             } else if (districtLower.includes('lahaul')) {
                 // Group C: Lahaul Main Pipeline (Lahaul-Spiti district EXCLUDING Spiti)
                 districtCondition = and(
                     ilike(homestayApplications.district, '%lahaul%'),
-                    ne(homestayApplications.tehsil, 'Spiti') // Exclude Spiti
+                    or(not(ilike(homestayApplications.tehsil, '%spiti%')), isNull(homestayApplications.tehsil)) // Exclude ANY match for Spiti
+                );
+            } else if (districtLower.includes('chamba')) {
+                // Group C: Chamba Main Pipeline (Chamba district EXCLUDING Pangi)
+                districtCondition = and(
+                    ilike(homestayApplications.district, '%chamba%'),
+                    or(not(ilike(homestayApplications.tehsil, '%pangi%')), isNull(homestayApplications.tehsil)) // Exclude ANY match for Pangi
                 );
             } else if (districtLower.includes('hamirpur')) {
                 // Group B: Hamirpur Pipeline (Hamirpur + Una)
@@ -139,23 +139,24 @@ export function registerDaRoutes(router: Router) {
                     ilike(homestayApplications.district, '%chamba%'),
                     ilike(homestayApplications.tehsil, '%pangi%')
                 );
-            } else if (districtLower.includes('kaza') || districtLower.includes('spiti')) {
+            } else if (districtLower.includes('kaza')) {
                 // Group C: Kaza Pipeline (Lahaul-Spiti district, Spiti tehsil)
+                // Note: We check 'kaza' specifically. 'spiti' matches 'Lahaul and Spiti' district name.
                 districtCondition = and(
                     ilike(homestayApplications.district, '%lahaul%'),
                     ilike(homestayApplications.tehsil, '%spiti%')
-                );
-            } else if (districtLower.includes('chamba')) {
-                // Group C: Chamba Main Pipeline (Chamba district EXCLUDING Pangi)
-                districtCondition = and(
-                    ilike(homestayApplications.district, '%chamba%'),
-                    ne(homestayApplications.tehsil, 'Pangi')
                 );
             } else if (districtLower.includes('lahaul')) {
                 // Group C: Lahaul Main Pipeline (Lahaul-Spiti district EXCLUDING Spiti)
                 districtCondition = and(
                     ilike(homestayApplications.district, '%lahaul%'),
-                    ne(homestayApplications.tehsil, 'Spiti')
+                    or(not(ilike(homestayApplications.tehsil, '%spiti%')), isNull(homestayApplications.tehsil)) // Exclude ANY match for Spiti
+                );
+            } else if (districtLower.includes('chamba')) {
+                // Group C: Chamba Main Pipeline (Chamba district EXCLUDING Pangi)
+                districtCondition = and(
+                    ilike(homestayApplications.district, '%chamba%'),
+                    or(not(ilike(homestayApplications.tehsil, '%pangi%')), isNull(homestayApplications.tehsil))
                 );
             } else if (districtLower.includes('hamirpur')) {
                 // Group B: Hamirpur Pipeline (Hamirpur + Una)

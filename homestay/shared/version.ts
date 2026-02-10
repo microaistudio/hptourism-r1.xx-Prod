@@ -7,10 +7,10 @@
 export const APP_VERSION = {
     major: 1,
     minor: 0,
-    patch: 11,
+    patch: 25,
     releaseCandidate: "R1",
-    codename: "Officer Print",
-    buildDate: "2026-02-09",
+    codename: "Diagnostic Release",
+    buildDate: "2026-02-10",
 
     // Full version string
     get full(): string {
@@ -68,10 +68,13 @@ export function getVersionInfo(role: "owner" | "officer" | "admin" | "superadmin
             buildDate: APP_VERSION.buildDate,
             environment: process.env.NODE_ENV || "development",
             features: [
-                "E2E Test Suite",
-                "Upfront Payment Flow",
-                "Document Sync",
-                "PDF Upload Support",
+                "DTDO Failsafe Filtering",
+                "Diagnostic Tool Included",
+                "Lahaul/Spiti Robust Exclusion",
+                "Split District Logic (Final)",
+                "Lahaul Priority Fix",
+                "District Performance Report",
+                "Timer Persist Fix",
             ],
         };
     }

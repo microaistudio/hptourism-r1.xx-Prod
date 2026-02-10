@@ -4,7 +4,9 @@ import { Clock } from 'lucide-react';
 interface ApplicationTimerProps {
     applicationId: string;
     isSubmitted?: boolean;
+    initialTime?: number;
     onTimeUpdate?: (totalSeconds: number) => void;
+    onTick?: (currentSeconds: number) => void;
 }
 
 const STORAGE_KEY_PREFIX = 'hptourism_timer_';
@@ -21,7 +23,9 @@ const STORAGE_KEY_PREFIX = 'hptourism_timer_';
 export function ApplicationTimer({
     applicationId,
     isSubmitted = false,
-    onTimeUpdate
+    initialTime = 0,
+    onTimeUpdate,
+    onTick
 }: ApplicationTimerProps) {
     const [elapsedSeconds, setElapsedSeconds] = useState(0);
     const [isActive, setIsActive] = useState(true);
@@ -33,13 +37,11 @@ export function ApplicationTimer({
         if (!applicationId) return;
 
         const savedTime = localStorage.getItem(storageKey);
-        if (savedTime) {
-            const parsed = parseInt(savedTime, 10);
-            if (!isNaN(parsed) && parsed >= 0) {
-                setElapsedSeconds(parsed);
-            }
-        }
-    }, [applicationId, storageKey]);
+        const parsed = savedTime ? parseInt(savedTime, 10) : 0;
+        const startValue = !isNaN(parsed) && parsed >= 0 ? parsed : 0;
+        // Use greater of stored time or initialTime (handles transition from session -> draft)
+        setElapsedSeconds(Math.max(startValue, initialTime || 0));
+    }, [applicationId, storageKey, initialTime]);
 
     // Save time to localStorage periodically
     const saveToStorage = useCallback(() => {
@@ -75,6 +77,7 @@ export function ApplicationTimer({
                     if (newValue % 10 === 0) {
                         localStorage.setItem(storageKey, newValue.toString());
                     }
+                    if (onTick) onTick(newValue);
                     return newValue;
                 });
             }, 1000);

@@ -20,8 +20,10 @@ import {
   MessageSquare,
   Lock,
   FileArchive,
+  FileArchive,
   TestTube,
   Server,
+  LineChart,
 } from "lucide-react";
 import { LucideIcon } from "lucide-react";
 
@@ -131,7 +133,17 @@ export const officerNavigation: NavSection[] = [
       {
         title: "Reports & Insights",
         url: "/admin/payment-reports",
-        icon: CreditCard,
+        icon: LineChart,
+      },
+    ],
+  },
+  {
+    title: "Admin",
+    items: [
+      {
+        title: "Baseline Data",
+        url: "/admin/baseline-stats",
+        icon: Database,
       },
     ],
   },
@@ -151,6 +163,11 @@ export const adminNavigation: NavSection[] = [
         title: "RC Applications",
         url: "/admin/rc-applications",
         icon: FileText,
+      },
+      {
+        title: "Baseline Data",
+        url: "/admin/baseline-stats",
+        icon: Database,
       },
     ],
   },
@@ -214,6 +231,7 @@ export const superAdminNavigation: NavSection[] = [
       { title: "District Staff", url: "/admin/super-console#staff-tools", icon: Users },
       { title: "Smoke Tests", url: "/admin/super-console#smoke-tests", icon: Server },
       { title: "Test Data", url: "/admin/super-console#test-data", icon: TestTube },
+      { title: "Baseline Data", url: "/admin/baseline-stats", icon: Database },
       { title: "Policy Settings", url: "/admin/policy-settings", icon: Settings },
     ],
   },
@@ -373,7 +391,7 @@ export const dtdoNavigation: NavSection[] = [
       {
         title: "Reports & Insights",
         url: "/admin/payment-reports",
-        icon: CreditCard,
+        icon: LineChart,
       },
     ],
   },

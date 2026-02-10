@@ -8,7 +8,7 @@ import {
 } from "@shared/schema";
 import { requireRole } from "../core/middleware";
 import { logger } from "../../logger";
-import { eq, desc, and, sql, gte, lte, inArray } from "drizzle-orm";
+import { eq, desc, and, or, isNull, sql, gte, lte, inArray } from "drizzle-orm";
 
 import { getDistrictsCoveredBy } from "@shared/districtRouting";
 
@@ -338,6 +338,11 @@ export function createAdminReportsRouter() {
                     .orderBy(desc(himkoshTransactions.createdAt));
 
                 let refundable = await refundableQuery;
+                console.log("[refundable] Raw query returned:", refundable.length, "rows");
+                console.log("[refundable] roleFilter:", roleFilter, "district query:", req.query.district);
+                if (refundable.length > 0) {
+                    console.log("[refundable] First row:", JSON.stringify(refundable[0]));
+                }
 
                 // Apply district filter if needed
                 // roleFilter is an array of covered districts for DTDO/DA, or null for admins
@@ -531,7 +536,7 @@ export function createAdminReportsRouter() {
                 const [correctionStats] = await applyWhere(
                     db.select({
                         totalApplications: sql<number>`count(*)::int`,
-                        totalWithCorrections: sql<number>`count(*) FILTER (WHERE ${homestayApplications.correctionSubmissionCount} > 0)::int`,
+                        totalWithCorrections: sql<number>`count(*) FILTER (WHERE ${homestayApplications.revertCount} > 0)::int`,
                         avgReversionCount: sql<number>`avg(${homestayApplications.revertCount})`,
                         maxReversionCount: sql<number>`max(${homestayApplications.revertCount})::int`,
                         totalRejected: sql<number>`count(*) FILTER (WHERE ${homestayApplications.status} = 'rejected')::int`,
@@ -582,6 +587,7 @@ export function createAdminReportsRouter() {
                         rejectionRate: correctionStats?.totalApplications
                             ? ((Number(correctionStats.totalRejected) / Number(correctionStats.totalApplications)) * 100).toFixed(1)
                             : "0.0",
+                        totalRejected: Number(correctionStats?.totalRejected || 0),
                     },
                     categoryBreakdown: categoryBreakdown.map(c => ({
                         category: c.category,
@@ -601,6 +607,36 @@ export function createAdminReportsRouter() {
             } catch (error: any) {
                 log.error({ err: error, stack: error.stack }, "[reports] Failed to fetch operations data");
                 res.status(500).json({ message: "Failed to fetch operations data", error: error.message });
+            }
+        }
+    );
+    /**
+     * GET /api/admin/reports/district-performance
+     * Performance metrics grouped by district (For State HQ)
+     */
+    router.get(
+        "/reports/district-performance",
+        requireRole("state_officer", "admin", "super_admin"),
+        async (req, res) => {
+            try {
+                const results = await db
+                    .select({
+                        district: homestayApplications.district,
+                        totalApplications: sql<number>`count(*)::int`,
+                        // Only count time for non-drafts where time > 0
+                        avgTimeSeconds: sql<number>`avg(${homestayApplications.formCompletionTimeSeconds}) FILTER (WHERE ${homestayApplications.formCompletionTimeSeconds} > 0)::int`,
+                        approved: sql<number>`count(*) FILTER (WHERE ${homestayApplications.status} = 'approved')::int`,
+                        rejected: sql<number>`count(*) FILTER (WHERE ${homestayApplications.status} = 'rejected')::int`,
+                        pending: sql<number>`count(*) FILTER (WHERE ${homestayApplications.status} IN ('submitted', 'under_scrutiny', 'forwarded_to_dtdo', 'pending_payment'))::int`,
+                    })
+                    .from(homestayApplications)
+                    .groupBy(homestayApplications.district)
+                    .orderBy(desc(sql`count(*)`));
+
+                res.json(results);
+            } catch (error: any) {
+                log.error({ err: error }, "[reports] Failed to fetch district performance");
+                res.status(500).json({ message: "Failed to fetch district performance" });
             }
         }
     );

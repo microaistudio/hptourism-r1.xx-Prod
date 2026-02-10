@@ -824,7 +824,17 @@ router.post('/callback', async (req, res) => {
             paymentAmount: transaction.totalAmount?.toString(),
             paymentDate: parsePaymentDate(parsedResponse.paymentDate),
             submittedAt: submitMode === "auto" ? now : null,
-            updatedAt: now
+            updatedAt: now,
+            // Analytics: Calculate time spent (Created -> Payment/Submission)
+            formCompletionTimeSeconds: (() => {
+              if (currentApplication.createdAt && submitMode === "auto") {
+                const createdMs = new Date(currentApplication.createdAt).getTime();
+                const nowMs = now.getTime();
+                const diff = Math.round((nowMs - createdMs) / 1000);
+                return (diff > 0 && diff < 2000000000) ? diff : 0;
+              }
+              return undefined;
+            })(),
           })
           .where(eq(homestayApplications.id, transaction.applicationId));
 
@@ -1045,7 +1055,17 @@ router.post('/verify/:appRefNo', async (req, res) => {
                 paymentAmount: transaction.totalAmount?.toString(),
                 paymentDate: now,
                 submittedAt: now,
-                updatedAt: now
+                updatedAt: now,
+                // Analytics: Calculate time spent (Created -> Verified/Submitted)
+                formCompletionTimeSeconds: (() => {
+                  if (app.createdAt) {
+                    const createdMs = new Date(app.createdAt).getTime();
+                    const nowMs = now.getTime();
+                    const diff = Math.round((nowMs - createdMs) / 1000);
+                    return (diff > 0 && diff < 2000000000) ? diff : 0;
+                  }
+                  return undefined;
+                })(),
               })
               .where(eq(homestayApplications.id, app.id));
 

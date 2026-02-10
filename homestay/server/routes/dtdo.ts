@@ -1,5 +1,5 @@
 import express from "express";
-import { desc, and, inArray, eq, or } from "drizzle-orm";
+import { desc, and, inArray, eq, or, ilike, isNull, ne } from "drizzle-orm";
 import { requireAuth, requireRole } from "./core/middleware";
 import { storage } from "../storage";
 import { logger } from "../logger";
@@ -13,7 +13,7 @@ import {
 } from "@shared/schema";
 import { handleStaffProfileUpdate, handleStaffPasswordChange } from "./core/user-handlers";
 import { getDistrictStaffManifest } from "@shared/districtStaffManifest";
-import { buildDistrictWhereClause, buildCoveredDistrictsWhereClause, districtsMatch } from "./helpers/district";
+import { buildDistrictWhereClause, buildCoveredDistrictsWhereClause, districtsMatch, buildSplitDistrictWhereClause, isCoveredBySplitDistrict } from "./helpers/district";
 import { getDistrictsCoveredBy } from "@shared/districtRouting";
 import { summarizeTimelineActor } from "./helpers/timeline";
 import { logApplicationAction } from "../audit";
@@ -40,19 +40,30 @@ export function createDtdoRouter() {
                 return res.status(400).json({ message: "DTDO must be assigned to a district" });
             }
 
-            const coveredDistricts = getDistrictsCoveredBy(user.district);
-            routeLog.info({ userId, officerDistrict: user.district, coveredDistricts }, "Fetching DTDO applications");
-
-            const districtCondition = buildCoveredDistrictsWhereClause(homestayApplications.district, coveredDistricts);
+            routeLog.info({ userId, officerDistrict: user.district }, "Fetching DTDO applications (Split Logic)");
+            const districtCondition = buildSplitDistrictWhereClause(user.district);
 
 
 
             // Get all applications from this DTDO's district ordered by most recent
-            const allApplications = await db
-                .select()
+            const rawApplications = await db
+                .select() // Select ALL fields, including ownerId
                 .from(homestayApplications)
                 .where(districtCondition)
                 .orderBy(desc(homestayApplications.createdAt));
+
+            // CRITICAL FAILSAFE: Explicitly filter in JS to handle edge cases
+            // (e.g. if SQL ILIKE behaves oddly with hidden chars)
+            // We use the strict 'isCoveredBySplitDistrict' helper.
+            const allApplications = rawApplications.filter(app => {
+                const covered = isCoveredBySplitDistrict(user.district, app.district, app.tehsil);
+                if (!covered) {
+                    console.warn(`[SAFETY FILTER] Hiding App ${app.applicationNumber} from ${user.email} (District: ${user.district}, App Tehsil: ${app.tehsil})`);
+                }
+                return covered;
+            });
+
+            console.log(`[DTDO] User: ${user.email} (${user.district}) - SQL Fetched: ${rawApplications.length}, JS Visible: ${allApplications.length}`);
 
             let latestCorrectionMap: Map<
                 string,
@@ -125,8 +136,7 @@ export function createDtdoRouter() {
                 return res.status(400).json({ message: "DTDO must be assigned to a district" });
             }
 
-            const coveredDistricts = getDistrictsCoveredBy(user.district);
-            const districtCondition = buildCoveredDistrictsWhereClause(homestayApplications.district, coveredDistricts);
+            const districtCondition = buildSplitDistrictWhereClause(user.district);
 
             // Get all draft applications from this DTDO's district
             const incompleteApplications = await db
@@ -174,15 +184,8 @@ export function createDtdoRouter() {
                 return res.status(404).json({ message: "Application not found" });
             }
 
-            // Verify application is from one of the DTDO's covered districts
-            const coveredDistricts = getDistrictsCoveredBy(user.district);
-            const districtCondition = buildCoveredDistrictsWhereClause(homestayApplications.district, coveredDistricts);
-
-            // Since we already fetched the app, just check if its district is included in coverage
-            // We can reuse the same normalization logic or just check array inclusion
-            // Simplest way: Check if user covers the app's district
-            // Using logic similar to districtsMatch but against list
-            const isCovered = coveredDistricts.some(d => districtsMatch(d, application.district));
+            // Verify application is from DTDO's coverage area (split-district aware)
+            const isCovered = isCoveredBySplitDistrict(user.district, application.district, application.tehsil);
 
             if (user?.district && !isCovered) {
                 return res.status(403).json({ message: "You can only access applications from your district coverage area" });
@@ -249,9 +252,8 @@ export function createDtdoRouter() {
                 return res.status(404).json({ message: "Application not found" });
             }
 
-            // Verify application is from DTDO's district (or covered districts)
-            const coveredDistricts = getDistrictsCoveredBy(user?.district);
-            const isCovered = coveredDistricts.some(d => districtsMatch(d, application.district));
+            // Verify application is from DTDO's coverage area (split-district aware)
+            const isCovered = isCoveredBySplitDistrict(user?.district ?? '', application.district, application.tehsil);
 
             if (user?.district && !isCovered) {
                 return res.status(403).json({ message: "You can only process applications from your district coverage area" });
@@ -444,9 +446,8 @@ export function createDtdoRouter() {
                 return res.status(404).json({ message: "Application not found" });
             }
 
-            // Verify application is from DTDO's district (or covered districts)
-            const coveredDistricts = getDistrictsCoveredBy(user?.district);
-            const isCovered = coveredDistricts.some(d => districtsMatch(d, application.district));
+            // Verify application is from DTDO's coverage area (split-district aware)
+            const isCovered = isCoveredBySplitDistrict(user?.district ?? '', application.district, application.tehsil);
 
             if (user?.district && !isCovered) {
                 return res.status(403).json({ message: "You can only process applications from your district coverage area" });
@@ -485,9 +486,8 @@ export function createDtdoRouter() {
                 return res.status(404).json({ message: "Application not found" });
             }
 
-            // Verify application is from DTDO's district (or covered districts)
-            const coveredDistricts = getDistrictsCoveredBy(user?.district);
-            const isCovered = coveredDistricts.some(d => districtsMatch(d, application.district));
+            // Verify application is from DTDO's coverage area (split-district aware)
+            const isCovered = isCoveredBySplitDistrict(user?.district ?? '', application.district, application.tehsil);
 
             if (user?.district && !isCovered) {
                 return res.status(403).json({ message: "You can only process applications from your district coverage area" });
@@ -719,8 +719,7 @@ export function createDtdoRouter() {
                 return res.status(404).json({ message: "Application not found" });
             }
 
-            const coveredDistricts = getDistrictsCoveredBy(user.district);
-            const isCovered = coveredDistricts.some(d => districtsMatch(d, application.district));
+            const isCovered = isCoveredBySplitDistrict(user.district, application.district, application.tehsil);
 
             if (!isCovered) {
                 return res.status(403).json({ message: "You can only process applications from your district coverage area" });
@@ -832,9 +831,8 @@ export function createDtdoRouter() {
                 return res.status(404).json({ message: "Application not found" });
             }
 
-            // Verify application is from one of the DTDO's covered districts
-            const coveredDistricts = getDistrictsCoveredBy(user.district);
-            const isCovered = coveredDistricts.some(d => districtsMatch(d, application.district));
+            // Verify application is from DTDO's coverage area (split-district aware)
+            const isCovered = isCoveredBySplitDistrict(user.district, application.district, application.tehsil);
 
             if (user?.district && !isCovered) {
                 return res.status(403).json({ message: "You can only review applications from your district coverage area" });
@@ -1128,8 +1126,10 @@ export function createDtdoRouter() {
             }
 
             // Update application status to objection_raised
+            const currentRevertCount = application.revertCount ?? 0;
             await storage.updateApplication(applicationId, {
                 status: 'objection_raised',
+                revertCount: currentRevertCount + 1,
                 districtNotes: remarks,
                 districtOfficerId: userId,
                 districtReviewDate: new Date(),

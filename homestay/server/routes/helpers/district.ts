@@ -1,4 +1,6 @@
-import { eq, ilike, or, type AnyColumn } from "drizzle-orm";
+import { eq, ilike, or, and, ne, isNull, type AnyColumn } from "drizzle-orm";
+import { homestayApplications } from "@shared/schema";
+import { getDistrictsCoveredBy } from "@shared/districtRouting";
 
 export const normalizeDistrictForMatch = (value?: string | null) => {
   if (!value) return [];
@@ -63,4 +65,80 @@ export const buildCoveredDistrictsWhereClause = <T extends AnyColumn>(column: T,
   });
 
   return or(...conditions);
+};
+
+/**
+ * Build a SQL WHERE clause that respects split-district separation.
+ * For Lahaul/Spiti and Chamba/Pangi, filters by BOTH district AND tehsil.
+ * For all other districts, falls back to standard covered-districts logic.
+ * 
+ * Priority: Pangi → Lahaul → Chamba → Kaza/Spiti → Standard
+ */
+export const buildSplitDistrictWhereClause = (userDistrict: string) => {
+  const districtLower = userDistrict.toLowerCase();
+
+  if (districtLower.includes('pangi')) {
+    // Pangi Pipeline: Chamba district + Pangi tehsil only
+    return and(
+      ilike(homestayApplications.district, '%chamba%'),
+      ilike(homestayApplications.tehsil, '%pangi%')
+    );
+  } else if (districtLower.includes('kaza')) {
+    // Spiti/Kaza Pipeline: Lahaul district + Spiti tehsil only
+    // Note: We check 'kaza' specifically. checking 'spiti' is dangerous because "Lahaul and Spiti" contains it.
+    return and(
+      ilike(homestayApplications.district, '%lahaul%'),
+      ilike(homestayApplications.tehsil, '%spiti%')
+    );
+  } else if (districtLower.includes('lahaul')) {
+    // Lahaul Main Pipeline: Lahaul district EXCLUDING Spiti tehsil
+    // Changed to NOT LIKE '%spiti%' to handle whitespace/casing/ambiguity
+    return and(
+      ilike(homestayApplications.district, '%lahaul%'),
+      or(not(ilike(homestayApplications.tehsil, '%spiti%')), isNull(homestayApplications.tehsil))
+    );
+  } else if (districtLower.includes('chamba')) {
+    // Chamba Main Pipeline: Chamba district EXCLUDING Pangi tehsil
+    return and(
+      ilike(homestayApplications.district, '%chamba%'),
+      or(not(ilike(homestayApplications.tehsil, '%pangi%')), isNull(homestayApplications.tehsil))
+    );
+  } else {
+    // Standard: Hamirpur(+Una), Mandi(+Bilaspur), Kangra, Shimla, etc.
+    const coveredDistricts = getDistrictsCoveredBy(userDistrict);
+    return buildCoveredDistrictsWhereClause(homestayApplications.district, coveredDistricts);
+  }
+};
+
+/**
+ * Check if a single application (by its district and tehsil) is covered by a DTDO officer.
+ * Enforces the same split-district separation as buildSplitDistrictWhereClause.
+ * Used for access control on individual application actions.
+ */
+export const isCoveredBySplitDistrict = (
+  officerDistrict: string,
+  appDistrict?: string | null,
+  appTehsil?: string | null
+): boolean => {
+  const districtLower = officerDistrict.toLowerCase();
+  const appDistLower = (appDistrict ?? "").toLowerCase();
+  const appTehsilLower = (appTehsil ?? "").toLowerCase();
+
+  if (districtLower.includes('pangi')) {
+    // Pangi officer covers Chamba district + Pangi tehsil only
+    return appDistLower.includes('chamba') && appTehsilLower.includes('pangi');
+  } else if (districtLower.includes('kaza')) {
+    // Spiti/Kaza covers Lahaul district + Spiti tehsil only
+    return appDistLower.includes('lahaul') && appTehsilLower.includes('spiti');
+  } else if (districtLower.includes('lahaul')) {
+    // Lahaul Main covers Lahaul district EXCLUDING Spiti tehsil
+    return appDistLower.includes('lahaul') && !appTehsilLower.includes('spiti');
+  } else if (districtLower.includes('chamba')) {
+    // Chamba Main covers Chamba district EXCLUDING Pangi tehsil
+    return appDistLower.includes('chamba') && !appTehsilLower.includes('pangi');
+  } else {
+    // Standard: Use existing covered districts logic
+    const coveredDistricts = getDistrictsCoveredBy(officerDistrict);
+    return coveredDistricts.some(d => districtsMatch(d, appDistrict));
+  }
 };

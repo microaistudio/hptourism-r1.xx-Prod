@@ -96,6 +96,15 @@ const PRODUCTION_STATS_FALLBACK: ProductionStats = {
 
 import { useLocation } from "wouter";
 
+interface ExtendedProductionStats extends ProductionStats {
+  baseline?: {
+    total: number;
+    approved: number;
+    rejected: number;
+    pending: number;
+  };
+}
+
 export default function AnalyticsPage() {
   const [, setLocation] = useLocation();
   const { data, isLoading, error } = useQuery<AnalyticsData>({
@@ -103,7 +112,7 @@ export default function AnalyticsPage() {
     retry: false,
   });
 
-  const { data: productionStatsData } = useQuery<{ stats: ProductionStats | null }>({
+  const { data: productionStatsData } = useQuery<{ stats: ExtendedProductionStats | null }>({
     queryKey: ["/api/analytics/production-stats"],
   });
 
@@ -293,11 +302,11 @@ export default function AnalyticsPage() {
                     <p className="text-3xl font-bold" data-testid="prod-stat-total">
                       {liveProductionStats.totalApplications.toLocaleString('en-IN')}
                     </p>
-                    {liveProductionStats.realtime && parseInt(liveProductionStats.legacy?.total || '0') > 0 && (
-                      <p className="text-xs text-muted-foreground mt-1">
-                        {parseInt(liveProductionStats.legacy?.total || '0').toLocaleString('en-IN')} (Legacy) + <span className="text-primary font-medium">{liveProductionStats.realtime.total} (New)</span>
-                      </p>
-                    )}
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {parseInt(liveProductionStats.legacy?.total || '0') > 0 ? `${parseInt(liveProductionStats.legacy?.total || '0').toLocaleString('en-IN')} (Legacy) + ` : ''}
+                      {liveProductionStats.baseline?.total ? `${liveProductionStats.baseline.total.toLocaleString('en-IN')} (Manual) + ` : ''}
+                      <span className="text-primary font-medium">{liveProductionStats.realtime?.total || 0} (New)</span>
+                    </p>
                   </div>
                 </div>
                 <div className="space-y-2">
@@ -306,11 +315,11 @@ export default function AnalyticsPage() {
                     <p className="text-3xl font-bold text-green-600" data-testid="prod-stat-approved">
                       {liveProductionStats.approvedApplications.toLocaleString('en-IN')}
                     </p>
-                    {liveProductionStats.realtime && parseInt(liveProductionStats.legacy?.total || '0') > 0 && (
-                      <p className="text-xs text-muted-foreground mt-1">
-                        {parseInt(liveProductionStats.legacy?.approved || '0').toLocaleString('en-IN')} (Legacy) + <span className="text-green-600 font-medium">{liveProductionStats.realtime.approved} (New)</span>
-                      </p>
-                    )}
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {parseInt(liveProductionStats.legacy?.approved || '0') > 0 ? `${parseInt(liveProductionStats.legacy?.approved || '0').toLocaleString('en-IN')} (Legacy) + ` : ''}
+                      {liveProductionStats.baseline?.approved ? `${liveProductionStats.baseline.approved.toLocaleString('en-IN')} (Manual) + ` : ''}
+                      <span className="text-green-600 font-medium">{liveProductionStats.realtime?.approved || 0} (New)</span>
+                    </p>
                   </div>
                 </div>
                 <div className="space-y-2">
@@ -319,11 +328,11 @@ export default function AnalyticsPage() {
                     <p className="text-3xl font-bold text-red-600" data-testid="prod-stat-rejected">
                       {liveProductionStats.rejectedApplications.toLocaleString('en-IN')}
                     </p>
-                    {liveProductionStats.realtime && parseInt(liveProductionStats.legacy?.total || '0') > 0 && (
-                      <p className="text-xs text-muted-foreground mt-1">
-                        {parseInt(liveProductionStats.legacy?.rejected || '0').toLocaleString('en-IN')} (Legacy) + <span className="text-red-600 font-medium">{liveProductionStats.realtime.rejected} (New)</span>
-                      </p>
-                    )}
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {parseInt(liveProductionStats.legacy?.rejected || '0') > 0 ? `${parseInt(liveProductionStats.legacy?.rejected || '0').toLocaleString('en-IN')} (Legacy) + ` : ''}
+                      {liveProductionStats.baseline?.rejected ? `${liveProductionStats.baseline.rejected.toLocaleString('en-IN')} (Manual) + ` : ''}
+                      <span className="text-red-600 font-medium">{liveProductionStats.realtime?.rejected || 0} (New)</span>
+                    </p>
                   </div>
                 </div>
                 <div className="space-y-2">
@@ -332,11 +341,11 @@ export default function AnalyticsPage() {
                     <p className="text-3xl font-bold text-orange-600" data-testid="prod-stat-pending">
                       {liveProductionStats.pendingApplications.toLocaleString('en-IN')}
                     </p>
-                    {liveProductionStats.realtime && parseInt(liveProductionStats.legacy?.total || '0') > 0 && (
-                      <p className="text-xs text-muted-foreground mt-1">
-                        {parseInt(liveProductionStats.legacy?.pending || '0').toLocaleString('en-IN')} (Legacy) + <span className="text-orange-600 font-medium">{liveProductionStats.realtime.pending} (New)</span>
-                      </p>
-                    )}
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {parseInt(liveProductionStats.legacy?.pending || '0') > 0 ? `${parseInt(liveProductionStats.legacy?.pending || '0').toLocaleString('en-IN')} (Legacy) + ` : ''}
+                      {liveProductionStats.baseline?.pending ? `${liveProductionStats.baseline.pending.toLocaleString('en-IN')} (Manual) + ` : ''}
+                      <span className="text-orange-600 font-medium">{liveProductionStats.realtime?.pending || 0} (New)</span>
+                    </p>
                   </div>
                 </div>
               </div>

@@ -48,6 +48,7 @@ import SuperAdminDashboard from "@/pages/admin/super-admin-dashboard";
 import AdminBackup from "@/pages/admin/backup";
 import AdminExportImport from "@/pages/admin/export-import";
 import AdminPolicySettings from "@/pages/admin/policy-settings";
+import BaselineStatsPage from "@/pages/admin/baseline-stats";
 import SystemControlsPage from "@/pages/admin/system-controls";
 import PaymentTestKotak from "@/pages/admin/payment-test-kotak";
 import SeedToolsPage from "@/pages/admin/seed-tools";
@@ -323,6 +324,9 @@ function Router() {
       </Route>
       <Route path="/admin/system-controls">
         {() => <ProtectedRoute component={SystemControlsPage} allowedRoles={['super_admin']} />}
+      </Route>
+      <Route path="/admin/baseline-stats">
+        {() => <ProtectedRoute component={BaselineStatsPage} allowedRoles={['admin', 'super_admin', 'system_admin', 'state_officer']} />}
       </Route>
 
       {/* ============================================================================

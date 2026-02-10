@@ -1155,6 +1155,27 @@ export const selectProductionStatsSchema = createSelectSchema(productionStats);
 export type InsertProductionStats = z.infer<typeof insertProductionStatsSchema>;
 export type ProductionStats = typeof productionStats.$inferSelect;
 
+// Baseline Stats Table (Manual/Offline counts for the gap period June 2025 - Jan 2026)
+export const districtBaselineStats = pgTable("district_baseline_stats", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  district: varchar("district", { length: 100 }).notNull().unique(), // e.g., 'Shimla'
+
+  // The "Pre-Portal" counts
+  totalCount: integer("total_count").default(0).notNull(),
+  approvedCount: integer("approved_count").default(0).notNull(),
+  rejectedCount: integer("rejected_count").default(0).notNull(),
+  pendingCount: integer("pending_count").default(0).notNull(),
+
+  description: text("description").default('Manual Processing (June 2025 - Jan 2026)'),
+  updatedBy: varchar("updated_by").references(() => users.id),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertDistrictBaselineStatsSchema = createInsertSchema(districtBaselineStats).omit({ id: true, updatedAt: true });
+export const selectDistrictBaselineStatsSchema = createSelectSchema(districtBaselineStats);
+export type DistrictBaselineStats = typeof districtBaselineStats.$inferSelect;
+export type InsertDistrictBaselineStats = z.infer<typeof insertDistrictBaselineStatsSchema>;
+
 // HimKosh Transactions Table (Cyber Treasury Portal Integration)
 export const himkoshTransactions = pgTable("himkosh_transactions", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

@@ -4,6 +4,7 @@
  */
 import { format } from "date-fns";
 import type { HomestayApplication } from "@shared/schema";
+import { formatDateIST, formatDateTimeIST } from "@/lib/dateUtils";
 import himachalTourismLogo from "@/assets/logos_tr/HP_Touris_TR.png";
 
 interface PrintSheetProps {
@@ -164,11 +165,7 @@ export function ApplicationPrintSheet({ application, owner, documents = [] }: Pr
                         <p className="text-xs uppercase text-gray-500">Submitted On</p>
                         <p>
                             {submissionDate
-                                ? submissionDate.toLocaleDateString("en-IN", {
-                                    day: "numeric",
-                                    month: "long",
-                                    year: "numeric",
-                                })
+                                ? formatDateIST(submissionDate)
                                 : "—"}
                         </p>
                     </div>
@@ -176,11 +173,7 @@ export function ApplicationPrintSheet({ application, owner, documents = [] }: Pr
                         <p className="text-xs uppercase text-gray-500">Last Updated</p>
                         <p>
                             {lastUpdatedAt
-                                ? lastUpdatedAt.toLocaleDateString("en-IN", {
-                                    day: "numeric",
-                                    month: "long",
-                                    year: "numeric",
-                                })
+                                ? formatDateIST(lastUpdatedAt)
                                 : "—"}
                         </p>
                     </div>
@@ -437,13 +430,7 @@ export function ApplicationPrintSheet({ application, owner, documents = [] }: Pr
             <section className="text-xs text-gray-600 border-t border-gray-200 pt-4 mt-6">
                 <p>
                     Generated on{" "}
-                    {printGeneratedAt.toLocaleString("en-IN", {
-                        day: "numeric",
-                        month: "long",
-                        year: "numeric",
-                        hour: "2-digit",
-                        minute: "2-digit",
-                    })}
+                    {formatDateTimeIST(printGeneratedAt)}
                 </p>
                 <p className="text-gray-400 mt-1">
                     HP Tourism Homestay Portal • https://homestay.hp.gov.in

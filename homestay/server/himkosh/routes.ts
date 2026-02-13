@@ -1,7 +1,7 @@
 import { Router, type Request } from 'express';
 import { db } from '../db';
 import { himkoshTransactions, homestayApplications, systemSettings, users } from '../../shared/schema';
-import { HimKoshCrypto, buildRequestString, parseResponseString, buildVerificationString } from './crypto';
+import { HimKoshCrypto, buildRequestString, parseResponseString, buildVerificationString, verifyChallanViaSearch } from './crypto';
 import { resolveHimkoshGatewayConfig } from './gatewayConfig';
 import { and, desc, eq, sql } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
@@ -979,131 +979,193 @@ router.post('/callback', async (req, res) => {
 
 /**
  * POST /api/himkosh/verify/:appRefNo
- * Double verification of transaction (server-to-server)
+ * Double verification of transaction via SearchChallan scraping.
+ * AppVerification.aspx is undocumented and returns "checksum mismatch" for all tested formats.
+ * Instead, we use the public SearchChallan.aspx page to confirm the transaction status.
  */
 router.post('/verify/:appRefNo', async (req, res) => {
   try {
     const { appRefNo } = req.params;
     const { config } = await resolveHimkoshGatewayConfig();
-    // Build verification request
-    const verificationString = buildVerificationString({
-      appRefNo,
-      serviceCode: config.serviceCode,
-      merchantCode: config.merchantCode,
-    });
 
-    const encryptedData = await crypto.encrypt(verificationString);
-
-    // Make request to CTP verification endpoint
-    const response = await fetch(config.verificationUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: `encdata=${encodeURIComponent(encryptedData)}`,
-    });
-
-    const responseData = await response.text();
-
-    // Parse response (will be pipe-delimited string)
-    const parts = responseData.split('|');
-    const verificationData: Record<string, string> = {};
-
-    for (const part of parts) {
-      const [key, value] = part.split('=');
-      if (key && value !== undefined) {
-        verificationData[key] = value;
-      }
-    }
-
-    // Update transaction
+    // Find transaction in our DB
     const [transaction] = await db
       .select()
       .from(himkoshTransactions)
       .where(eq(himkoshTransactions.appRefNo, appRefNo))
       .limit(1);
 
-    if (transaction) {
-      await db
-        .update(himkoshTransactions)
-        .set({
-          isDoubleVerified: true,
-          doubleVerificationDate: new Date(),
-          doubleVerificationData: verificationData,
-          verifiedAt: new Date(),
-        })
-        .where(eq(himkoshTransactions.id, transaction.id));
+    if (!transaction) {
+      return res.status(404).json({ error: 'Transaction not found' });
+    }
 
-      // BRIDGE LOGIC: Update Application Status if Verified
-      if (verificationData.TXN_STAT === '1') {
-        const [app] = await db
-          .select()
-          .from(homestayApplications)
-          .where(eq(homestayApplications.id, transaction.applicationId))
-          .limit(1);
+    // Determine date range for search
+    // Use the transaction's initiation date as the base
+    const txnDate = transaction.respondedAt ?? transaction.initiatedAt ?? transaction.createdAt;
+    const dateObj = txnDate ? new Date(txnDate) : new Date();
+    const formatDate = (d: Date) => {
+      const dd = String(d.getDate()).padStart(2, '0');
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      const yyyy = d.getFullYear();
+      return `${dd}-${mm}-${yyyy}`;
+    };
+    // Search from 1 day before to 1 day after for safety
+    const fromDate = new Date(dateObj);
+    fromDate.setDate(fromDate.getDate() - 1);
+    const toDate = new Date(dateObj);
+    toDate.setDate(toDate.getDate() + 1);
 
-        if (app) {
-          // CASE 1: Pay & Submit (Draft -> Submitted)
-          if (app.status === 'draft') {
-            const now = new Date();
-            await db
-              .update(homestayApplications)
-              .set({
-                status: 'submitted',
-                paymentStatus: 'paid',
-                paymentId: transaction.echTxnId ?? verificationData.himgrn, // Use verification data if available
-                paymentAmount: transaction.totalAmount?.toString(),
-                paymentDate: now,
-                submittedAt: now,
-                updatedAt: now,
-                // Analytics: Calculate time spent (Created -> Verified/Submitted)
-                formCompletionTimeSeconds: (() => {
-                  if (app.createdAt) {
-                    const createdMs = new Date(app.createdAt).getTime();
-                    const nowMs = now.getTime();
-                    const diff = Math.round((nowMs - createdMs) / 1000);
-                    return (diff > 0 && diff < 2000000000) ? diff : 0;
-                  }
-                  return undefined;
-                })(),
-              })
-              .where(eq(homestayApplications.id, app.id));
+    // Get TenderBy from the original request
+    const tenderBy = transaction.tenderBy ?? 'Chamba Main';
 
-            await logApplicationAction({
-              applicationId: app.id,
-              actorId: app.userId,
-              action: "payment_verified",
-              previousStatus: "draft",
-              newStatus: "submitted",
-              feedback: `Payment verified manually (Bridge). App submitted.`,
-            });
+    const searchUrl = config.searchChallanUrl
+      ?? 'https://himkosh.hp.nic.in/eChallan/SearchChallan.aspx';
 
-            // Sync documents from JSONB to documents table for DA verification
-            try {
-              const { storage } = await import('../storage');
-              if (storage.syncDocumentsFromJsonb) {
-                await storage.syncDocumentsFromJsonb(app.id);
-                himkoshLogger.info({ applicationId: app.id }, "Synced documents on bridge submission");
-              }
-            } catch (syncError) {
-              himkoshLogger.error({ err: syncError, applicationId: app.id }, "Failed to sync documents on bridge");
+    himkoshLogger.info(
+      {
+        appRefNo,
+        echTxnId: transaction.echTxnId ?? 'UNKNOWN',
+        tenderBy,
+        fromDate: formatDate(fromDate),
+        toDate: formatDate(toDate),
+      },
+      'Verifying transaction via SearchChallan',
+    );
+
+    const result = await verifyChallanViaSearch({
+      searchUrl,
+      tenderBy,
+      fromDate: formatDate(fromDate),
+      toDate: formatDate(toDate),
+      echTxnId: transaction.echTxnId ?? '', // empty string triggers appRefNo-based search
+      appRefNo,
+    });
+
+    himkoshLogger.info({ appRefNo, result }, 'SearchChallan verification result');
+
+    // Build verification data compatible with our existing schema
+    const verificationData: Record<string, string> = {
+      TXN_STAT: result.isSuccess ? '1' : '0',
+      himgrn: result.transId,
+      receipt_no: result.receiptNo,
+      status: result.status,
+      tender_by: result.tenderBy,
+      service: result.service,
+      amount: result.amount,
+      receipt_date: result.receiptDate,
+      verified_via: 'SearchChallan',
+      dept_ref_no: result.deptRefNo,
+      found: result.found ? 'true' : 'false',
+    };
+
+    // Update transaction — recover echTxnId if it was missing (broken mid-flow)
+    const recoveredFields: Record<string, any> = {
+      isDoubleVerified: true,
+      doubleVerificationDate: new Date(),
+      doubleVerificationData: verificationData,
+      verifiedAt: new Date(),
+    };
+    if (result.isSuccess) {
+      recoveredFields.transactionStatus = 'verified';
+    }
+    // If we didn't have an echTxnId before (broken transaction), recover it
+    if (!transaction.echTxnId && result.transId) {
+      recoveredFields.echTxnId = result.transId;
+      recoveredFields.respondedAt = new Date();
+      recoveredFields.transactionStatus = result.isSuccess ? 'success' : 'failed';
+      recoveredFields.statusCd = result.isSuccess ? '1' : '0';
+      himkoshLogger.info(
+        { appRefNo, recoveredEchTxnId: result.transId },
+        'Recovered missing echTxnId from SearchChallan (broken mid-flow transaction)',
+      );
+    }
+    await db
+      .update(himkoshTransactions)
+      .set(recoveredFields)
+      .where(eq(himkoshTransactions.id, transaction.id));
+
+    // BRIDGE LOGIC: Update Application Status if Verified
+    if (result.isSuccess) {
+      const [app] = await db
+        .select()
+        .from(homestayApplications)
+        .where(eq(homestayApplications.id, transaction.applicationId))
+        .limit(1);
+
+      if (app) {
+        // CASE 1: Pay & Submit (Draft -> Submitted)
+        if (app.status === 'draft') {
+          const now = new Date();
+          await db
+            .update(homestayApplications)
+            .set({
+              status: 'submitted',
+              paymentStatus: 'paid',
+              paymentId: transaction.echTxnId ?? result.transId,
+              paymentAmount: transaction.totalAmount?.toString(),
+              paymentDate: now,
+              submittedAt: now,
+              updatedAt: now,
+              formCompletionTimeSeconds: (() => {
+                if (app.createdAt) {
+                  const createdMs = new Date(app.createdAt).getTime();
+                  const nowMs = now.getTime();
+                  const diff = Math.round((nowMs - createdMs) / 1000);
+                  return (diff > 0 && diff < 2000000000) ? diff : 0;
+                }
+                return undefined;
+              })(),
+            })
+            .where(eq(homestayApplications.id, app.id));
+
+          await logApplicationAction({
+            applicationId: app.id,
+            actorId: app.userId,
+            action: "payment_verified",
+            previousStatus: "draft",
+            newStatus: "submitted",
+            feedback: `Payment double-verified via HimKosh SearchChallan (HIMGRN: ${result.transId}).`,
+          });
+
+          // Sync documents
+          try {
+            const { storage } = await import('../storage');
+            if (storage.syncDocumentsFromJsonb) {
+              await storage.syncDocumentsFromJsonb(app.id);
             }
-          }
-          // CASE 2: Legacy (Payment Pending -> Approved)
-          else if (app.status === 'payment_pending') {
-            // ... (Logic simplified as user only needs draft fix now, but keeping safe)
-            // Check if already approved to avoid duplicate certs? 
-            // Existing callback logic generates certs. Let's assume callback handles main flow.
-            // But if callback failed, we need this.
-            // For now, prioritize DRAFT fix as requested.
-          }
+          } catch (e) { }
+        }
+        // CASE 2: Payment Pending (e.g. after inspection or renewal)
+        else if (app.status === 'payment_pending') {
+          const now = new Date();
+          await db
+            .update(homestayApplications)
+            .set({
+              status: 'submitted',
+              paymentStatus: 'paid',
+              paymentId: transaction.echTxnId ?? result.transId,
+              paymentAmount: transaction.totalAmount?.toString(),
+              paymentDate: now,
+              updatedAt: now,
+            })
+            .where(eq(homestayApplications.id, app.id));
+
+          await logApplicationAction({
+            applicationId: app.id,
+            actorId: app.userId,
+            action: "payment_verified",
+            previousStatus: "payment_pending",
+            newStatus: "submitted",
+            feedback: `Payment double-verified via HimKosh SearchChallan (HIMGRN: ${result.transId}).`,
+          });
         }
       }
     }
 
     res.json({
       success: true,
-      verified: verificationData.TXN_STAT === '1',
+      verified: result.isSuccess,
+      found: result.found,
       data: verificationData,
     });
   } catch (error) {
@@ -1111,6 +1173,186 @@ router.post('/verify/:appRefNo', async (req, res) => {
     res.status(500).json({
       error: 'Verification failed',
       details: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+/**
+ * POST /api/himkosh/verify/:appRefNo/manual
+ * Manual (browser-based) verification of transaction.
+ * Used when the server cannot reach HimKosh directly (e.g., no outbound internet on PROD).
+ * The admin opens SearchChallan in their browser, finds the GRN, and enters it here.
+ */
+router.post('/verify/:appRefNo/manual', async (req, res) => {
+  try {
+    const { appRefNo } = req.params;
+    const { echTxnId, receiptNo, status, verified } = req.body;
+    const adminUserId = req.session?.userId ?? null;
+
+    if (!appRefNo) {
+      return res.status(400).json({ error: 'appRefNo is required' });
+    }
+
+    // Find transaction
+    const [transaction] = await db
+      .select()
+      .from(himkoshTransactions)
+      .where(eq(himkoshTransactions.appRefNo, appRefNo))
+      .limit(1);
+
+    if (!transaction) {
+      return res.status(404).json({ error: 'Transaction not found' });
+    }
+
+    const isVerified = verified === true;
+    const grn = (echTxnId || '').trim();
+
+    // Build verification data
+    const verificationData: Record<string, string> = {
+      TXN_STAT: isVerified ? '1' : '0',
+      himgrn: grn,
+      receipt_no: (receiptNo || '').trim(),
+      status: (status || (isVerified ? 'Success' : 'Not Found')).trim(),
+      verified_via: 'ManualBrowserCheck',
+      verified_by: adminUserId ?? 'unknown',
+      verified_at: new Date().toISOString(),
+    };
+
+    // Update transaction
+    const updateFields: Record<string, any> = {
+      isDoubleVerified: true,
+      doubleVerificationDate: new Date(),
+      doubleVerificationData: verificationData,
+      verifiedAt: new Date(),
+    };
+
+    if (isVerified && grn) {
+      // Always ensure echTxnId and statusCd are set correctly on manual verify
+      updateFields.echTxnId = grn;
+      updateFields.respondedAt = new Date();
+      updateFields.statusCd = '1';
+      if (receiptNo) {
+        updateFields.bankCIN = receiptNo;
+      }
+
+      himkoshLogger.info(
+        { appRefNo, recoveredEchTxnId: grn, method: 'manual' },
+        'Set echTxnId via manual browser verification',
+      );
+    } else {
+      updateFields.transactionStatus = isVerified ? 'success' : 'failed';
+    }
+
+    await db
+      .update(himkoshTransactions)
+      .set(updateFields)
+      .where(eq(himkoshTransactions.id, transaction.id));
+
+    // BRIDGE LOGIC: Update Application Status if verified with GRN
+    if (isVerified && grn) {
+      const [app] = await db
+        .select()
+        .from(homestayApplications)
+        .where(eq(homestayApplications.id, transaction.applicationId))
+        .limit(1);
+
+      if (app) {
+        const now = new Date();
+        const terminalStates = new Set(['approved', 'rejected', 'superseded', 'submitted']);
+
+        // Only update if the app is NOT already in a terminal/forwarded state
+        if (!terminalStates.has(app.status ?? '')) {
+          // CASE 1: Pay & Submit (draft, or any pre-submission state -> Submitted)
+          if (['draft', 'initiated', 'incomplete'].includes(app.status ?? '')) {
+            await db
+              .update(homestayApplications)
+              .set({
+                status: 'submitted',
+                paymentStatus: 'paid',
+                paymentId: grn,
+                paymentAmount: transaction.totalAmount?.toString(),
+                paymentDate: now,
+                submittedAt: now,
+                updatedAt: now,
+              })
+              .where(eq(homestayApplications.id, app.id));
+
+            await logApplicationAction({
+              applicationId: app.id,
+              actorId: adminUserId ?? app.userId,
+              action: "payment_verified",
+              previousStatus: app.status ?? "draft",
+              newStatus: "submitted",
+              feedback: `Payment manually verified via browser (HIMGRN: ${grn}).`,
+            });
+
+            himkoshLogger.info(
+              { appRefNo, applicationId: app.id, grn, previousStatus: app.status, method: 'manual' },
+              'Manual verification: Application -> Submitted',
+            );
+          }
+
+          // CASE 2: On-Approval Payment (payment_pending -> approved)
+          if (app.status === 'payment_pending') {
+            await db
+              .update(homestayApplications)
+              .set({
+                status: 'approved',
+                paymentStatus: 'paid',
+                paymentId: grn,
+                paymentAmount: transaction.totalAmount?.toString(),
+                paymentDate: now,
+                approvedAt: now,
+                updatedAt: now,
+              })
+              .where(eq(homestayApplications.id, app.id));
+
+            await logApplicationAction({
+              applicationId: app.id,
+              actorId: adminUserId ?? app.userId,
+              action: "payment_verified",
+              previousStatus: "payment_pending",
+              newStatus: "approved",
+              feedback: `Payment manually verified via browser (HIMGRN: ${grn}).`,
+            });
+
+            himkoshLogger.info(
+              { appRefNo, applicationId: app.id, grn, method: 'manual' },
+              'Manual verification: payment_pending -> approved',
+            );
+          }
+        } else {
+          himkoshLogger.info(
+            { appRefNo, applicationId: app.id, currentStatus: app.status, grn, method: 'manual' },
+            'Manual verification: App already in terminal state, no status change needed',
+          );
+        }
+      }
+    }
+
+    himkoshLogger.info(
+      { appRefNo, isVerified, grn, adminUserId, method: 'manual' },
+      'Manual browser-based verification completed',
+    );
+
+    res.json({
+      success: true,
+      verified: isVerified,
+      data: verificationData,
+    });
+  } catch (error) {
+    // Handle duplicate GRN error gracefully
+    const errMsg = error instanceof Error ? error.message : 'Unknown error';
+    if (errMsg.includes('unique') || errMsg.includes('duplicate')) {
+      return res.status(409).json({
+        error: 'GRN already exists',
+        details: 'This GRN/HIMGRN is already assigned to another transaction. Please check you are verifying the correct transaction.',
+      });
+    }
+    himkoshLogger.error({ err: error, route: req.path, appRefNo: req.params?.appRefNo }, "Manual verification error");
+    res.status(500).json({
+      error: 'Manual verification failed',
+      details: errMsg,
     });
   }
 });
@@ -1133,6 +1375,9 @@ router.get('/transactions', async (req, res) => {
     // DDO filter
     const ddoFilter = req.query?.ddo as string | undefined;
 
+    // Status filter (e.g., 'initiated', 'redirected', 'success', 'failed', 'verified')
+    const statusFilter = req.query?.status as string | undefined;
+
     // Build where conditions - join with applications to check REAL applicationNumber
     const conditions = [eq(himkoshTransactions.isArchived, false)];
     if (excludeTest) {
@@ -1142,6 +1387,9 @@ router.get('/transactions', async (req, res) => {
     }
     if (ddoFilter && ddoFilter !== 'all') {
       conditions.push(eq(himkoshTransactions.ddo, ddoFilter));
+    }
+    if (statusFilter && statusFilter !== 'all') {
+      conditions.push(eq(himkoshTransactions.transactionStatus, statusFilter));
     }
 
     const whereClause = and(...conditions);

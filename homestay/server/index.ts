@@ -7,6 +7,21 @@ import { globalRateLimiter } from "./security/rateLimit";
 import helmet from "helmet";
 import { startBackupScheduler } from "./services/backup-scheduler";
 
+// ── Crash Diagnostics ────────────────────────────────────────────────
+// Log the REAL crash cause before the process dies.
+// Without these, we only see EADDRINUSE from subsequent restarts.
+process.on("uncaughtException", (err) => {
+  console.error("[FATAL] Uncaught Exception:", err);
+  logger.fatal({ err: err.message, stack: err.stack }, "[server] uncaught exception — process will exit");
+  process.exit(1);
+});
+
+process.on("unhandledRejection", (reason: any) => {
+  console.error("[FATAL] Unhandled Rejection:", reason);
+  logger.fatal({ reason: String(reason) }, "[server] unhandled promise rejection — process will exit");
+  process.exit(1);
+});
+
 const app = express();
 logger.info(
   {
@@ -152,11 +167,34 @@ app.use(httpLogger);
   // this serves both the API and the client.
   // It is the only port that is not firewalled.
   const port = config.server.port;
+  let retryCount = 0;
+  const MAX_RETRIES = 10;
+
+  // Handle port-in-use errors gracefully instead of crash-looping
+  server.on("error", (err: NodeJS.ErrnoException) => {
+    if (err.code === "EADDRINUSE") {
+      retryCount++;
+      if (retryCount > MAX_RETRIES) {
+        logger.error({ port, retryCount }, "[server] port still in use after max retries, exiting");
+        process.exit(1);
+      }
+      logger.warn({ port, retryCount }, "[server] port in use, retrying in 3 seconds...");
+      setTimeout(() => {
+        server.listen({ port, host: config.server.host });
+      }, 3000);
+    } else if (err.code === "ERR_SERVER_NOT_RUNNING") {
+      // Ignore — happens during cleanup, not a real error
+    } else {
+      logger.error({ err }, "[server] fatal error");
+      process.exit(1);
+    }
+  });
+
   server.listen({
     port,
     host: config.server.host,
-    reusePort: true,
   }, () => {
+    retryCount = 0;
     logger.info({ port, host: config.server.host }, "server started");
 
     // Initialize backup scheduler
@@ -164,4 +202,34 @@ app.use(httpLogger);
       logger.error({ err }, "Failed to start backup scheduler");
     });
   });
+
+  // ── Graceful Shutdown ──────────────────────────────────────────────
+  // Properly close the HTTP server so the port is released before exit.
+  // This prevents the recurring EADDRINUSE crash-loop on PM2 restart.
+  let shuttingDown = false;
+
+  function gracefulShutdown(signal: string) {
+    if (shuttingDown) return; // prevent double-shutdown
+    shuttingDown = true;
+    logger.info({ signal }, "[server] received shutdown signal, closing gracefully...");
+
+    // Stop accepting new connections
+    server.close((err) => {
+      if (err) {
+        logger.error({ err }, "[server] error during shutdown");
+        process.exit(1);
+      }
+      logger.info("[server] all connections closed, exiting cleanly");
+      process.exit(0);
+    });
+
+    // Force exit after 5 seconds if connections don't close
+    setTimeout(() => {
+      logger.warn("[server] forcefully shutting down after timeout");
+      process.exit(1);
+    }, 5000);
+  }
+
+  process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+  process.on("SIGINT", () => gracefulShutdown("SIGINT"));
 })();

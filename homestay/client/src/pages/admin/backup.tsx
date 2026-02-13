@@ -30,7 +30,8 @@ import {
     Loader2,
     RefreshCw
 } from "lucide-react";
-import { formatDistanceToNow, format } from "date-fns";
+import { formatDistanceToNow } from "date-fns";
+import { formatDateLongIST, formatTimeIST } from "@/lib/dateUtils";
 
 interface BackupSettings {
     enabled: boolean;
@@ -103,16 +104,7 @@ function safeFormatDistance(dateStr: string | undefined): string {
     }
 }
 
-function safeFormat(dateStr: string | undefined, formatStr: string): string {
-    if (!dateStr) return "-";
-    try {
-        const date = new Date(dateStr);
-        if (isNaN(date.getTime())) return "-";
-        return format(date, formatStr);
-    } catch (e) {
-        return "-";
-    }
-}
+
 
 export default function AdminBackup() {
     const { toast } = useToast();
@@ -512,8 +504,8 @@ export default function AdminBackup() {
                                     <TableRow key={backup.id}>
                                         <TableCell>
                                             <div>
-                                                <div className="font-medium">{safeFormat(backup.createdAt, "MMM d, yyyy")}</div>
-                                                <div className="text-xs text-muted-foreground">{safeFormat(backup.createdAt, "h:mm a")}</div>
+                                                <div className="font-medium">{backup.createdAt ? formatDateLongIST(backup.createdAt) : "-"}</div>
+                                                <div className="text-xs text-muted-foreground">{backup.createdAt ? formatTimeIST(backup.createdAt) : "-"}</div>
                                             </div>
                                         </TableCell>
                                         <TableCell>

@@ -38,6 +38,7 @@ import { isCorrectionRequiredStatus } from "@/constants/workflow";
 import { Trash2 } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { formatDateIST } from "@/lib/dateUtils";
 // Progress milestones for New Registration (full pipeline)
 const newRegistrationMilestones = [
     { id: "da_review", label: "With Dealing Assistant", short: "DA Review" },
@@ -601,13 +602,13 @@ export default function OwnerDashboardNew() {
                                 )}
                                 {primaryApplication.submittedAt && (
                                     <p>
-                                        <strong>Submitted:</strong> {new Date(primaryApplication.submittedAt).toLocaleDateString()}
+                                        <strong>Submitted:</strong> {formatDateIST(primaryApplication.submittedAt)}
                                     </p>
                                 )}
                                 {primaryApplication.status === "draft" && (
                                     <p className="text-muted-foreground mt-1">
-                                        Started: {new Date(primaryApplication.createdAt).toLocaleDateString()} •
-                                        Last edited: {new Date(primaryApplication.updatedAt).toLocaleDateString()}
+                                        Started: {formatDateIST(primaryApplication.createdAt)} •
+                                        Last edited: {formatDateIST(primaryApplication.updatedAt)}
                                     </p>
                                 )}
                             </div>

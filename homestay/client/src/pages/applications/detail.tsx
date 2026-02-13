@@ -34,6 +34,7 @@ import { InspectionReportCard } from "@/components/application/inspection-report
 import { InspectionScheduleCard } from "@/components/application/inspection-schedule-card";
 import { isCorrectionRequiredStatus } from "@/constants/workflow";
 import { formatDistanceToNow } from "date-fns";
+import { formatDateIST, formatDateTimeIST } from "@/lib/dateUtils";
 
 type DocumentStatusMeta = {
   label: string;
@@ -581,11 +582,11 @@ export default function ApplicationDetail() {
             </div>
             <div>
               <p className="text-xs uppercase text-gray-500">Submitted On</p>
-              <p>{submissionDate ? submissionDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' }) : '—'}</p>
+              <p>{submissionDate ? formatDateIST(submissionDate) : '—'}</p>
             </div>
             <div>
               <p className="text-xs uppercase text-gray-500">Last Updated</p>
-              <p>{lastUpdatedAt ? lastUpdatedAt.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' }) : '—'}</p>
+              <p>{lastUpdatedAt ? formatDateIST(lastUpdatedAt) : '—'}</p>
             </div>
           </div>
         </section>
@@ -791,7 +792,7 @@ export default function ApplicationDetail() {
 
         <section className="text-xs text-gray-600 border-t border-gray-200 pt-4">
           <p>
-            Generated on {printGeneratedAt.toLocaleString('en-IN', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+            Generated on {formatDateTimeIST(printGeneratedAt)}
           </p>
         </section>
       </div>
@@ -899,11 +900,11 @@ export default function ApplicationDetail() {
                   </div>
                   <div>
                     <p className="text-xs uppercase text-muted-foreground">Submitted On</p>
-                    <p>{submissionDate ? submissionDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' }) : '—'}</p>
+                    <p>{submissionDate ? formatDateIST(submissionDate) : '—'}</p>
                   </div>
                   <div>
                     <p className="text-xs uppercase text-muted-foreground">Last Updated</p>
-                    <p>{lastUpdatedAt ? lastUpdatedAt.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' }) : '—'}</p>
+                    <p>{lastUpdatedAt ? formatDateIST(lastUpdatedAt) : '—'}</p>
                   </div>
                 </div>
               </section>
@@ -1166,11 +1167,7 @@ export default function ApplicationDetail() {
                         <div className="bg-white p-4 rounded-lg border border-green-200">
                           <Label className="text-muted-foreground text-xs">Issue Date</Label>
                           <p className="text-lg font-semibold text-green-700" data-testid="text-certificate-date">
-                            {new Date(app.certificateIssuedDate).toLocaleDateString('en-IN', {
-                              day: 'numeric',
-                              month: 'short',
-                              year: 'numeric'
-                            })}
+                            {formatDateIST(app.certificateIssuedDate)}
                           </p>
                         </div>
                       )}
@@ -1181,11 +1178,7 @@ export default function ApplicationDetail() {
                           <div>
                             <Label className="text-muted-foreground text-xs">Valid Until</Label>
                             <p className="font-medium text-green-700">
-                              {new Date(app.certificateExpiryDate).toLocaleDateString('en-IN', {
-                                day: 'numeric',
-                                month: 'long',
-                                year: 'numeric'
-                              })}
+                              {formatDateIST(app.certificateExpiryDate)}
                             </p>
                           </div>
                           <Badge variant="default" className="bg-green-600">

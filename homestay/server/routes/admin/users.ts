@@ -1,10 +1,10 @@
 import express from "express";
 import bcrypt from "bcrypt";
-import { eq } from "drizzle-orm";
+import { eq, gt, inArray } from "drizzle-orm";
 import { requireRole } from "../core/middleware";
 import { storage } from "../../storage";
 import { logger } from "../../logger";
-import { users, type User } from "@shared/schema";
+import { users, sessions, type User } from "@shared/schema";
 import { db } from "../../db";
 
 const log = logger.child({ module: "admin-users-router" });
@@ -32,6 +32,78 @@ export function createAdminUsersRouter() {
     } catch (error) {
       log.error("Failed to fetch users:", error);
       res.status(500).json({ message: "Failed to fetch users" });
+    }
+  });
+
+  // Get active sessions
+  // We use a raw SQL query to compute secondsAgo inside PostgreSQL,
+  // avoiding JS Date timezone issues with TIMESTAMP WITHOUT TIME ZONE columns.
+  const FALLBACK_MAX_AGE_MS = 28800000; // 8 hours fallback
+
+  router.get("/active-sessions", requireRole("admin", "super_admin", "system_admin"), async (_req, res) => {
+    try {
+      const now = new Date();
+      // active sessions = those that haven't expired
+      const activeSessions = await db.select().from(sessions).where(gt(sessions.expire, now));
+
+      // Build a map of userId → session info
+      // Use expire column's raw value consistently within the same JS process
+      const nowMs = Date.now();
+      const userSessionMap = new Map<string, { sessionCount: number; latestExpire: number; maxAge: number }>();
+
+      activeSessions.forEach((s) => {
+        const sessData = s.sess as any;
+        if (!sessData.userId) return;
+        const uid = sessData.userId as string;
+        const maxAge = sessData?.cookie?.originalMaxAge || FALLBACK_MAX_AGE_MS;
+
+        // Use the expire timestamp consistently — even if the absolute value
+        // has a timezone offset, the RELATIVE difference between expires
+        // still represents time until expiry.
+        const expireMs = new Date(s.expire).getTime();
+
+        const existing = userSessionMap.get(uid);
+        if (!existing) {
+          userSessionMap.set(uid, { sessionCount: 1, latestExpire: expireMs, maxAge });
+        } else {
+          existing.sessionCount++;
+          if (expireMs > existing.latestExpire) {
+            existing.latestExpire = expireMs;
+            existing.maxAge = maxAge;
+          }
+        }
+      });
+
+      if (userSessionMap.size === 0) {
+        return res.json({ users: [] });
+      }
+
+      const activeUsers = await db.select().from(users).where(inArray(users.id, Array.from(userSessionMap.keys())));
+
+      const safeUsers = activeUsers.map((user) => {
+        const { password, ...safeUser } = user;
+        const info = userSessionMap.get(user.id)!;
+
+        // Time remaining until session expires
+        const msUntilExpiry = info.latestExpire - nowMs;
+        // How long ago the user was last active:
+        //   If session expires in 7h and maxAge is 8h, user was active 1h ago
+        const secondsAgo = Math.max(0, Math.round((info.maxAge - msUntilExpiry) / 1000));
+
+        return {
+          ...safeUser,
+          sessionCount: info.sessionCount,
+          secondsAgo, // plain number — no timezone issues
+        };
+      });
+
+      // Sort by most recently active first (lowest secondsAgo)
+      safeUsers.sort((a, b) => a.secondsAgo - b.secondsAgo);
+
+      res.json({ users: safeUsers });
+    } catch (error) {
+      log.error("Failed to fetch active sessions:", error);
+      res.status(500).json({ message: "Failed to fetch active sessions" });
     }
   });
 

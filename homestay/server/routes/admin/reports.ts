@@ -96,8 +96,8 @@ export function createAdminReportsRouter() {
                         ddoDescription: ddoCodes.ddoDescription,
                         treasuryCode: ddoCodes.treasuryCode,
                         totalTransactions: sql<number>`count(*)::int`,
-                        successfulTransactions: sql<number>`count(*) FILTER (WHERE ${himkoshTransactions.transactionStatus} = 'success')::int`,
-                        totalAmount: sql<number>`coalesce(sum(${himkoshTransactions.totalAmount}) FILTER (WHERE ${himkoshTransactions.transactionStatus} = 'success'), 0)::int`,
+                        successfulTransactions: sql<number>`count(*) FILTER (WHERE ${himkoshTransactions.transactionStatus} IN ('success', 'verified'))::int`,
+                        totalAmount: sql<number>`coalesce(sum(${himkoshTransactions.totalAmount}) FILTER (WHERE ${himkoshTransactions.transactionStatus} IN ('success', 'verified')), 0)::int`,
                     })
                     .from(himkoshTransactions)
                     .innerJoin(
@@ -186,7 +186,7 @@ export function createAdminReportsRouter() {
                 const userId = req.session.userId!;
                 const roleFilter = await getDistrictFilter(userId);
                 const page = Math.max(1, parseInt(req.query.page as string) || 1);
-                const limit = Math.min(100, Math.max(10, parseInt(req.query.limit as string) || 20));
+                const limit = Math.min(5000, Math.max(10, parseInt(req.query.limit as string) || 20));
                 const offset = (page - 1) * limit;
 
                 // Date range filters
@@ -199,7 +199,7 @@ export function createAdminReportsRouter() {
                 // Default to success-only unless status=all is specified
                 const conditions = [];
                 if (statusFilter !== 'all') {
-                    conditions.push(eq(himkoshTransactions.transactionStatus, "success"));
+                    conditions.push(inArray(himkoshTransactions.transactionStatus, ["success", "verified"]));
                 }
 
                 // roleFilter is an array of covered districts for DTDO/DA
@@ -327,7 +327,7 @@ export function createAdminReportsRouter() {
                     .where(
                         and(
                             eq(homestayApplications.status, "rejected"),
-                            eq(himkoshTransactions.transactionStatus, "success"),
+                            inArray(himkoshTransactions.transactionStatus, ["success", "verified"]),
                             or(
                                 isNull(himkoshTransactions.isRefunded),
                                 eq(himkoshTransactions.isRefunded, false)
@@ -419,13 +419,14 @@ export function createAdminReportsRouter() {
                 const [stats] = await db
                     .select({
                         totalTransactions: sql<number>`count(*)::int`,
-                        successfulTransactions: sql<number>`count(*) FILTER (WHERE ${himkoshTransactions.transactionStatus} = 'success' AND (${himkoshTransactions.isRefunded} IS NULL OR ${himkoshTransactions.isRefunded} = false))::int`,
+                        successfulTransactions: sql<number>`count(*) FILTER (WHERE ${himkoshTransactions.transactionStatus} IN ('success', 'verified') AND (${himkoshTransactions.isRefunded} IS NULL OR ${himkoshTransactions.isRefunded} = false))::int`,
                         failedTransactions: sql<number>`count(*) FILTER (WHERE ${himkoshTransactions.transactionStatus} = 'failed')::int`,
+                        pendingTransactions: sql<number>`count(*) FILTER (WHERE ${himkoshTransactions.transactionStatus} IN ('initiated', 'redirected'))::int`,
                         refundedTransactions: sql<number>`count(*) FILTER (WHERE ${himkoshTransactions.isRefunded} = true)::int`,
                         // Total Collected = Gross - Refunded
                         // But wait! User wants "Total Collected" to be Net.
                         // I'll calculate Net Collection here.
-                        totalCollected: sql<number>`coalesce(sum(${himkoshTransactions.totalAmount}) FILTER (WHERE ${himkoshTransactions.transactionStatus} = 'success' AND (${himkoshTransactions.isRefunded} IS NULL OR ${himkoshTransactions.isRefunded} = false)), 0)::int`,
+                        totalCollected: sql<number>`coalesce(sum(${himkoshTransactions.totalAmount}) FILTER (WHERE ${himkoshTransactions.transactionStatus} IN ('success', 'verified') AND (${himkoshTransactions.isRefunded} IS NULL OR ${himkoshTransactions.isRefunded} = false)), 0)::int`,
                         totalRefunded: sql<number>`coalesce(sum(${himkoshTransactions.totalAmount}) FILTER (WHERE ${himkoshTransactions.isRefunded} = true), 0)::int`,
                     })
                     .from(himkoshTransactions)
@@ -503,6 +504,8 @@ export function createAdminReportsRouter() {
                     conditions.push(lte(homestayApplications.submittedAt, toDate));
                 }
 
+
+
                 const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
 
                 // Helper to apply where clause conditionally
@@ -522,12 +525,27 @@ export function createAdminReportsRouter() {
                 );
 
                 // 2. Form Completion Time Stats
+                const formMetric = (req.query.formMetric as string) || 'average';
+                const formThresholdMinutes = parseInt(req.query.formThreshold as string) || 240; // Default 4 hours
+                const formThresholdSeconds = formThresholdMinutes * 60;
+
+                // Base filter: Must be > 0 AND <= Threshold
+                const formTimeFilter = sql`${homestayApplications.formCompletionTimeSeconds} IS NOT NULL 
+                    AND ${homestayApplications.formCompletionTimeSeconds} > 0
+                    AND ${homestayApplications.formCompletionTimeSeconds} <= ${formThresholdSeconds}`;
+
+                // Dynamic aggregation: AVG or MEDIAN
+                // Postgres MEDIAN: percentile_cont(0.5) WITHIN GROUP (ORDER BY col)
+                const metricSql = formMetric === 'median'
+                    ? sql<number>`percentile_cont(0.5) WITHIN GROUP (ORDER BY ${homestayApplications.formCompletionTimeSeconds}) FILTER (WHERE ${formTimeFilter})`
+                    : sql<number>`avg(${homestayApplications.formCompletionTimeSeconds}) FILTER (WHERE ${formTimeFilter})`;
+
                 const [formTimeStats] = await applyWhere(
                     db.select({
-                        totalWithFormTime: sql<number>`count(*) FILTER (WHERE ${homestayApplications.formCompletionTimeSeconds} IS NOT NULL AND ${homestayApplications.formCompletionTimeSeconds} > 0)::int`,
-                        avgFormTimeSeconds: sql<number>`avg(${homestayApplications.formCompletionTimeSeconds}) FILTER (WHERE ${homestayApplications.formCompletionTimeSeconds} IS NOT NULL AND ${homestayApplications.formCompletionTimeSeconds} > 0)`,
-                        minFormTimeSeconds: sql<number>`min(${homestayApplications.formCompletionTimeSeconds}) FILTER (WHERE ${homestayApplications.formCompletionTimeSeconds} IS NOT NULL AND ${homestayApplications.formCompletionTimeSeconds} > 0)`,
-                        maxFormTimeSeconds: sql<number>`max(${homestayApplications.formCompletionTimeSeconds}) FILTER (WHERE ${homestayApplications.formCompletionTimeSeconds} IS NOT NULL AND ${homestayApplications.formCompletionTimeSeconds} > 0)`,
+                        totalTracked: sql<number>`count(*) FILTER (WHERE ${formTimeFilter})::int`,
+                        avgSeconds: metricSql,
+                        minSeconds: sql<number>`min(${homestayApplications.formCompletionTimeSeconds}) FILTER (WHERE ${formTimeFilter})`,
+                        maxSeconds: sql<number>`max(${homestayApplications.formCompletionTimeSeconds}) FILTER (WHERE ${formTimeFilter})`,
                     })
                         .from(homestayApplications)
                 );
@@ -535,11 +553,12 @@ export function createAdminReportsRouter() {
                 // 3. Correction/Reversion Stats
                 const [correctionStats] = await applyWhere(
                     db.select({
-                        totalApplications: sql<number>`count(*)::int`,
-                        totalWithCorrections: sql<number>`count(*) FILTER (WHERE ${homestayApplications.revertCount} > 0)::int`,
-                        avgReversionCount: sql<number>`avg(${homestayApplications.revertCount})`,
-                        maxReversionCount: sql<number>`max(${homestayApplications.revertCount})::int`,
-                        totalRejected: sql<number>`count(*) FILTER (WHERE ${homestayApplications.status} = 'rejected')::int`,
+                        totalApplications: sql<number>`count(*) FILTER (WHERE ${homestayApplications.applicationNumber} NOT LIKE 'LG-HS-%')::int`,
+                        totalWithCorrections: sql<number>`count(*) FILTER (WHERE ${homestayApplications.revertCount} > 0 AND ${homestayApplications.applicationNumber} NOT LIKE 'LG-HS-%')::int`,
+                        avgReversionCount: sql<number>`avg(${homestayApplications.revertCount}) FILTER (WHERE ${homestayApplications.applicationNumber} NOT LIKE 'LG-HS-%')`,
+                        maxReversionCount: sql<number>`max(${homestayApplications.revertCount}) FILTER (WHERE ${homestayApplications.applicationNumber} NOT LIKE 'LG-HS-%')::int`,
+                        totalRejected: sql<number>`count(*) FILTER (WHERE ${homestayApplications.status} = 'rejected' AND ${homestayApplications.applicationNumber} NOT LIKE 'LG-HS-%')::int`,
+                        existingRCCount: sql<number>`count(*) FILTER (WHERE ${homestayApplications.applicationNumber} LIKE 'LG-HS-%')::int`,
                     })
                         .from(homestayApplications)
                 );
@@ -563,7 +582,26 @@ export function createAdminReportsRouter() {
                         .from(homestayApplications)
                 ).groupBy(homestayApplications.status);
 
+                // Calculate pipeline metrics (excluding Existing RC)
+                const draftCount = Number(statusBreakdown.find(s => s.status === 'draft')?.count || 0);
+                const existingRCPipelineCount = Number(correctionStats?.existingRCCount || 0);
+                const totalApps = Number(correctionStats?.totalApplications || 0);
+                const submittedCount = totalApps - draftCount;
+                const approvedCount = Number(processingStats?.totalApproved || 0);
+                const rejectedCount = Number(correctionStats?.totalRejected || 0);
+                // Pending = Submitted - Approved - Rejected
+                const pendingCount = submittedCount - approvedCount - rejectedCount;
+
                 res.json({
+                    pipeline: {
+                        total: totalApps,
+                        drafts: draftCount,
+                        submitted: submittedCount,
+                        approved: approvedCount,
+                        rejected: rejectedCount,
+                        pending: pendingCount,
+                        existingRC: existingRCPipelineCount,
+                    },
                     processingTime: {
                         totalApproved: Number(processingStats?.totalApproved || 0),
                         avgDays: Number(processingStats?.avgProcessingDays || 0).toFixed(1),
@@ -571,10 +609,10 @@ export function createAdminReportsRouter() {
                         maxDays: Number(processingStats?.maxProcessingDays || 0).toFixed(1),
                     },
                     formCompletionTime: {
-                        totalTracked: Number(formTimeStats?.totalWithFormTime || 0),
-                        avgSeconds: Math.round(Number(formTimeStats?.avgFormTimeSeconds || 0)),
-                        minSeconds: Math.round(Number(formTimeStats?.minFormTimeSeconds || 0)),
-                        maxSeconds: Math.round(Number(formTimeStats?.maxFormTimeSeconds || 0)),
+                        totalTracked: Number(formTimeStats?.totalTracked || 0),
+                        avgSeconds: Math.round(Number(formTimeStats?.avgSeconds || 0)),
+                        minSeconds: Math.round(Number(formTimeStats?.minSeconds || 0)),
+                        maxSeconds: Math.round(Number(formTimeStats?.maxSeconds || 0)),
                     },
                     corrections: {
                         totalApplications: Number(correctionStats?.totalApplications || 0),
@@ -611,6 +649,87 @@ export function createAdminReportsRouter() {
         }
     );
     /**
+     * GET /api/admin/reports/applications
+     * List applications with filters (e.g. for Drafts list)
+     */
+    router.get(
+        "/reports/applications",
+        requireRole("district_tourism_officer", "district_officer", "state_officer", "admin", "super_admin"),
+        async (req, res) => {
+            try {
+                const userId = req.session.userId!;
+                const roleFilter = await getDistrictFilter(userId);
+                const page = Math.max(1, parseInt(req.query.page as string) || 1);
+                const limit = Math.min(100, Math.max(10, parseInt(req.query.limit as string) || 20));
+                const offset = (page - 1) * limit;
+
+                // Filters
+                const statusFilter = req.query.status as string | undefined;
+                const fromDate = req.query.from ? new Date(req.query.from as string) : null;
+                const toDate = req.query.to ? new Date(req.query.to as string) : null;
+                // Allow district override by admin if not role-locked
+                const districtQuery = req.query.district as string | undefined;
+
+                const conditions = [];
+
+                if (statusFilter) {
+                    conditions.push(eq(homestayApplications.status, statusFilter));
+                }
+
+                if (roleFilter && roleFilter.length > 0) {
+                    conditions.push(inArray(homestayApplications.district, roleFilter));
+                } else if (districtQuery && districtQuery !== "all") {
+                    conditions.push(eq(homestayApplications.district, districtQuery));
+                }
+
+                if (fromDate) {
+                    conditions.push(gte(homestayApplications.createdAt, fromDate));
+                }
+                if (toDate) {
+                    conditions.push(lte(homestayApplications.createdAt, toDate));
+                }
+
+                const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+                const [apps, countResult] = await Promise.all([
+                    db.select({
+                        id: homestayApplications.id,
+                        applicationNumber: homestayApplications.applicationNumber,
+                        propertyName: homestayApplications.propertyName,
+                        ownerName: homestayApplications.ownerName,
+                        district: homestayApplications.district,
+                        status: homestayApplications.status,
+                        createdAt: homestayApplications.createdAt,
+                        submittedAt: homestayApplications.submittedAt,
+                        mobile: homestayApplications.ownerMobile,
+                    })
+                        .from(homestayApplications)
+                        .where(whereClause)
+                        .orderBy(desc(homestayApplications.createdAt))
+                        .limit(limit)
+                        .offset(offset),
+                    db.select({ count: sql<number>`count(*)::int` })
+                        .from(homestayApplications)
+                        .where(whereClause)
+                ]);
+
+                res.json({
+                    applications: apps,
+                    pagination: {
+                        page,
+                        limit,
+                        totalCount: countResult[0]?.count || 0,
+                        totalPages: Math.ceil((countResult[0]?.count || 0) / limit),
+                    }
+                });
+            } catch (error: any) {
+                log.error({ err: error }, "[reports] Failed to list applications");
+                res.status(500).json({ message: "Failed to list applications" });
+            }
+        }
+    );
+
+    /**
      * GET /api/admin/reports/district-performance
      * Performance metrics grouped by district (For State HQ)
      */
@@ -637,6 +756,48 @@ export function createAdminReportsRouter() {
             } catch (error: any) {
                 log.error({ err: error }, "[reports] Failed to fetch district performance");
                 res.status(500).json({ message: "Failed to fetch district performance" });
+            }
+        }
+    );
+
+    // ─── Existing RC Applications List ───────────────────────────────────
+    router.get(
+        "/reports/existing-rc",
+        requireRole("district_tourism_officer", "district_officer", "state_officer", "admin", "super_admin", "system_admin"),
+        async (req, res) => {
+            try {
+                const userId = req.session.userId!;
+                const roleFilter = await getDistrictFilter(userId);
+
+                const conditions: any[] = [
+                    sql`${homestayApplications.applicationNumber} LIKE 'LG-HS-%'`,
+                ];
+                if (roleFilter && roleFilter.length > 0) {
+                    conditions.push(inArray(homestayApplications.district, roleFilter));
+                }
+
+                const results = await db
+                    .select({
+                        id: homestayApplications.id,
+                        applicationNumber: homestayApplications.applicationNumber,
+                        applicantName: homestayApplications.ownerName, // Fixed: Use ownerName
+                        district: homestayApplications.district,
+                        category: homestayApplications.category,
+                        status: homestayApplications.status,
+                        submittedAt: homestayApplications.submittedAt,
+                        createdAt: homestayApplications.createdAt,
+                        ownerName: homestayApplications.ownerName, // Use application owner name
+                    })
+                    .from(homestayApplications)
+                    .leftJoin(users, eq(homestayApplications.userId, users.id))
+                    .where(and(...conditions))
+                    .orderBy(desc(homestayApplications.submittedAt));
+
+                console.log(`[ExistingRC] Found ${results.length} applications`);
+                res.json({ applications: results });
+            } catch (error: any) {
+                log.error({ err: error }, "[reports] Failed to fetch existing RC applications");
+                res.status(500).json({ message: "Failed to fetch existing RC data" });
             }
         }
     );

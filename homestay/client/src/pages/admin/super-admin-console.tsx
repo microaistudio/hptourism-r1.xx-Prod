@@ -48,12 +48,17 @@ import {
   Terminal,
   UploadCloud,
   CreditCard,
+  ExternalLink,
+  Eye,
+  CheckCircle2,
+  XCircle,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { CommunicationsCard } from "@/components/admin/communications-card";
 import { NotificationRulesCard } from "@/components/admin/notification-rules-card";
 import { PortalConfigCard } from "@/components/admin/portal-config-card";
 import type { HimkoshTransaction } from "@shared/schema";
+import { formatDateTimeIST, formatPaymentDateIST, formatDbTimestamp } from "@/lib/dateUtils";
 
 interface SystemStats {
   database: {
@@ -305,6 +310,7 @@ export default function SuperAdminConsole() {
     transaction: null,
   });
   const [himkoshDdoFilter, setHimkoshDdoFilter] = useState<string>("all");
+  const [himkoshStatusFilter, setHimkoshStatusFilter] = useState<string>("all");
   const [seedCount, setSeedCount] = useState(10);
   const [staffCsvName, setStaffCsvName] = useState("");
   const [staffCsvText, setStaffCsvText] = useState("");
@@ -350,7 +356,7 @@ export default function SuperAdminConsole() {
     setDbForm((prev) => ({ ...prev, [field]: value }));
   };
   const formatDateTime = (value?: string | Date | null) =>
-    value ? new Date(value).toLocaleString() : null;
+    value ? formatDateTimeIST(value) : null;
   const handleGatewayInputChange =
     (field: keyof typeof gatewayForm) => (event: ChangeEvent<HTMLInputElement>) => {
       const value = event.target.value;
@@ -600,13 +606,16 @@ export default function SuperAdminConsole() {
     limit: number;
     offset: number;
   }>({
-    queryKey: ["/api/himkosh/transactions", HIMKOSH_ACTIVITY_LIMIT, himkoshDdoFilter],
+    queryKey: ["/api/himkosh/transactions", HIMKOSH_ACTIVITY_LIMIT, himkoshDdoFilter, himkoshStatusFilter],
     queryFn: async () => {
       const params = new URLSearchParams();
       params.set("limit", String(HIMKOSH_ACTIVITY_LIMIT));
       params.set("excludeTest", "true");
       if (himkoshDdoFilter && himkoshDdoFilter !== "all") {
         params.set("ddo", himkoshDdoFilter);
+      }
+      if (himkoshStatusFilter && himkoshStatusFilter !== "all") {
+        params.set("status", himkoshStatusFilter);
       }
       const response = await apiRequest(
         "GET",
@@ -985,6 +994,79 @@ export default function SuperAdminConsole() {
       toast({
         title: "Failed to clear logs",
         description: error.message || "An error occurred",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // HimKosh Manual Verification Mutation
+  const verifyTransactionMutation = useMutation({
+    mutationFn: async (appRefNo: string) => {
+      const res = await apiRequest("POST", `/api/himkosh/verify/${appRefNo}`);
+      return await res.json();
+    },
+    onSuccess: (data) => {
+      if (data.verified) {
+        toast({
+          title: "Payment Verified!",
+          description: `GRN: ${data.data?.himgrn || data.data?.himgrn_no || 'Success'}. Application status updated.`,
+        });
+      } else {
+        toast({
+          title: "Verification Complete",
+          description: `Payment not found or aborted (Status: ${data.data?.TXN_STAT || '0'})`,
+          variant: "destructive",
+        });
+      }
+      refetchHimkoshActivity();
+      closeTransactionDialog();
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Verification Failed",
+        description: error?.message || "An error occurred",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Manual (browser-based) verification
+  const [manualVerifyMode, setManualVerifyMode] = useState(false);
+  const [manualGrn, setManualGrn] = useState("");
+  const [manualReceiptNo, setManualReceiptNo] = useState("");
+
+  const manualVerifyMutation = useMutation({
+    mutationFn: async ({ appRefNo, verified, echTxnId, receiptNo }: { appRefNo: string; verified: boolean; echTxnId?: string; receiptNo?: string }) => {
+      const res = await apiRequest("POST", `/api/himkosh/verify/${appRefNo}/manual`, {
+        verified,
+        echTxnId: echTxnId || undefined,
+        receiptNo: receiptNo || undefined,
+      });
+      return await res.json();
+    },
+    onSuccess: (data) => {
+      if (data.verified) {
+        toast({
+          title: "✅ Payment Manually Verified",
+          description: `GRN: ${data.data?.himgrn || 'Confirmed'}. Application status updated.`,
+        });
+      } else {
+        toast({
+          title: "Payment Marked as Not Found",
+          description: "Transaction marked as failed.",
+          variant: "destructive",
+        });
+      }
+      setManualVerifyMode(false);
+      setManualGrn("");
+      setManualReceiptNo("");
+      refetchHimkoshActivity();
+      closeTransactionDialog();
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Manual Verification Failed",
+        description: error?.message || "An error occurred",
         variant: "destructive",
       });
     },
@@ -1455,12 +1537,7 @@ export default function SuperAdminConsole() {
     : stats?.environment?.toUpperCase();
 
   const formatTimestamp = (value?: string | null) => {
-    if (!value) return "—";
-    const parsed = new Date(value);
-    if (Number.isNaN(parsed.getTime())) {
-      return value;
-    }
-    return parsed.toLocaleString();
+    return formatDateTimeIST(value);
   };
 
   const smokeBadgeVariant = smokeStatus?.running
@@ -2564,6 +2641,19 @@ export default function SuperAdminConsole() {
                             ))}
                           </SelectContent>
                         </Select>
+                        <Select value={himkoshStatusFilter} onValueChange={setHimkoshStatusFilter}>
+                          <SelectTrigger className="w-[160px]">
+                            <SelectValue placeholder="Filter by Status" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">All Statuses</SelectItem>
+                            <SelectItem value="initiated">Initiated</SelectItem>
+                            <SelectItem value="redirected">Redirected</SelectItem>
+                            <SelectItem value="success">Success</SelectItem>
+                            <SelectItem value="failed">Failed</SelectItem>
+                            <SelectItem value="verified">Verified</SelectItem>
+                          </SelectContent>
+                        </Select>
                         <Button
                           variant="outline"
                           size="sm"
@@ -2608,7 +2698,7 @@ export default function SuperAdminConsole() {
                             {latestTransactions.map((transaction) => (
                               <TableRow key={transaction.id}>
                                 <TableCell className="whitespace-nowrap text-xs">
-                                  {formatDateLabel(transaction.createdAt)}
+                                  {formatDbTimestamp(transaction.createdAt)}
                                 </TableCell>
                                 <TableCell className="font-medium">
                                   {transaction.applicationDistrict || "—"}
@@ -3602,10 +3692,127 @@ export default function SuperAdminConsole() {
               </div>
               <div className="mt-6">
                 <p className="text-xs uppercase text-muted-foreground mb-2">Raw payload</p>
-                <pre className="bg-muted p-3 rounded-lg text-xs overflow-x-auto">
+                <pre className="bg-muted p-3 rounded-lg text-xs whitespace-pre-wrap break-all">
                   {JSON.stringify(selectedTransaction, null, 2)}
                 </pre>
               </div>
+              {(selectedTransaction.transactionStatus === "initiated" || selectedTransaction.transactionStatus === "failed" || selectedTransaction.transactionStatus === "cancelled_by_applicant") && (
+                <div className="mt-6 space-y-4">
+                  {/* Step 1: Open HimKosh SearchChallan in browser */}
+                  <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+                    <h4 className="font-semibold text-amber-900 mb-2 flex items-center gap-2">
+                      <Eye className="w-4 h-4" /> Step 1: Verify on HimKosh
+                    </h4>
+                    <p className="text-sm text-amber-800 mb-3">
+                      Open the HimKosh SearchChallan page and search with these details:
+                    </p>
+                    <div className="bg-white rounded p-3 text-xs space-y-1 font-mono border">
+                      <p><strong>Name (Tender By):</strong> {selectedTransaction.tenderBy}</p>
+                      <p><strong>Date:</strong> {formatDateLabel(selectedTransaction.createdAt)}</p>
+                      <p><strong>Our Ref:</strong> {selectedTransaction.appRefNo}</p>
+                      <p><strong>DDO:</strong> {selectedTransaction.ddo}</p>
+                    </div>
+                    <Button
+                      variant="outline"
+                      className="mt-3 border-amber-400 text-amber-900 hover:bg-amber-100"
+                      onClick={() => window.open('https://himkosh.hp.nic.in/eChallan/SearchChallan.aspx', '_blank')}
+                    >
+                      <ExternalLink className="w-4 h-4 mr-2" /> Open HimKosh SearchChallan
+                    </Button>
+                  </div>
+
+                  {/* Step 2: Enter verification result */}
+                  {!manualVerifyMode ? (
+                    <div className="flex gap-2">
+                      <Button
+                        variant="default"
+                        className="bg-blue-600 hover:bg-blue-700 text-white flex-1"
+                        onClick={() => verifyTransactionMutation.mutate(selectedTransaction.appRefNo)}
+                        disabled={verifyTransactionMutation.isPending}
+                      >
+                        {verifyTransactionMutation.isPending ? (
+                          <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Auto-Verifying...</>
+                        ) : (
+                          <><ShieldCheck className="w-4 h-4 mr-2" /> Try Auto-Verify (Server Sync)</>
+                        )}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        className="flex-1"
+                        onClick={() => setManualVerifyMode(true)}
+                      >
+                        <CheckCircle2 className="w-4 h-4 mr-2" /> Manual Verify (Enter GRN)
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                      <h4 className="font-semibold text-blue-900 mb-2 flex items-center gap-2">
+                        <CheckCircle2 className="w-4 h-4" /> Step 2: Enter Verification Result
+                      </h4>
+                      <p className="text-sm text-blue-800 mb-3">
+                        Enter the GRN (HIMGRN) number from the HimKosh SearchChallan results:
+                      </p>
+                      <div className="space-y-3">
+                        <div>
+                          <Label className="text-xs">GRN / HIMGRN Number *</Label>
+                          <Input
+                            placeholder="e.g. A26B209280"
+                            value={manualGrn}
+                            onChange={(e) => setManualGrn(e.target.value)}
+                            className="font-mono"
+                          />
+                        </div>
+                        <div>
+                          <Label className="text-xs">Receipt Number (optional)</Label>
+                          <Input
+                            placeholder="Receipt number if available"
+                            value={manualReceiptNo}
+                            onChange={(e) => setManualReceiptNo(e.target.value)}
+                            className="font-mono"
+                          />
+                        </div>
+                        <div className="flex gap-2">
+                          <Button
+                            className="bg-green-600 hover:bg-green-700 text-white flex-1"
+                            disabled={!manualGrn.trim() || manualVerifyMutation.isPending}
+                            onClick={() => manualVerifyMutation.mutate({
+                              appRefNo: selectedTransaction.appRefNo,
+                              verified: true,
+                              echTxnId: manualGrn.trim(),
+                              receiptNo: manualReceiptNo.trim(),
+                            })}
+                          >
+                            {manualVerifyMutation.isPending ? (
+                              <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Saving...</>
+                            ) : (
+                              <><CheckCircle2 className="w-4 h-4 mr-2" /> Confirm Payment Found</>
+                            )}
+                          </Button>
+                          <Button
+                            variant="destructive"
+                            className="flex-1"
+                            disabled={manualVerifyMutation.isPending}
+                            onClick={() => manualVerifyMutation.mutate({
+                              appRefNo: selectedTransaction.appRefNo,
+                              verified: false,
+                            })}
+                          >
+                            <XCircle className="w-4 h-4 mr-2" /> Not Found
+                          </Button>
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="w-full text-muted-foreground"
+                          onClick={() => { setManualVerifyMode(false); setManualGrn(""); setManualReceiptNo(""); }}
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </>
           )}
         </DialogContent>

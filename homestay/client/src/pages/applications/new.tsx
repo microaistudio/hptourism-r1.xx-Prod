@@ -58,6 +58,7 @@ import {
 } from "lucide-react";
 import type { User, HomestayApplication, UserProfile, ApplicationServiceContext, ApplicationKind } from "@shared/schema";
 import { ObjectUploader, type UploadedFileMetadata } from "@/components/ObjectUploader";
+import { formatDateIST } from "@/lib/dateUtils";
 import { ApplicationSummaryCard } from "@/components/application/application-summary";
 import { ApplicationKindBadge, getApplicationKindLabel, isServiceApplication } from "@/components/application/application-kind-badge";
 import { calculateHomestayFee, calculateUpgradeFee, formatFee, suggestCategory, validateCategorySelection, CATEGORY_REQUIREMENTS, MAX_ROOMS_ALLOWED, MAX_BEDS_ALLOWED, type CategoryType, type LocationType, type FeeBreakdown } from "@shared/fee-calculator";
@@ -197,12 +198,7 @@ const PROJECT_TYPE_OPTIONS = [
 ] as const;
 
 const formatDateDisplay = (value?: string | Date | null) => {
-  if (!value) return "—";
-  const date = typeof value === "string" ? new Date(value) : value;
-  if (Number.isNaN(date.getTime())) {
-    return "—";
-  }
-  return date.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+  return formatDateIST(value);
 };
 
 const formatDistanceDisplay = (value?: number | null) => {

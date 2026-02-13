@@ -47,6 +47,7 @@ import { cn } from "@/lib/utils";
 import { isLegacyApplication } from "@shared/legacy";
 import { ApplicationPipelineRow, type PipelineApplication } from "@/components/application/application-pipeline-row";
 import { Badge } from "@/components/ui/badge";
+import { formatDateIST } from "@/lib/dateUtils";
 
 const isInCurrentMonth = (value?: string | Date | null) => {
   if (!value) return false;
@@ -362,7 +363,7 @@ export default function DADashboard() {
                       <span className="flex items-center gap-1">
                         <Calendar className="w-3 h-3" />
                         {inspection.inspectionDate
-                          ? new Date(inspection.inspectionDate).toLocaleDateString()
+                          ? formatDateIST(inspection.inspectionDate)
                           : "Not set"}
                       </span>
                       <span className="hidden sm:flex items-center gap-1">

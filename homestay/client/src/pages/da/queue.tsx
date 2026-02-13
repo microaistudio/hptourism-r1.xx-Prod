@@ -40,6 +40,7 @@ import {
     FilePenLine,
     User
 } from "lucide-react";
+import { formatDateIST } from "@/lib/dateUtils";
 
 // Import modular view components
 import {
@@ -195,7 +196,7 @@ export default function DAQueue() {
                                                 Draft
                                             </Badge>
                                             <p className="text-xs text-gray-400 mt-1">
-                                                Updated {app.updatedAt ? new Date(app.updatedAt).toLocaleDateString() : "N/A"}
+                                                Updated {app.updatedAt ? formatDateIST(app.updatedAt) : "N/A"}
                                             </p>
                                         </div>
                                     </div>

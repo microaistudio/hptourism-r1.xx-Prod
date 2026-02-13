@@ -68,6 +68,7 @@ import {
     RotateCcw,
     FilePenLine
 } from "lucide-react";
+import { formatDateIST } from "@/lib/dateUtils";
 
 // Types - Using intersection to add optional properties
 interface ApplicationWithOwner {
@@ -689,7 +690,7 @@ export default function DTDOQueue() {
                                                         {app.updatedAt && (
                                                             <span className="flex items-center gap-1">
                                                                 <Clock className="w-3 h-3" />
-                                                                Last updated: {new Date(app.updatedAt).toLocaleDateString()}
+                                                                Last updated: {formatDateIST(app.updatedAt)}
                                                             </span>
                                                         )}
                                                     </div>

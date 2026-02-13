@@ -114,29 +114,37 @@ export default function WorkflowMonitoringPage() {
 
   // 2. Table Filter: Apply Status Filter on top of District Filter
   // This is used ONLY for the detailed applications list table
+  // Statuses that are NOT considered "in the active workflow"
+  const excludedFromActive = useMemo(() => new Set(["draft", "superseded", "approved", "rejected"]), []);
+
   const filteredApplications = useMemo(() => {
     let result = districtFilteredApps;
 
     if (statusFilter) {
-      if (statusFilter === 'submission') {
+      if (statusFilter === 'active_pipeline') {
+        // Show all apps that are actively in the workflow
+        result = result.filter(app => !excludedFromActive.has(app.status || 'draft'));
+      } else if (statusFilter === 'submission') {
         result = result.filter(app => app.status === 'submitted');
       } else if (statusFilter === 'under_scrutiny' || statusFilter === 'da_scrutiny') {
-        result = result.filter(app => ['document_verification', 'under_scrutiny'].includes(app.status || ''));
+        result = result.filter(app => ['under_scrutiny', 'legacy_rc_review'].includes(app.status || ''));
       } else if (statusFilter === 'forwarded_to_dtdo' || statusFilter === 'dtdo_verification') {
         result = result.filter(app => ['forwarded_to_dtdo', 'dtdo_review'].includes(app.status || ''));
-      } else if (statusFilter === 'site_inspection_scheduled' || statusFilter === 'inspection_phase') {
-        result = result.filter(app => ['site_inspection_scheduled', 'site_inspection_complete'].includes(app.status || ''));
-      } else if (statusFilter === 'payment_pending') {
-        result = result.filter(app => app.status === 'payment_pending');
+      } else if (statusFilter === 'inspection_phase') {
+        result = result.filter(app => ['inspection_scheduled', 'inspection_completed', 'inspection_under_review'].includes(app.status || ''));
       } else if (statusFilter === 'rc_issued') {
         result = result.filter(app => app.status === 'approved');
+      } else if (statusFilter === 'rejected') {
+        result = result.filter(app => app.status === 'rejected');
+      } else if (statusFilter === 'objection') {
+        result = result.filter(app => ['sent_back_for_corrections', 'reverted_to_applicant', 'reverted_by_dtdo', 'objection_raised'].includes(app.status || ''));
       } else {
-        // Fallback for direct status matches (legacy support)
+        // Fallback for direct status matches
         result = result.filter(app => app.status === statusFilter);
       }
     }
     return result;
-  }, [districtFilteredApps, statusFilter]);
+  }, [districtFilteredApps, statusFilter, excludedFromActive]);
 
   // Calculate pipeline statistics based on DISTRICT filtered applications (not status filtered)
   // Calculate pipeline statistics based on DISTRICT filtered applications (not status filtered)
@@ -252,14 +260,13 @@ export default function WorkflowMonitoringPage() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all_statuses">All Statuses</SelectItem>
-                <SelectItem value="submitted">Submission</SelectItem>
+                <SelectItem value="submitted">Submitted</SelectItem>
                 <SelectItem value="under_scrutiny">DA Scrutiny</SelectItem>
-                <SelectItem value="forwarded_to_dtdo">DTDO Verification</SelectItem>
-                <SelectItem value="site_inspection_scheduled">Inspection</SelectItem>
-                <SelectItem value="payment_pending">Payment Pending</SelectItem>
-                <SelectItem value="approved">Approved</SelectItem>
-                <SelectItem value="rejected">Rejected</SelectItem>
-                <SelectItem value="sent_back_for_corrections">Sent Back (Corrections)</SelectItem>
+                <SelectItem value="forwarded_to_dtdo">District Review</SelectItem>
+                <SelectItem value="inspection_phase">Inspection</SelectItem>
+                <SelectItem value="approved">Approved / RC Issued</SelectItem>
+                <SelectItem value="rejected">Rejected / Refund</SelectItem>
+                <SelectItem value="sent_back_for_corrections">Objection / Corrections</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -275,7 +282,6 @@ export default function WorkflowMonitoringPage() {
       </div>
 
       {/* Key Metrics Overview */}
-      {/* Key Metrics Overview */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
         <MetricCard
           title="Active Pipeline"
@@ -284,17 +290,20 @@ export default function WorkflowMonitoringPage() {
           trend={`+${stats.newToday} received today`}
           variant="default"
           onClick={() => {
-            setStatusFilter(null);
+            setStatusFilter("active_pipeline");
             setActiveTab("pipeline");
           }}
         />
         <MetricCard
-          title="Critical Bottlenecks"
-          value={stats.criticalBottlenecks}
+          title="Overdue (>7 days)"
+          value={stats.overdueCount}
           icon={AlertTriangle}
-          trend={stats.mostDelayedStage ? `Most delays: ${stats.mostDelayedStage}` : "Running smooth"}
-          variant={stats.criticalBottlenecks > 0 ? "destructive" : "default"}
-          onClick={() => setActiveTab("bottlenecks")}
+          trend={stats.mostDelayedStage ? `Most delays: ${stats.mostDelayedStage}` : "All on track"}
+          variant={stats.overdueCount > 0 ? "destructive" : "default"}
+          onClick={() => {
+            setStatusFilter(null); // default table view = slow-moving >7 days
+            setActiveTab("pipeline");
+          }}
         />
         <MetricCard
           title="Avg. Processing Time"
@@ -303,16 +312,12 @@ export default function WorkflowMonitoringPage() {
           icon={Clock}
           trend={`Target: ${SLA_THRESHOLDS.total} days`}
           variant="default"
-          onClick={() => {
-            setStatusFilter("rc_issued");
-            setActiveTab("pipeline");
-          }}
         />
         <MetricCard
           title="Registered Homestays"
           value={stats.totalCertificates}
           icon={CheckCircle}
-          trend={`+${stats.completedThisWeek} this week`}
+          trend={stats.completedThisWeek > 0 ? `+${stats.completedThisWeek} this week` : "No new approvals this week"}
           variant="success"
           onClick={() => {
             setStatusFilter("rc_issued");
@@ -437,32 +442,24 @@ function VisualPipelineFlow({
   activeFilter: string | null;
 }) {
   const stages = [
-    { id: "submission", label: "Submission", color: "bg-sky-600", statuses: ["submitted"] },
+    { id: "submission", label: "Submitted", color: "bg-sky-600", statuses: ["submitted"] },
     {
       id: "da_scrutiny",
       label: "DA Scrutiny",
-      color: "bg-purple-600",
-      statuses: ["document_verification", "under_scrutiny"],
-      returnedStatus: "da_send_back",
+      color: "bg-orange-500",
+      statuses: ["under_scrutiny", "legacy_rc_review"],
     },
     {
       id: "dtdo_verification",
-      label: "DTDO Verification",
-      color: "bg-indigo-600",
+      label: "District Review",
+      color: "bg-blue-600",
       statuses: ["forwarded_to_dtdo", "dtdo_review"],
-      returnedStatus: "dtdo_revert",
     },
     {
       id: "inspection_phase",
-      label: "Inspection Phase",
-      color: "bg-orange-500",
-      statuses: ["site_inspection_scheduled", "site_inspection_complete"],
-    },
-    {
-      id: "payment_pending",
-      label: "Payment Pending",
-      color: "bg-yellow-500",
-      statuses: ["payment_pending"],
+      label: "Inspection",
+      color: "bg-purple-600",
+      statuses: ["inspection_scheduled", "inspection_completed", "inspection_under_review"],
     },
     {
       id: "rc_issued",
@@ -472,7 +469,7 @@ function VisualPipelineFlow({
     },
     {
       id: "rejected",
-      label: "Rejected",
+      label: "Rejected / Refund",
       color: "bg-red-500",
       statuses: ["rejected"],
     },
@@ -522,7 +519,7 @@ function VisualPipelineFlow({
                     {stage.label}
                   </div>
                   <div className="text-[10px] mt-1.5 px-2 py-0.5 bg-white/20 rounded-full">
-                    {stage.count > 0 ? `${Math.round((stage.count / applications.length) * 100)}%` : "—"}
+                    {stage.count > 0 ? `${Math.round((stage.count / Math.max(stageCount.reduce((s, st) => s + st.count, 0), 1)) * 100)}%` : "—"}
                   </div>
                 </button>
                 {stage.returned ? (
@@ -539,6 +536,26 @@ function VisualPipelineFlow({
             </div>
           ))}
         </div>
+
+        {/* Secondary row: Objection/Corrections count */}
+        {(() => {
+          const objectionStatuses = ["sent_back_for_corrections", "reverted_to_applicant", "reverted_by_dtdo", "objection_raised"];
+          const objectionCount = applications.filter(app => objectionStatuses.includes(app.status ?? "")).length;
+          if (objectionCount === 0) return null;
+          return (
+            <div className="mt-4 pt-3 border-t border-dashed flex justify-center">
+              <button
+                onClick={() => onStageClick(activeFilter === "objection" ? null : "objection")}
+                className={`flex items-center gap-2 px-4 py-2 rounded-full bg-amber-50 border border-amber-200 hover:bg-amber-100 transition-colors cursor-pointer ${activeFilter === "objection" ? "ring-2 ring-amber-400" : ""
+                  }`}
+              >
+                <AlertTriangle className="h-4 w-4 text-amber-600" />
+                <span className="text-sm font-semibold text-amber-700">{objectionCount}</span>
+                <span className="text-xs text-amber-600 font-medium">Objections / Corrections</span>
+              </button>
+            </div>
+          );
+        })()}
       </CardContent>
     </Card>
   );
@@ -627,16 +644,20 @@ function AtRiskApplicationsTable({
   // Get stage label for filter badge
   const getStageLabel = (status: string) => {
     const labels: Record<string, string> = {
-      submitted: "Submission",
-      document_verification: "DA Scrutiny",
+      submitted: "Submitted",
       under_scrutiny: "DA Scrutiny",
-      forwarded_to_dtdo: "DTDO Verification",
-      dtdo_review: "DTDO Verification",
-      site_inspection_scheduled: "Inspection Phase",
-      site_inspection_complete: "Inspection Phase",
-      payment_pending: "Payment Pending",
+      legacy_rc_review: "DA Scrutiny",
+      forwarded_to_dtdo: "District Review",
+      dtdo_review: "District Review",
+      inspection_scheduled: "Inspection",
+      inspection_completed: "Inspection",
+      inspection_under_review: "Inspection",
       approved: "RC Issued",
-      rejected: "Rejected",
+      rejected: "Rejected / Refund",
+      sent_back_for_corrections: "Objection",
+      reverted_to_applicant: "Objection",
+      reverted_by_dtdo: "Objection",
+      objection_raised: "Objection",
     };
     return labels[status] || status.replace(/_/g, " ");
   };
@@ -647,13 +668,18 @@ function AtRiskApplicationsTable({
         <div className="flex items-center justify-between gap-4">
           <div className="flex-1">
             <CardTitle className="flex items-center gap-2">
-              {statusFilter ? (statusFilter === 'rejected' ? 'Rejected Applications' : getStageLabel(applications.find(a => a.status === statusFilter)?.status || '') + ' List') : "Slow Moving / At-Risk Applications"}
+              {statusFilter === 'active_pipeline' ? 'All Active Applications'
+                : statusFilter === 'rc_issued' ? 'Registered Homestays'
+                  : statusFilter === 'rejected' ? 'Rejected / Refund Applications'
+                    : statusFilter === 'objection' ? 'Objection / Corrections'
+                      : statusFilter ? getStageLabel(statusFilter) + ' Applications'
+                        : "Slow Moving / At-Risk Applications"}
               <Badge variant="secondary">{filteredApps.length}</Badge>
             </CardTitle>
             <CardDescription>
-              {statusFilter
-                ? "Applications in the selected stage."
-                : "Files stuck more than 7 days in their current stage."}
+              {statusFilter === 'active_pipeline' ? 'All applications currently in the approval workflow.'
+                : statusFilter ? "Applications in the selected stage."
+                  : "Files stuck more than 7 days in their current stage."}
             </CardDescription>
           </div>
           <div className="flex items-center gap-2">
@@ -815,7 +841,7 @@ function SLAIndicator({ app }: { app: MonitoringApplication }) {
   );
 }
 
-const applicantStatuses = new Set(["da_send_back", "dtdo_revert"]);
+const applicantStatuses = new Set(["sent_back_for_corrections", "reverted_to_applicant", "reverted_by_dtdo", "objection_raised"]);
 
 const getDaysInStage = (application: MonitoringApplication) => {
   const anchor = application.updatedAt || application.statusUpdatedAt || application.submittedAt;
@@ -1105,44 +1131,52 @@ function calculatePipelineStats(applications: MonitoringApplication[]) {
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
 
+  // Active pipeline = submitted apps that are in workflow (exclude draft, superseded, approved, rejected)
+  const excludedFromActive = new Set(["draft", "superseded", "approved", "rejected"]);
   const activeApps = applications.filter(
-    (app) => app.status !== "approved" && app.status !== "rejected",
+    (app) => !excludedFromActive.has(app.status || "draft"),
   );
   const newToday = applications.filter(
     (app) => app.submittedAt && new Date(app.submittedAt) >= today,
   );
+  // Only count apps currently in 'approved' status AND approved in last 7 days
   const approvalsThisWeek = applications.filter(
-    (app) => app.approvedAt && new Date(app.approvedAt) >= weekAgo,
+    (app) => app.status === 'approved' && app.approvedAt && new Date(app.approvedAt) >= weekAgo,
   );
 
-  const bottleneckByStage = activeApps.reduce<Record<string, number>>((acc, app) => {
-    if (!app.submittedAt) {
-      return acc;
-    }
-    const days = Math.floor((now.getTime() - new Date(app.submittedAt).getTime()) / (1000 * 60 * 60 * 24));
-    if (days > 7) {
-      const key = app.status ?? "unknown";
-      acc[key] = (acc[key] ?? 0) + 1;
-    }
+  // Overdue: active apps stuck in current stage > 7 days (using updatedAt/statusUpdatedAt, not submittedAt)
+  const overdueApps = activeApps.filter((app) => {
+    const anchor = app.updatedAt || app.statusUpdatedAt || app.submittedAt;
+    if (!anchor) return false;
+    const daysInStage = Math.floor((now.getTime() - new Date(anchor).getTime()) / (1000 * 60 * 60 * 24));
+    return daysInStage > 7;
+  });
+
+  const overdueByStage = overdueApps.reduce<Record<string, number>>((acc, app) => {
+    const key = app.status ?? "unknown";
+    acc[key] = (acc[key] ?? 0) + 1;
     return acc;
   }, {});
 
-  const criticalBottlenecks = Object.values(bottleneckByStage).reduce((sum, value) => sum + value, 0);
-  const mostDelayedStageEntry = Object.entries(bottleneckByStage).sort((a, b) => b[1] - a[1])[0];
+  const mostDelayedStageEntry = Object.entries(overdueByStage).sort((a, b) => b[1] - a[1])[0];
   const stageLabels: Record<string, string> = {
-    submitted: "Submission",
-    document_verification: "DA Scrutiny",
+    submitted: "Submitted",
     under_scrutiny: "DA Scrutiny",
-    forwarded_to_dtdo: "DTDO Verification",
-    dtdo_review: "DTDO Verification",
-    site_inspection_scheduled: "Inspection Phase",
-    site_inspection_complete: "Inspection Phase",
-    payment_pending: "Payment Pending",
+    legacy_rc_review: "DA Scrutiny",
+    forwarded_to_dtdo: "District Review",
+    dtdo_review: "District Review",
+    inspection_scheduled: "Inspection",
+    inspection_completed: "Inspection",
+    inspection_under_review: "Inspection",
+    sent_back_for_corrections: "Objection",
+    reverted_to_applicant: "Objection",
+    reverted_by_dtdo: "Objection",
+    objection_raised: "Objection",
     approved: "RC Issued",
   };
 
   const approvedApps = applications.filter((app) => app.status === "approved");
-  const completedApps = applications.filter((app) => app.submittedAt && app.approvedAt);
+  const completedApps = applications.filter((app) => app.submittedAt && app.approvedAt && app.status === 'approved');
   const avgProcessingTimeRaw =
     completedApps.reduce((sum, app) => {
       const days = Math.floor(
@@ -1154,8 +1188,8 @@ function calculatePipelineStats(applications: MonitoringApplication[]) {
   return {
     activePipeline: activeApps.length,
     newToday: newToday.length,
-    criticalBottlenecks,
-    mostDelayedStage: mostDelayedStageEntry ? stageLabels[mostDelayedStageEntry[0]] ?? "Unknown stage" : "",
+    overdueCount: overdueApps.length,
+    mostDelayedStage: mostDelayedStageEntry ? stageLabels[mostDelayedStageEntry[0]] ?? mostDelayedStageEntry[0].replace(/_/g, ' ') : "",
     avgProcessingTime: Math.max(Math.round(isFinite(avgProcessingTimeRaw) ? avgProcessingTimeRaw : 0), 0),
     totalCertificates: approvedApps.length,
     completedThisWeek: approvalsThisWeek.length,

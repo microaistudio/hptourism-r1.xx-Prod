@@ -4,7 +4,8 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { differenceInCalendarDays, format, subDays } from "date-fns";
+import { differenceInCalendarDays, subDays } from "date-fns";
+import { formatDateIST, formatDateLongIST, formatDateInputIST } from "@/lib/dateUtils";
 import { ArrowLeft, Save, Send, CheckCircle, XCircle, AlertCircle, Calendar, MapPin, User, FileText, Shield, Star, CheckSquare, SquareX } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -247,7 +248,7 @@ export default function DAInspectionReport() {
     resolver: zodResolver(inspectionReportSchema),
     mode: "onChange",
     defaultValues: {
-      actualInspectionDate: format(new Date(), 'yyyy-MM-dd'),
+      actualInspectionDate: formatDateInputIST(new Date()),
       roomCountVerified: undefined,
       categoryMeetsStandards: undefined,
       mandatoryChecklist: buildChecklistDefaults(MANDATORY_CHECKPOINTS) as any,
@@ -344,17 +345,17 @@ export default function DAInspectionReport() {
   const today = new Date();
   const earlyOverrideEnabled = form.watch('earlyInspectionOverride') ?? false;
   const earliestOverrideDateObj = subDays(scheduledDate, EARLY_OVERRIDE_WINDOW_DAYS);
-  const minDate = format(scheduledDate, 'yyyy-MM-dd');
-  const todayDateOnly = format(today, 'yyyy-MM-dd');
+  const minDate = formatDateInputIST(scheduledDate);
+  const todayDateOnly = formatDateInputIST(today);
   const scheduleHasStarted = scheduledDate <= today;
   const baseMaxDateObj = scheduleHasStarted ? today : scheduledDate;
-  const maxDate = format(baseMaxDateObj, 'yyyy-MM-dd');
+  const maxDate = formatDateInputIST(baseMaxDateObj);
   const overrideWindowOpen = earliestOverrideDateObj <= baseMaxDateObj;
   const computedMinDateObj = earlyOverrideEnabled
     ? (overrideWindowOpen ? earliestOverrideDateObj : baseMaxDateObj)
     : scheduledDate;
-  const computedMinDate = format(computedMinDateObj, 'yyyy-MM-dd');
-  const earliestOverrideDate = format(earliestOverrideDateObj, 'yyyy-MM-dd');
+  const computedMinDate = formatDateInputIST(computedMinDateObj);
+  const earliestOverrideDate = formatDateInputIST(earliestOverrideDateObj);
   const overdueDays = Math.max(0, differenceInCalendarDays(today, scheduledDate));
   const isOverdue = overdueDays > 0;
   const earlyOverrideWindowLabel = `${EARLY_OVERRIDE_WINDOW_DAYS} day${EARLY_OVERRIDE_WINDOW_DAYS === 1 ? '' : 's'}`;
@@ -475,7 +476,7 @@ export default function DAInspectionReport() {
     // 3. Pre-fill Findings
     const existingFindings = form.getValues("detailedFindings");
     if (!existingFindings || existingFindings.length < 20) {
-      const template = `Inspection conducted on ${format(new Date(), 'PPP')}. The property meets all mandatory requirements for the ${application?.category} category. Mandatory facilities verified. Recommended for verification.`;
+      const template = `Inspection conducted on ${formatDateLongIST(new Date())}. The property meets all mandatory requirements for the ${application?.category} category. Mandatory facilities verified. Recommended for verification.`;
       form.setValue("detailedFindings", template, { shouldDirty: true, shouldValidate: true });
     }
 
@@ -554,7 +555,7 @@ export default function DAInspectionReport() {
               <span className="text-sm text-muted-foreground">Scheduled Date</span>
               <p className="font-medium flex items-center gap-2">
                 <Calendar className="w-4 h-4 text-muted-foreground" />
-                {format(new Date(order.inspectionDate), 'PPP')}
+                {formatDateLongIST(new Date(order.inspectionDate))}
               </p>
             </div>
             {application?.dtdoRemarks && (
@@ -590,7 +591,7 @@ export default function DAInspectionReport() {
                     <FormLabel>Actual Inspection Date *</FormLabel>
                     <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                       <Badge variant="outline" className="bg-muted/40">
-                        Scheduled: {format(scheduledDate, 'PPP')}
+                        Scheduled: {formatDateLongIST(scheduledDate)}
                       </Badge>
                       {isOverdue ? (
                         <Badge variant="destructive">
@@ -615,19 +616,19 @@ export default function DAInspectionReport() {
                       {scheduleHasStarted ? (
                         <>
                           Select a visit date between{" "}
-                          {format(earlyOverrideEnabled ? earliestOverrideDateObj : scheduledDate, 'PPP')} and{" "}
-                          {format(today, 'PPP')}.
+                          {formatDateLongIST(earlyOverrideEnabled ? earliestOverrideDateObj : scheduledDate)} and{" "}
+                          {formatDateLongIST(today)}.
                         </>
                       ) : (
                         <>
-                          Inspection is scheduled for {format(scheduledDate, 'PPP')}. If you inspected up to{" "}
+                          Inspection is scheduled for {formatDateLongIST(scheduledDate)}. If you inspected up to{" "}
                           {earlyOverrideWindowLabel} early, enable the override and add a justification.
                         </>
                       )}
                     </FormDescription>
                     {earlyOverrideEnabled && !overrideWindowOpen && (
                       <p className="text-xs text-amber-600">
-                        Early visit logging opens on {format(earliestOverrideDateObj, 'PPP')} (7 days before schedule).
+                        Early visit logging opens on {formatDateLongIST(earliestOverrideDateObj)} (7 days before schedule).
                       </p>
                     )}
                     {isOverdue && (

@@ -52,7 +52,8 @@ import {
     ShieldAlert,
     List,
 } from "lucide-react";
-import { formatDistanceToNow, format } from "date-fns";
+import { formatDistanceToNow } from "date-fns";
+import { formatDateTimeLongIST, formatDateIST, formatTimeIST } from "@/lib/dateUtils";
 
 interface MigrationMetadata {
     id: string;
@@ -490,7 +491,7 @@ export default function AdminExportImport() {
                                     {validationResult.metadata && (
                                         <div className="mt-3 text-sm text-emerald-600 space-y-1">
                                             <p>Source: {validationResult.metadata.sourceSystem}</p>
-                                            <p>Created: {format(new Date(validationResult.metadata.createdAt), "PPp")}</p>
+                                            <p>Created: {formatDateTimeLongIST(validationResult.metadata.createdAt)}</p>
                                             <p>
                                                 Contains: {validationResult.metadata.includesDatabase ? "Database" : ""}
                                                 {validationResult.metadata.includesDatabase && validationResult.metadata.includesFiles ? " + " : ""}
@@ -584,10 +585,10 @@ export default function AdminExportImport() {
                                         <TableCell>
                                             <div>
                                                 <div className="font-medium">
-                                                    {format(new Date(pkg.createdAt), "MMM d, yyyy")}
+                                                    {formatDateIST(pkg.createdAt)}
                                                 </div>
                                                 <div className="text-xs text-muted-foreground">
-                                                    {format(new Date(pkg.createdAt), "h:mm a")}
+                                                    {formatTimeIST(pkg.createdAt)}
                                                 </div>
                                             </div>
                                         </TableCell>

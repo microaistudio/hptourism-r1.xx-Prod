@@ -269,7 +269,9 @@ export function parseResponseString(responseString: string): {
 }
 
 /**
- * Build double verification request string
+ * Build double verification request string (for AppVerification.aspx - currently non-functional)
+ * NOTE: AppVerification.aspx returns "checksum mismatch" for ALL formats tested (45+ variations).
+ * Use verifyChallanViaSearch() instead for reliable verification.
  * @param params - Verification parameters
  * @returns Pipe-delimited string with checksum
  */
@@ -278,7 +280,168 @@ export function buildVerificationString(params: {
   serviceCode: string;
   merchantCode: string;
 }): string {
-  const dataString = `AppRefNo=${params.appRefNo}|Service_code=${params.serviceCode}|merchant_code=${params.merchantCode}`;
-  const checksum = HimKoshCrypto.generateChecksum(dataString);
-  return `${dataString}|checkSum=${checksum}`;
+  const coreString = `AppRefNo=${params.appRefNo}|Service_code=${params.serviceCode}`;
+  const checksum = HimKoshCrypto.generateChecksum(coreString);
+  return `${coreString}|checkSum=${checksum}`;
 }
+
+/**
+ * SearchChallan-based verification result
+ */
+export interface SearchChallanResult {
+  found: boolean;
+  transId: string;       // echTxnId / HIMGRN
+  receiptNo: string;     // Bank receipt number
+  status: string;        // e.g. "Completed successfully. DD-MM-YYYY HH:MM:SS"
+  tenderBy: string;      // Depositor + bank info
+  service: string;       // Service description + refs
+  amount: string;        // Transaction amount
+  receiptDate: string;   // Receipt date string
+  isSuccess: boolean;    // Parsed: was the transaction successful?
+  appRefNo: string;      // Extracted from service field
+  deptRefNo: string;     // Extracted from service field
+}
+
+/**
+ * Verify a transaction via the public SearchChallan.aspx page.
+ * This is a reliable alternative to AppVerification.aspx which has undocumented
+ * checksum requirements. SearchChallan allows searching by date range and depositor
+ * name, then we match our transaction ID from the results.
+ *
+ * @param params.searchUrl   - URL to SearchChallan.aspx
+ * @param params.tenderBy    - The TenderBy value used in the original transaction
+ * @param params.fromDate    - Search from date (DD-MM-YYYY)
+ * @param params.toDate      - Search to date (DD-MM-YYYY)
+ * @param params.echTxnId    - Expected transaction ID to match in results
+ * @param params.appRefNo    - Expected AppRefNo (for cross-validation in service field)
+ * @returns Parsed verification result
+ */
+export async function verifyChallanViaSearch(params: {
+  searchUrl: string;
+  tenderBy: string;
+  fromDate: string;
+  toDate: string;
+  echTxnId: string;
+  appRefNo: string;
+}): Promise<SearchChallanResult> {
+  const emptyResult: SearchChallanResult = {
+    found: false,
+    transId: '',
+    receiptNo: '',
+    status: '',
+    tenderBy: '',
+    service: '',
+    amount: '',
+    receiptDate: '',
+    isSuccess: false,
+    appRefNo: params.appRefNo,
+    deptRefNo: '',
+  };
+
+  // Step 1: GET the page to extract ASP.NET hidden fields + session cookie
+  const getResp = await fetch(params.searchUrl);
+  const html = await getResp.text();
+
+  const vsMatch = html.match(/name="__VIEWSTATE"[^>]*value="([^"]*)"/);
+  const vsgMatch = html.match(/name="__VIEWSTATEGENERATOR"[^>]*value="([^"]*)"/);
+  const evMatch = html.match(/name="__EVENTVALIDATION"[^>]*value="([^"]*)"/);
+
+  if (!vsMatch || !evMatch) {
+    throw new Error('SearchChallan: Failed to extract ASP.NET form fields');
+  }
+
+  // Extract session cookie
+  const setCookies = getResp.headers.getSetCookie?.() ?? [];
+  const cookieHeader = setCookies.map((c: string) => c.split(';')[0]).join('; ');
+
+  // Step 2: POST search query
+  const searchBody = new URLSearchParams({
+    '__VIEWSTATE': vsMatch[1],
+    '__VIEWSTATEGENERATOR': vsgMatch?.[1] ?? '',
+    '__VIEWSTATEENCRYPTED': '',
+    '__EVENTVALIDATION': evMatch[1],
+    'ctl00$ContentPlaceHolder1$txtFromDate': params.fromDate,
+    'ctl00$ContentPlaceHolder1$txtToDate': params.toDate,
+    'ctl00$ContentPlaceHolder1$txtTenderBy': params.tenderBy.substring(0, 30), // max 30 chars
+    'ctl00$ContentPlaceHolder1$paymode': '1', // 1 = Online
+    'ctl00$ContentPlaceHolder1$btnSubmitR': 'SEARCH CHALLAN',
+  });
+
+  const searchResp = await fetch(params.searchUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Cookie': cookieHeader,
+    },
+    body: searchBody.toString(),
+  });
+
+  const resultHtml = await searchResp.text();
+
+  // Step 3: Parse results
+  // Extract label values using ASP.NET grid label IDs
+  const extractLabel = (labelPrefix: string, index: number = 0): string => {
+    const regex = new RegExp(
+      `id="[^"]*${labelPrefix}_${index}"[^>]*>([^<]*)`,
+      'i',
+    );
+    const match = resultHtml.match(regex);
+    return match?.[1]?.trim() ?? '';
+  };
+
+  // Strategy: match by echTxnId if available, otherwise match by appRefNo in the service field
+  let rowIndex = -1;
+  for (let i = 0; i < 50; i++) {
+    const transId = extractLabel('lblTransId', i);
+    if (!transId) break;
+
+    // Primary match: echTxnId
+    if (params.echTxnId && transId === params.echTxnId) {
+      rowIndex = i;
+      break;
+    }
+
+    // Fallback match: appRefNo in the service/description field (case-insensitive)
+    if (!params.echTxnId && params.appRefNo) {
+      const svc = extractLabel('lblService', i);
+      if (svc.toUpperCase().includes(params.appRefNo.toUpperCase())) {
+        rowIndex = i;
+        break;
+      }
+    }
+  }
+
+  if (rowIndex < 0) {
+    return emptyResult;
+  }
+
+  const transId = extractLabel('lblTransId', rowIndex);
+  const receiptNo = extractLabel('lblreceipt_no', rowIndex);
+  const status = extractLabel('lblStatus', rowIndex);
+  const tenderBy = extractLabel('lblTenderBy', rowIndex);
+  const service = extractLabel('lblService', rowIndex);
+  const amount = extractLabel('lblAmount', rowIndex);
+  const receiptDate = extractLabel('lblReceiptDt', rowIndex);
+
+  // Extract DeptRefNo and AppRefNo from service field
+  // Format: ". REGISTRATION OF HOTEL... #HP-HS-2026-CHM-00830 *TSM:HPT1770742751438HCQS"
+  const deptRefMatch = service.match(/#([A-Z0-9-]+)/);
+  const appRefMatch = service.match(/\*[A-Z]+:([A-Z0-9]+)/i);
+
+  const isSuccess = status.toLowerCase().includes('completed successfully');
+
+  return {
+    found: !!transId,
+    transId,
+    receiptNo,
+    status,
+    tenderBy,
+    service,
+    amount,
+    receiptDate,
+    isSuccess,
+    appRefNo: appRefMatch?.[1] ?? params.appRefNo,
+    deptRefNo: deptRefMatch?.[1] ?? '',
+  };
+}
+

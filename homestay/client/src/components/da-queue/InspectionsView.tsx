@@ -5,7 +5,7 @@ import { useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { format } from "date-fns";
+import { formatDateLongIST } from "@/lib/dateUtils";
 import {
     Clock,
     CheckCircle,
@@ -203,7 +203,7 @@ export function InspectionsView({ inspections, isLoading, onInspectionClick }: I
                                                         <Calendar className="w-4 h-4 text-gray-400" />
                                                         <span className="text-gray-500">Scheduled:</span>
                                                         <span className="font-medium">
-                                                            {format(new Date(inspection.inspectionDate), 'PPP')}
+                                                            {formatDateLongIST(inspection.inspectionDate)}
                                                         </span>
                                                     </div>
                                                     <div className="flex items-center gap-2">

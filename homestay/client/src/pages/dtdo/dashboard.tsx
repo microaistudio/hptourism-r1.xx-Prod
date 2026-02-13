@@ -41,7 +41,8 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useLocation } from "wouter";
-import { format, formatDistanceToNow, isThisMonth, differenceInCalendarDays } from "date-fns";
+import { formatDistanceToNow, isThisMonth, differenceInCalendarDays } from "date-fns";
+import { formatDateLongIST } from "@/lib/dateUtils";
 import type { HomestayApplication, ApplicationKind } from "@shared/schema";
 import { ApplicationKindBadge, getApplicationKindLabel, isServiceApplication } from "@/components/application/application-kind-badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -758,10 +759,10 @@ export default function DTDODashboard() {
                         )}
                       </td>
                       <td className="p-4">
-                        {submittedAtDate ? format(submittedAtDate, "MMM dd, yyyy") : "N/A"}
+                        {submittedAtDate ? formatDateLongIST(submittedAtDate) : "N/A"}
                       </td>
                       <td className="p-4">
-                        {app.updatedAt ? format(new Date(app.updatedAt), "MMM dd, yyyy") : "N/A"}
+                        {app.updatedAt ? formatDateLongIST(app.updatedAt) : "N/A"}
                       </td>
                       <td className="p-4 text-right">
                         <Button
@@ -860,7 +861,7 @@ export default function DTDODashboard() {
                 </div>
                 <div className="text-xs text-muted-foreground space-y-1">
                   <p>
-                    Submitted {submittedAtDate ? format(submittedAtDate, "MMM dd, yyyy") : "N/A"}
+                    Submitted {submittedAtDate ? formatDateLongIST(submittedAtDate) : "N/A"}
                     {" · Corrections: "}{app.correctionSubmissionCount ?? 0}
                   </p>
                   {correctionState && (
@@ -962,7 +963,7 @@ export default function DTDODashboard() {
     const [, navigate] = useLocation();
     const status = application.status ?? "";
     const correctionState = getCorrectionState(application);
-    const submittedOn = application.submittedAt ? format(new Date(application.submittedAt), "MMM dd, yyyy") : "N/A";
+    const submittedOn = application.submittedAt ? formatDateLongIST(application.submittedAt) : "N/A";
     const reviewPath =
       status === "inspection_under_review"
         ? `/dtdo/inspection-review/${application.id}`

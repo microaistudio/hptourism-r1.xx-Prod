@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import type { HomestayApplication } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { formatDateTimeIST } from "@/lib/dateUtils";
 import { useToast } from "@/hooks/use-toast";
 
 type CCAvenuePaymentResponse = {
@@ -52,17 +53,7 @@ type CCAvenueTransaction = {
 const PAYMENT_ALLOWED_STATUSES = new Set(["draft", "payment_pending", "verified_for_payment"]);
 
 const formatDateTime = (iso?: string | null) => {
-    if (!iso) return "—";
-    const date = new Date(iso);
-    if (Number.isNaN(date.getTime())) return "—";
-    return date.toLocaleString("en-IN", {
-        day: "numeric",
-        month: "short",
-        year: "numeric",
-        hour: "numeric",
-        minute: "2-digit",
-        hour12: true,
-    });
+    return formatDateTimeIST(iso);
 };
 
 const getStatusMeta = (transaction: CCAvenueTransaction | null) => {

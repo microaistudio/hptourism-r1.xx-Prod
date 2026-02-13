@@ -38,6 +38,7 @@ import {
     type MaintenanceMessageType,
     type MaintenanceModeSetting
 } from "@shared/appSettings";
+import { formatDateTimeIST } from "@/lib/dateUtils";
 
 export default function SystemControlsPage() {
     const { toast } = useToast();
@@ -288,7 +289,7 @@ function PaymentPipelinePauseCard({
                         {enabled && config?.pausedAt && (
                             <div className="flex items-center gap-2 text-sm text-muted-foreground p-3 bg-slate-100 dark:bg-slate-800 rounded">
                                 <Clock className="h-4 w-4" />
-                                Paused at: {new Date(config.pausedAt).toLocaleString()}
+                                Paused at: {formatDateTimeIST(config.pausedAt)}
                             </div>
                         )}
 

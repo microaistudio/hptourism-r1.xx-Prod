@@ -422,7 +422,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         sameSite: envCookieSameSite,
         httpOnly: true,
         domain: envCookieDomain,
-        maxAge: 1000 * 60 * 60 * 24 * 7, // 7 days
+        maxAge: 1000 * 60 * 60 * 8, // 8 hours (government portal security)
       },
     })
   );
@@ -1674,17 +1674,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
         ? allUsers.filter((user) => user.role === "property_owner" && user.district === currentUser!.district)
         : allUsers.filter((user) => user.role === "property_owner");
 
+      // Separate Existing RC (legacy onboarded) from regular pipeline apps
+      const isLegacyRC = (app: any) => (app.applicationNumber || '').startsWith('LG-HS-');
+      const pipelineApps = scopedApplications.filter((app) => !isLegacyRC(app));
+      const existingRCCount = scopedApplications.filter((app) => isLegacyRC(app)).length;
+
       const byStatusNew = {
-        submitted: scopedApplications.filter((app) => normalizeStatus(app.status) === "submitted").length,
-        under_scrutiny: scopedApplications.filter((app) => normalizeStatus(app.status) === "under_scrutiny").length,
-        forwarded_to_dtdo: scopedApplications.filter((app) => normalizeStatus(app.status) === "forwarded_to_dtdo").length,
-        dtdo_review: scopedApplications.filter((app) => normalizeStatus(app.status) === "dtdo_review").length,
-        inspection_scheduled: scopedApplications.filter((app) => normalizeStatus(app.status) === "inspection_scheduled").length,
-        inspection_under_review: scopedApplications.filter((app) => normalizeStatus(app.status) === "inspection_under_review").length,
-        reverted_to_applicant: scopedApplications.filter((app) => normalizeStatus(app.status) === "reverted_to_applicant").length,
-        approved: scopedApplications.filter((app) => normalizeStatus(app.status) === "approved").length,
-        rejected: scopedApplications.filter((app) => normalizeStatus(app.status) === "rejected").length,
-        draft: scopedApplications.filter((app) => normalizeStatus(app.status) === "draft").length,
+        submitted: pipelineApps.filter((app) => normalizeStatus(app.status) === "submitted").length,
+        under_scrutiny: pipelineApps.filter((app) => normalizeStatus(app.status) === "under_scrutiny").length,
+        forwarded_to_dtdo: pipelineApps.filter((app) => normalizeStatus(app.status) === "forwarded_to_dtdo").length,
+        dtdo_review: pipelineApps.filter((app) => normalizeStatus(app.status) === "dtdo_review").length,
+        inspection_scheduled: pipelineApps.filter((app) => normalizeStatus(app.status) === "inspection_scheduled").length,
+        inspection_under_review: pipelineApps.filter((app) => normalizeStatus(app.status) === "inspection_under_review").length,
+        reverted_to_applicant: pipelineApps.filter((app) => normalizeStatus(app.status) === "reverted_to_applicant").length,
+        approved: pipelineApps.filter((app) => normalizeStatus(app.status) === "approved").length,
+        rejected: pipelineApps.filter((app) => normalizeStatus(app.status) === "rejected").length,
+        draft: pipelineApps.filter((app) => normalizeStatus(app.status) === "draft").length,
       } as const;
 
       const byStatusLegacy = {
@@ -1697,13 +1702,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const byStatus = { ...byStatusNew, ...byStatusLegacy };
 
-      const total = scopedApplications.length;
+      const total = pipelineApps.length;
       const newApplications = byStatus.submitted;
 
       const byCategory = {
-        diamond: scopedApplications.filter((a) => a.category === 'diamond').length,
-        gold: scopedApplications.filter((a) => a.category === 'gold').length,
-        silver: scopedApplications.filter((a) => a.category === 'silver').length,
+        diamond: pipelineApps.filter((a) => a.category === 'diamond').length,
+        gold: pipelineApps.filter((a) => a.category === 'gold').length,
+        silver: pipelineApps.filter((a) => a.category === 'silver').length,
       };
 
       const districtCounts: Record<string, number> = {};
@@ -1721,13 +1726,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
         ? Math.round(processingTimes.reduce((sum, time) => sum + time, 0) / processingTimes.length)
         : 0;
 
-      // Calculate Average Form Completion Time (in seconds) based on scoped applications
+      // Calculate Median Form Completion Time (in seconds) based on scoped applications
+      // Apply 240-minute (14400 sec) threshold to exclude outliers (e.g., forms left open overnight)
+      const FORM_TIME_THRESHOLD_SECONDS = 240 * 60; // 240 minutes = 14400 seconds
       const completionTimes = scopedApplications
         .map(app => app.formCompletionTimeSeconds)
-        .filter((t): t is number => typeof t === 'number' && t > 0);
+        .filter((t): t is number => typeof t === 'number' && t > 0 && t <= FORM_TIME_THRESHOLD_SECONDS)
+        .sort((a, b) => a - b);
 
+      // Use median for a more representative "typical" fill time
       const avgFormTimeSeconds = completionTimes.length > 0
-        ? Math.round(completionTimes.reduce((sum, t) => sum + t, 0) / completionTimes.length)
+        ? Math.round(
+          completionTimes.length % 2 === 0
+            ? (completionTimes[completionTimes.length / 2 - 1] + completionTimes[completionTimes.length / 2]) / 2
+            : completionTimes[Math.floor(completionTimes.length / 2)]
+        )
         : 0;
 
       const recentApplications = [...scopedApplications]
@@ -1747,6 +1760,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           avgProcessingTime,
           avgFormTimeSeconds, // Exposed for UI
           totalOwners: scopedOwners.length,
+          existingRC: existingRCCount,
         },
         districts: districtCounts,
         recentApplications,

@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { format } from "date-fns";
+import { formatDateLongIST } from "@/lib/dateUtils";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 type InspectionOrder = {
@@ -462,7 +462,7 @@ export default function DAInspections() {
                             <span className="font-mono">{inspection.application?.applicationNumber || '—'}</span>
                             <span className="flex items-center gap-1">
                               <Calendar className="w-3 h-3" />
-                              {format(new Date(inspection.inspectionDate), 'MMM dd, yyyy')}
+                              {formatDateLongIST(inspection.inspectionDate)}
                             </span>
                             <span className="hidden sm:flex items-center gap-1">
                               <User className="w-3 h-3" />

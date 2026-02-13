@@ -53,6 +53,7 @@ import SystemControlsPage from "@/pages/admin/system-controls";
 import PaymentTestKotak from "@/pages/admin/payment-test-kotak";
 import SeedToolsPage from "@/pages/admin/seed-tools";
 import PaymentReportsPage from "@/pages/admin/payment-reports";
+import ExistingRCDashboard from "@/pages/admin/existing-rc";
 import DADashboard from "@/pages/da/dashboard"; // ⚠️ LEGACY - Old stage-based layout
 import DAQueue from "@/pages/da/queue"; // ✅ NEW - Unified queue layout
 import DALegacyDashboard from "@/pages/legacy/da-dashboard";
@@ -294,6 +295,9 @@ function Router() {
       </Route>
       <Route path="/admin/legacy-owner-support">
         {() => <ProtectedRoute component={LegacyOwnerSupport} allowedRoles={['admin', 'super_admin', 'system_admin']} />}
+      </Route>
+      <Route path="/admin/existing-rc">
+        {() => <ProtectedRoute component={ExistingRCDashboard} allowedRoles={['district_tourism_officer', 'district_officer', 'state_officer', 'admin', 'super_admin', 'system_admin']} />}
       </Route>
       <Route path="/admin/test-runner">
         {() => <ProtectedRoute component={TestRunner} allowedRoles={['admin', 'super_admin', 'system_admin']} />}

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { formatDistanceToNow, addYears, format } from "date-fns";
+import { formatDistanceToNow, addYears } from "date-fns";
+import { formatDateInputIST } from "@/lib/dateUtils";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { z } from "zod";
@@ -184,7 +185,7 @@ export default function ExistingOwnerOnboarding() {
       if (!Number.isNaN(issueDate.getTime())) {
         const years = parseInt(watchedValidityYears, 10);
         const expiryDate = addYears(issueDate, years);
-        const formattedExpiry = format(expiryDate, "yyyy-MM-dd");
+        const formattedExpiry = formatDateInputIST(expiryDate);
         form.setValue("rcExpiryDate", formattedExpiry, { shouldValidate: true });
       }
     }

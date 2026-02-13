@@ -5,7 +5,7 @@ import { CreateGrievanceDialog } from "./create-dialog";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { format } from "date-fns";
+import { formatDateLongIST, formatDateTimeLongIST } from "@/lib/dateUtils";
 import { Loader2, MessageSquare, AlertCircle, CheckCircle2, Clock, ChevronRight, Send, User, Bell } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -131,7 +131,7 @@ export default function GrievanceList() {
                                             )}
                                         </div>
                                         <CardDescription>
-                                            Reported on {format(new Date(ticket.createdAt!), "PPP")}
+                                            Reported on {formatDateLongIST(ticket.createdAt)}
                                         </CardDescription>
                                     </div>
                                     <div className="flex items-center gap-2">
@@ -148,7 +148,7 @@ export default function GrievanceList() {
                                         Category: <Badge variant="secondary" className="font-normal capitalize">{ticket.category}</Badge>
                                     </span>
                                     {ticket.updatedAt && (
-                                        <span>Last updated: {format(new Date(ticket.updatedAt), "MMM d, h:mm a")}</span>
+                                        <span>Last updated: {formatDateTimeLongIST(ticket.updatedAt)}</span>
                                     )}
                                 </div>
                             </CardContent>
@@ -253,7 +253,7 @@ export default function GrievanceList() {
                                 </div>
                                 <div>
                                     <Label className="text-sm font-medium text-gray-700">Submitted</Label>
-                                    <p className="mt-1 text-sm">{format(new Date(currentDetails.createdAt!), "PPP p")}</p>
+                                    <p className="mt-1 text-sm">{formatDateTimeLongIST(currentDetails.createdAt)}</p>
                                 </div>
                             </div>
 
@@ -285,7 +285,7 @@ export default function GrievanceList() {
                                                     <div className="flex items-center gap-2 mb-1">
                                                         <User className="w-3 h-3 text-gray-400" />
                                                         <span className="text-xs text-gray-500">
-                                                            {format(new Date(comment.createdAt), "MMM d, h:mm a")}
+                                                            {formatDateTimeLongIST(comment.createdAt)}
                                                         </span>
                                                     </div>
                                                     <p className="text-sm text-gray-700">{comment.comment}</p>
@@ -338,7 +338,7 @@ export default function GrievanceList() {
                             {/* Last Updated */}
                             {currentDetails.updatedAt && (
                                 <div className="text-xs text-muted-foreground pt-4 border-t">
-                                    Last updated: {format(new Date(currentDetails.updatedAt), "PPP p")}
+                                    Last updated: {formatDateTimeLongIST(currentDetails.updatedAt)}
                                 </div>
                             )}
                         </div>

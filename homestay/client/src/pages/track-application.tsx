@@ -20,6 +20,7 @@ import {
     MapPin,
     Calendar
 } from "lucide-react";
+import { formatDateIST } from "@/lib/dateUtils";
 
 type ApplicationStatus =
     | "draft"
@@ -218,11 +219,7 @@ export default function TrackApplicationPage() {
                                             <p className="text-sm text-muted-foreground">Submitted On</p>
                                             <p className="font-medium">
                                                 {application.submittedAt
-                                                    ? new Date(application.submittedAt).toLocaleDateString('en-IN', {
-                                                        day: 'numeric',
-                                                        month: 'long',
-                                                        year: 'numeric'
-                                                    })
+                                                    ? formatDateIST(application.submittedAt)
                                                     : 'Not submitted yet'}
                                             </p>
                                         </div>

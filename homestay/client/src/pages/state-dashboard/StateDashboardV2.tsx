@@ -1,24 +1,30 @@
 
 import { useQuery } from "@tanstack/react-query";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
-    PieChart, Pie, Cell, ResponsiveContainer, Tooltip
+    BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip as RechartsTooltip,
+    AreaChart, Area, PieChart, Pie, Cell
 } from "recharts";
 import {
     TrendingUp, TrendingDown, Clock, FileText, XCircle,
     BedDouble, BadgeIndianRupee, Building2, Award,
-    ArrowRight, Activity, MapPin, Timer, Sparkles, Zap
+    Activity, MapPin, Timer, Sparkles, Zap,
+    CheckCircle2, PercentCircle, ArrowUpRight, BarChart3
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useLocation } from "wouter";
+import { formatDateIST } from "@/lib/dateUtils";
 
 type StatsData = {
     hero: {
         totalApplications: number;
         totalRevenue: number;
         pendingScrutiny: number;
+        pendingDistrict: number;
+        pendingInspection: number;
+        totalApproved: number;
         avgClearanceDays: string;
     };
     pipeline_counts: {
@@ -27,8 +33,14 @@ type StatsData = {
         scrutiny: number;
         district: number;
         inspection: number;
-        payment: number;
         approved: number;
+        objection: number;
+        rejected: number;
+        existingRC: number;
+    };
+    trends: {
+        revenue: Array<{ date: string; value: number }>;
+        applications: Array<{ date: string; value: number }>;
     };
     funnel: Array<{ name: string; value: number; fill: string }>;
     heatmap: Array<{ district: string; applications: number; status: string }>;
@@ -63,13 +75,23 @@ const CATEGORY_COLORS: Record<string, string> = {
 };
 
 const ACTION_COLORS: Record<string, string> = {
-    "Approved": "text-emerald-400",
-    "Rejected": "text-red-400",
-    "Submitted": "text-blue-400",
+    "Approved": "text-emerald-600",
+    "Rejected": "text-red-600",
+    "Submitted": "text-blue-600",
     "Draft Created": "text-slate-400",
-    "Inspection Scheduled": "text-purple-400",
-    "Under Review": "text-amber-400",
-    "Updated": "text-slate-300"
+    "Inspection Scheduled": "text-purple-600",
+    "Under Review": "text-amber-600",
+    "Updated": "text-slate-500"
+};
+
+const ACTION_DOT_COLORS: Record<string, string> = {
+    "Approved": "bg-emerald-500",
+    "Rejected": "bg-red-500",
+    "Submitted": "bg-blue-500",
+    "Draft Created": "bg-slate-300",
+    "Inspection Scheduled": "bg-purple-500",
+    "Under Review": "bg-amber-500",
+    "Updated": "bg-slate-400"
 };
 
 const formatCurrency = (value: number) => {
@@ -85,13 +107,10 @@ const formatTimeAgo = (timestamp: string) => {
     if (!timestamp) return "";
     try {
         const date = new Date(timestamp);
-        // Validate date
         if (isNaN(date.getTime())) return "Unknown time";
 
         const now = new Date();
         const diffMs = now.getTime() - date.getTime();
-
-        // Handle future dates or clock skew
         if (diffMs < 0) return "Just now";
 
         const diffMins = Math.floor(diffMs / 60000);
@@ -102,171 +121,218 @@ const formatTimeAgo = (timestamp: string) => {
         if (diffMins < 60) return `${diffMins}m ago`;
         if (diffHours < 24) return `${diffHours}h ago`;
         if (diffDays < 7) return `${diffDays}d ago`;
-        return date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+        return formatDateIST(date);
     } catch (e) {
         return "";
     }
 };
 
-// Hero Metric Card with real trends
-function HeroCard({
-    title, value, icon: Icon, gradient, onClick, trendValue, trendDirection, valuePrefix = ""
+// ─── KPI Card (Strategic Metric) ────────────────────────
+function KpiCard({
+    title, value, subtitle, icon: Icon, accentColor, onClick
 }: {
     title: string;
-    value: number;
+    value: string | number;
+    subtitle?: string;
     icon: any;
-    gradient: string;
+    accentColor: string;
     onClick?: () => void;
-    trendValue?: number;
-    trendDirection?: 'up' | 'down';
-    valuePrefix?: string;
 }) {
     return (
-        <button
-            onClick={onClick}
+        <Card
             className={cn(
-                "relative overflow-hidden rounded-2xl p-6 text-left transition-all duration-300",
-                "hover:scale-[1.02] hover:shadow-2xl cursor-pointer",
-                "border border-white/10 backdrop-blur-sm",
-                gradient
+                "relative overflow-hidden transition-all duration-200",
+                onClick && "hover:shadow-md cursor-pointer hover:-translate-y-0.5"
             )}
+            onClick={onClick}
         >
-            <div className="flex items-start justify-between">
-                <div>
-                    <p className="text-sm font-medium text-white/70">{title}</p>
-                    <h3 className="text-4xl font-bold text-white mt-1">
-                        {valuePrefix}{formatNumber(value)}
-                    </h3>
-                    {trendValue !== undefined && (
-                        <p className={cn(
-                            "text-xs mt-2 flex items-center gap-1",
-                            trendDirection === 'up' ? "text-emerald-300" : "text-rose-300"
-                        )}>
-                            {trendDirection === 'up'
-                                ? <TrendingUp className="h-3 w-3" />
-                                : <TrendingDown className="h-3 w-3" />
-                            }
-                            {trendDirection === 'up' ? '+' : ''}{trendValue}% vs last 30 days
-                        </p>
+            <CardContent className="p-5">
+                <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{title}</p>
+                        <h3 className="text-3xl font-bold text-foreground mt-1.5">{value}</h3>
+                        {subtitle && (
+                            <p className="text-xs text-muted-foreground mt-1.5">{subtitle}</p>
+                        )}
+                    </div>
+                    <div className={cn("p-2.5 rounded-xl", accentColor)}>
+                        <Icon className="h-5 w-5 text-white" />
+                    </div>
+                </div>
+                <div className={cn("absolute bottom-0 left-0 h-1 w-full", accentColor)} />
+            </CardContent>
+        </Card>
+    );
+}
+
+// ─── District Performance Table ────────────────────────
+function DistrictTable({ heatmap, leaderboard }: {
+    heatmap: StatsData['heatmap'];
+    leaderboard: StatsData['leaderboard'];
+}) {
+    // Merge heatmap (total apps) with leaderboard (avg days, processed)
+    const leaderboardMap = new Map(leaderboard.map(l => [l.district, l]));
+
+    const districts = heatmap.map(d => ({
+        name: d.district,
+        total: d.applications,
+        processed: leaderboardMap.get(d.district)?.processed || 0,
+        avgDays: leaderboardMap.get(d.district)?.avgDays || "—",
+    }));
+
+    const maxTotal = Math.max(...districts.map(d => d.total), 1);
+
+    return (
+        <Card>
+            <CardHeader className="pb-3">
+                <CardTitle className="flex items-center gap-2 text-base">
+                    <MapPin className="h-4 w-4 text-blue-500" />
+                    District-wise Analysis
+                </CardTitle>
+                <CardDescription>Application distribution and processing speed by district</CardDescription>
+            </CardHeader>
+            <CardContent>
+                <div className="space-y-3">
+                    {districts.map((d, i) => (
+                        <div key={d.name} className="flex items-center gap-3">
+                            <span className="text-xs font-bold text-muted-foreground w-5 text-right">{i + 1}</span>
+                            <div className="flex-1 min-w-0">
+                                <div className="flex items-center justify-between mb-1">
+                                    <span className="text-sm font-medium truncate max-w-[180px]">{d.name}</span>
+                                    <div className="flex items-center gap-4 text-xs">
+                                        <span className="font-semibold">{d.total} apps</span>
+                                        <span className="text-muted-foreground">
+                                            {d.processed > 0 ? (
+                                                <span className="text-emerald-600 font-medium">{d.processed} approved · {d.avgDays}d avg</span>
+                                            ) : (
+                                                "No approvals yet"
+                                            )}
+                                        </span>
+                                    </div>
+                                </div>
+                                <div className="h-2 bg-muted rounded-full overflow-hidden">
+                                    <div
+                                        className="h-full bg-gradient-to-r from-blue-500 to-sky-400 rounded-full transition-all duration-700"
+                                        style={{ width: `${(d.total / maxTotal) * 100}%` }}
+                                    />
+                                </div>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </CardContent>
+        </Card>
+    );
+}
+
+// ─── Activity Feed ─────────────────────────────────────
+function ActivityFeed({ activities }: { activities: ActivityItem[] }) {
+    return (
+        <Card>
+            <CardHeader className="pb-3">
+                <div className="flex items-center justify-between">
+                    <CardTitle className="flex items-center gap-2 text-base">
+                        <Zap className="h-4 w-4 text-amber-500" />
+                        Live Activity Feed
+                    </CardTitle>
+                    <Badge variant="outline" className="text-xs text-muted-foreground">
+                        <Activity className="h-3 w-3 mr-1 animate-pulse text-emerald-500" />
+                        Auto-refresh 30s
+                    </Badge>
+                </div>
+            </CardHeader>
+            <CardContent>
+                <div className="space-y-0 divide-y">
+                    {activities.length > 0 ? (
+                        activities.slice(0, 8).map(item => (
+                            <div key={item.id} className="flex items-center gap-3 py-2.5">
+                                <div className={cn("w-2 h-2 rounded-full flex-shrink-0",
+                                    ACTION_DOT_COLORS[item.action] || "bg-slate-400"
+                                )} />
+                                <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-2">
+                                        <span className={cn("text-xs font-semibold", ACTION_COLORS[item.action] || "text-slate-600")}>
+                                            {item.action}
+                                        </span>
+                                        <span className="text-xs text-muted-foreground">•</span>
+                                        <span className="text-xs text-muted-foreground truncate">
+                                            {item.propertyName || item.applicationNumber}
+                                        </span>
+                                    </div>
+                                    <div className="text-[10px] text-muted-foreground mt-0.5">
+                                        {item.district} • {item.ownerName}
+                                    </div>
+                                </div>
+                                <span className="text-[10px] text-muted-foreground flex-shrink-0">
+                                    {formatTimeAgo(item.timestamp)}
+                                </span>
+                            </div>
+                        ))
+                    ) : (
+                        <p className="text-center text-muted-foreground py-8">No recent activity</p>
                     )}
                 </div>
-                <div className="p-3 rounded-xl bg-white/10">
-                    <Icon className="h-6 w-6 text-white" />
-                </div>
-            </div>
-            <div className="absolute -bottom-4 -right-4 opacity-10">
-                <Icon className="h-24 w-24 text-white" />
-            </div>
-        </button>
+            </CardContent>
+        </Card>
     );
 }
 
-// Pipeline Stage Card
-function PipelineStage({
-    stage, index, total, totalApps
-}: {
-    stage: { name: string; value: number; fill: string };
-    index: number;
-    total: number;
-    totalApps: number;
+// ─── Application Trend Chart ───────────────────────────
+function TrendChart({ data, title, color }: {
+    data: Array<{ date: string; value: number }>;
+    title: string;
+    color: string;
 }) {
-    const percentage = totalApps > 0 ? Math.round((stage.value / totalApps) * 100) : 0;
+    if (!data || data.length === 0) return null;
+
+    // Format dates to short labels
+    const chartData = data.map(d => ({
+        ...d,
+        label: new Date(d.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
+    }));
 
     return (
-        <div className="flex items-center gap-1 flex-1">
-            <div
-                className="flex-1 rounded-xl p-3 text-center h-[100px] flex flex-col items-center justify-center"
-                style={{ backgroundColor: stage.fill }}
-            >
-                <div className="text-2xl font-bold text-white">{stage.value}</div>
-                <div className="text-[10px] font-medium text-white/80 mt-1 leading-tight px-1">
-                    {stage.name}
+        <Card>
+            <CardHeader className="pb-2">
+                <CardTitle className="text-base flex items-center gap-2">
+                    <BarChart3 className="h-4 w-4 text-muted-foreground" />
+                    {title}
+                </CardTitle>
+                <CardDescription>Last 30 days</CardDescription>
+            </CardHeader>
+            <CardContent>
+                <div className="h-[180px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                        <AreaChart data={chartData}>
+                            <defs>
+                                <linearGradient id={`gradient-${color}`} x1="0" y1="0" x2="0" y2="1">
+                                    <stop offset="5%" stopColor={color} stopOpacity={0.2} />
+                                    <stop offset="95%" stopColor={color} stopOpacity={0} />
+                                </linearGradient>
+                            </defs>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                            <XAxis dataKey="label" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} interval="preserveStartEnd" />
+                            <YAxis tick={{ fontSize: 10 }} tickLine={false} axisLine={false} allowDecimals={false} />
+                            <RechartsTooltip
+                                contentStyle={{
+                                    backgroundColor: '#fff',
+                                    border: '1px solid #e2e8f0',
+                                    borderRadius: '8px',
+                                    fontSize: '12px'
+                                }}
+                            />
+                            <Area type="monotone" dataKey="value" stroke={color} strokeWidth={2} fill={`url(#gradient-${color})`} />
+                        </AreaChart>
+                    </ResponsiveContainer>
                 </div>
-                <div className="text-[9px] mt-1 px-2 py-0.5 bg-white/20 rounded-full text-white">
-                    {percentage > 0 ? `${percentage}%` : "—"}
-                </div>
-            </div>
-            {index < total - 1 && (
-                <ArrowRight className="h-4 w-4 text-white/30 flex-shrink-0" />
-            )}
-        </div>
+            </CardContent>
+        </Card>
     );
 }
 
-// District Bar
-function DistrictBar({ district, count, maxCount, rank }: {
-    district: string; count: number; maxCount: number; rank: number;
-}) {
-    const percentage = maxCount > 0 ? (count / maxCount) * 100 : 0;
-    return (
-        <div className="flex items-center gap-3">
-            <span className="text-xs font-bold text-white/40 w-4">{rank}</span>
-            <div className="flex-1">
-                <div className="flex items-center justify-between mb-1">
-                    <span className="text-sm font-medium text-white/90 truncate max-w-[150px]">{district}</span>
-                    <span className="text-sm font-bold text-white">{count}</span>
-                </div>
-                <div className="h-2 bg-white/10 rounded-full overflow-hidden">
-                    <div
-                        className="h-full bg-gradient-to-r from-emerald-500 to-emerald-400 rounded-full transition-all duration-700"
-                        style={{ width: `${percentage}%` }}
-                    />
-                </div>
-            </div>
-        </div>
-    );
-}
-
-// Leaderboard Entry
-function LeaderboardEntry({ entry, rank }: {
-    entry: { district: string; avgDays: string; processed: number }; rank: number;
-}) {
-    const medals = ["🥇", "🥈", "🥉"];
-    return (
-        <div className={cn("flex items-center gap-3 p-3 rounded-lg transition-all", rank <= 3 ? "bg-white/5" : "bg-transparent")}>
-            <span className="text-xl w-8 text-center">
-                {rank <= 3 ? medals[rank - 1] : <span className="text-white/40 text-sm">{rank}</span>}
-            </span>
-            <div className="flex-1 min-w-0">
-                <div className="text-sm font-medium text-white truncate">{entry.district}</div>
-                <div className="text-xs text-white/50">{entry.processed} processed</div>
-            </div>
-            <div className="text-right">
-                <div className="text-lg font-bold text-emerald-400">{entry.avgDays}</div>
-                <div className="text-[10px] text-white/50">avg days</div>
-            </div>
-        </div>
-    );
-}
-
-// Activity Feed Item
-function ActivityFeedItem({ item }: { item: ActivityItem }) {
-    return (
-        <div className="flex items-center gap-3 py-2 border-b border-white/5 last:border-0">
-            <div className={cn("w-2 h-2 rounded-full flex-shrink-0",
-                item.action === "Approved" ? "bg-emerald-400" :
-                    item.action === "Rejected" ? "bg-red-400" :
-                        item.action === "Submitted" ? "bg-blue-400" : "bg-slate-400"
-            )} />
-            <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                    <span className={cn("text-xs font-semibold", ACTION_COLORS[item.action] || "text-white")}>
-                        {item.action}
-                    </span>
-                    <span className="text-xs text-white/40">•</span>
-                    <span className="text-xs text-white/60 truncate">{item.propertyName || item.applicationNumber}</span>
-                </div>
-                <div className="text-[10px] text-white/40 mt-0.5">
-                    {item.district} • {item.ownerName}
-                </div>
-            </div>
-            <div className="text-[10px] text-white/40 flex-shrink-0">
-                {formatTimeAgo(item.timestamp)}
-            </div>
-        </div>
-    );
-}
-
+// ═══════════════════════════════════════════════════════════
+// MAIN COMPONENT
+// ═══════════════════════════════════════════════════════════
 export default function StateDashboardV2() {
     const [, setLocation] = useLocation();
 
@@ -287,14 +353,15 @@ export default function StateDashboardV2() {
 
     if (isLoading) {
         return (
-            <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 p-6">
-                <div className="space-y-6">
-                    <div className="grid grid-cols-4 gap-4">
-                        {[...Array(4)].map((_, i) => (
-                            <Skeleton key={i} className="h-32 rounded-2xl bg-white/5" />
-                        ))}
-                    </div>
-                    <Skeleton className="h-40 rounded-2xl bg-white/5" />
+            <div className="space-y-6 p-6">
+                <div className="grid grid-cols-4 gap-4">
+                    {[...Array(4)].map((_, i) => (
+                        <Skeleton key={i} className="h-28 rounded-xl" />
+                    ))}
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                    <Skeleton className="h-56 rounded-xl" />
+                    <Skeleton className="h-56 rounded-xl" />
                 </div>
             </div>
         );
@@ -302,242 +369,219 @@ export default function StateDashboardV2() {
 
     if (error || !stats) {
         return (
-            <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 p-6 flex items-center justify-center">
-                <Card className="bg-white/5 border-white/10 p-8 text-center">
+            <div className="flex items-center justify-center min-h-[400px]">
+                <Card className="p-8 text-center">
                     <XCircle className="h-12 w-12 text-red-400 mx-auto mb-4" />
-                    <p className="text-white/70">Failed to load dashboard data</p>
+                    <p className="text-muted-foreground">Failed to load dashboard data</p>
                 </Card>
             </div>
         );
     }
 
-    const totalApps = stats.funnel.reduce((sum, s) => sum + s.value, 0);
-    const maxDistrictCount = Math.max(...stats.heatmap.map(d => d.applications), 1);
+    // ── Derived Strategic Numbers ──
+    const pc = stats.pipeline_counts;
+    // Total submitted = everything except draft & superseded
+    const totalSubmitted = pc.submitted + pc.scrutiny + pc.district + pc.inspection + pc.approved + pc.objection + pc.rejected;
+    const approvalRate = totalSubmitted > 0 ? Math.round((pc.approved / totalSubmitted) * 100) : 0;
+    const avgDays = parseFloat(stats.hero.avgClearanceDays) || 0;
 
     return (
-        <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 p-4 md:p-6">
-            {/* Header */}
-            <div className="flex items-center justify-between mb-6">
+        <div className="space-y-6 pt-2">
+            {/* ── Header ── */}
+            <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                    <div className="p-2 rounded-xl bg-gradient-to-br from-amber-500 to-orange-600">
-                        <Sparkles className="h-6 w-6 text-white" />
+                    <div className="p-2.5 rounded-xl bg-gradient-to-br from-amber-500 to-orange-600 shadow-lg shadow-amber-500/20">
+                        <Sparkles className="h-5 w-5 text-white" />
                     </div>
                     <div>
-                        <h1 className="text-2xl font-bold text-white">Him-Darshan Command Center</h1>
-                        <p className="text-sm text-white/50">Real-time state-wide tourism intelligence</p>
+                        <h1 className="text-2xl font-bold text-foreground">Him-Darshan Command Center</h1>
+                        <p className="text-sm text-muted-foreground">State-wide strategic overview of homestay registrations</p>
                     </div>
                 </div>
-                <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30 px-3 py-1">
+                <Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-emerald-700 px-3 py-1">
                     <Activity className="h-3 w-3 mr-1 animate-pulse" /> LIVE
                 </Badge>
             </div>
 
-            {/* Hero Metrics with Real Trends */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-                <HeroCard
-                    title="Total Applications"
-                    value={stats.hero.totalApplications}
-                    icon={FileText}
-                    gradient="bg-gradient-to-br from-blue-600 to-blue-800"
-                    onClick={() => setLocation("/workflow-monitoring")}
-                    trendValue={trends?.applications.change}
-                    trendDirection={trends?.applications.trend}
+            {/* ── Strategic KPIs ── */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                <KpiCard
+                    title="Registered Homestays"
+                    value={pc.approved}
+                    subtitle={`Out of ${totalSubmitted} applications submitted`}
+                    icon={CheckCircle2}
+                    accentColor="bg-emerald-500"
+                    onClick={() => setLocation("/workflow-monitoring?status=rc_issued")}
                 />
-                <HeroCard
+                <KpiCard
                     title="Revenue Collected"
-                    value={stats.hero.totalRevenue}
+                    value={`₹${formatNumber(stats.hero.totalRevenue)}`}
+                    subtitle={trends?.revenue.change !== undefined
+                        ? (trends.revenue.change > 0 && trends.revenue.previous > 0
+                            ? `+${trends.revenue.change}% vs previous period`
+                            : "System launched recently")
+                        : undefined}
                     icon={BadgeIndianRupee}
-                    gradient="bg-gradient-to-br from-emerald-600 to-emerald-800"
-                    trendValue={trends?.revenue.change}
-                    trendDirection={trends?.revenue.trend}
-                    valuePrefix="₹"
+                    accentColor="bg-blue-500"
                 />
-                <HeroCard
-                    title="Pending Scrutiny"
-                    value={stats.hero.pendingScrutiny}
-                    icon={Clock}
-                    gradient="bg-gradient-to-br from-amber-600 to-orange-700"
-                    onClick={() => setLocation("/workflow-monitoring?status=under_scrutiny")}
+                <KpiCard
+                    title="Approval Rate"
+                    value={`${approvalRate}%`}
+                    subtitle={`${pc.approved} approved of ${totalSubmitted} submitted`}
+                    icon={PercentCircle}
+                    accentColor="bg-purple-500"
                 />
-                <HeroCard
-                    title="Avg Clearance Days"
-                    value={parseFloat(stats.hero.avgClearanceDays) || 0}
+                <KpiCard
+                    title="Avg. Processing Time"
+                    value={`${avgDays}`}
+                    subtitle="Average days from submission to approval"
                     icon={Timer}
-                    gradient="bg-gradient-to-br from-purple-600 to-purple-800"
+                    accentColor="bg-amber-500"
                 />
             </div>
 
-            {/* Pipeline Funnel */}
-            <Card className="bg-white/5 border-white/10 backdrop-blur mb-6">
-                <CardHeader className="pb-2">
-                    <CardTitle className="text-white flex items-center gap-2">
-                        <TrendingUp className="h-5 w-5 text-emerald-400" />
-                        Application Pipeline
+            {/* ── At A Glance: Status Breakdown ── */}
+            <Card>
+                <CardHeader className="pb-3">
+                    <CardTitle className="flex items-center gap-2 text-base">
+                        <BarChart3 className="h-4 w-4 text-muted-foreground" />
+                        Status Breakdown
                     </CardTitle>
+                    <CardDescription>Current distribution of all {totalSubmitted} submitted applications</CardDescription>
                 </CardHeader>
                 <CardContent>
-                    <div className="flex items-center gap-1 my-4 px-2">
+                    <div className="flex flex-wrap gap-3">
                         {[
-                            { id: "da_review", label: "Scrutiny", count: stats?.pipeline_counts?.scrutiny || 0, color: "text-orange-400", border: "border-orange-500/50", bg: "bg-orange-500/10" },
-                            { id: "forwarded_dtdo", label: "District", count: stats?.pipeline_counts?.district || 0, color: "text-blue-400", border: "border-blue-500/50", bg: "bg-blue-500/10" },
-                            { id: "inspection_scheduled", label: "Inspection", count: stats?.pipeline_counts?.inspection || 0, color: "text-purple-400", border: "border-purple-500/50", bg: "bg-purple-500/10" },
-                            { id: "payment_pending", label: "Payment", count: stats?.pipeline_counts?.payment || 0, color: "text-indigo-400", border: "border-indigo-500/50", bg: "bg-indigo-500/10" },
-                            { id: "certificate", label: "Approved", count: stats?.pipeline_counts?.approved || 0, color: "text-emerald-400", border: "border-emerald-500/50", bg: "bg-emerald-500/10" },
-                        ].map((milestone, idx, arr) => {
-                            const isLast = idx === arr.length - 1;
-                            return (
-                                <div key={milestone.id} className="flex items-center flex-1">
-                                    <div className="flex flex-col items-center z-10">
-                                        <div
-                                            className={cn(
-                                                "flex h-12 w-12 items-center justify-center rounded-full border-2 text-lg font-bold shadow-[0_0_15px_rgba(0,0,0,0.5)] transition-all shrink-0 backdrop-blur-md",
-                                                milestone.bg, milestone.border, milestone.color
-                                            )}
-                                        >
-                                            {milestone.count}
-                                        </div>
-                                        <span className={cn("text-[10px] uppercase tracking-wider font-semibold mt-2", milestone.color)}>
-                                            {milestone.label}
-                                        </span>
-                                    </div>
-                                    {!isLast && (
-                                        <div className="h-[2px] flex-1 bg-white/10 mx-2 -mt-6 relative overflow-hidden">
-                                            <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent w-full" />
-                                        </div>
-                                    )}
-                                </div>
-                            );
-                        })}
+                            { label: "Drafts", count: pc.draft, color: "bg-slate-100 text-slate-700 border-slate-200" },
+                            { label: "Submitted", count: pc.submitted, color: "bg-sky-100 text-sky-700 border-sky-200" },
+                            { label: "DA Scrutiny", count: pc.scrutiny, color: "bg-orange-100 text-orange-700 border-orange-200" },
+                            { label: "District Review", count: pc.district, color: "bg-blue-100 text-blue-700 border-blue-200" },
+                            { label: "Inspection", count: pc.inspection, color: "bg-purple-100 text-purple-700 border-purple-200" },
+                            { label: "Objection / Corrections", count: pc.objection, color: "bg-amber-100 text-amber-700 border-amber-200" },
+                            { label: "Approved", count: pc.approved, color: "bg-emerald-100 text-emerald-700 border-emerald-200" },
+                            { label: "Rejected", count: pc.rejected, color: "bg-red-100 text-red-700 border-red-200" },
+                            { label: "Existing RC", count: pc.existingRC, color: "bg-gray-100 text-gray-700 border-gray-200" },
+                        ].map(item => (
+                            <div key={item.label}
+                                className={cn("flex items-center gap-2 px-3 py-2 rounded-lg border text-sm font-medium", item.color)}>
+                                <span className="text-lg font-bold">{item.count}</span>
+                                <span>{item.label}</span>
+                            </div>
+                        ))}
+                    </div>
+                    {/* visual bar */}
+                    <div className="flex h-3 rounded-full overflow-hidden mt-4 bg-muted">
+                        {[
+                            { count: pc.draft, color: "bg-slate-500" },
+                            { count: pc.submitted, color: "bg-sky-500" },
+                            { count: pc.scrutiny, color: "bg-orange-500" },
+                            { count: pc.district, color: "bg-blue-500" },
+                            { count: pc.inspection, color: "bg-purple-500" },
+                            { count: pc.objection, color: "bg-amber-500" },
+                            { count: pc.approved, color: "bg-emerald-500" },
+                            { count: pc.rejected, color: "bg-red-500" },
+                        ].filter(s => s.count > 0).map((s, i) => (
+                            <div
+                                key={i}
+                                className={cn("h-full transition-all duration-700", s.color)}
+                                style={{ width: `${(s.count / Math.max(totalSubmitted, 1)) * 100}%` }}
+                            />
+                        ))}
                     </div>
                 </CardContent>
             </Card>
 
-            {/* Middle Row - District Heatmap + Leaderboard */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-                <Card className="bg-white/5 border-white/10 backdrop-blur">
-                    <CardHeader className="pb-2">
-                        <CardTitle className="text-white flex items-center gap-2">
-                            <MapPin className="h-5 w-5 text-blue-400" />
-                            Top Districts
-                        </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                        <div className="space-y-3">
-                            {stats.heatmap.slice(0, 6).map((d, i) => (
-                                <DistrictBar key={d.district} district={d.district} count={d.applications} maxCount={maxDistrictCount} rank={i + 1} />
-                            ))}
+            {/* ── Trends Row ── */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <TrendChart
+                    data={stats.trends?.applications || []}
+                    title="Applications Over Time"
+                    color="#3b82f6"
+                />
+                <TrendChart
+                    data={stats.trends?.revenue || []}
+                    title="Revenue Over Time"
+                    color="#10b981"
+                />
+            </div>
+
+            {/* ── District Analysis + Activity Feed ── */}
+            <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
+                <div className="lg:col-span-3">
+                    <DistrictTable heatmap={stats.heatmap} leaderboard={stats.leaderboard} />
+                </div>
+                <div className="lg:col-span-2">
+                    <ActivityFeed activities={activities || []} />
+                </div>
+            </div>
+
+            {/* ── Economic Impact Row ── */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <Card>
+                    <CardContent className="p-5">
+                        <div className="flex items-center gap-3 mb-3">
+                            <div className="p-2 rounded-lg bg-blue-100">
+                                <BedDouble className="h-5 w-5 text-blue-600" />
+                            </div>
+                            <span className="text-sm font-medium text-muted-foreground">Tourism Capacity</span>
                         </div>
+                        <div className="text-3xl font-bold">{formatNumber(stats.economic.totalBeds)}</div>
+                        <div className="text-xs text-muted-foreground mt-1">Total beds in approved homestays</div>
                     </CardContent>
                 </Card>
 
-                <Card className="bg-white/5 border-white/10 backdrop-blur">
-                    <CardHeader className="pb-2">
-                        <CardTitle className="text-white flex items-center gap-2">
-                            <Award className="h-5 w-5 text-amber-400" />
-                            Performance Leaderboard
-                        </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                        <div className="space-y-2">
-                            {stats.leaderboard.slice(0, 5).map((entry, i) => (
-                                <LeaderboardEntry key={entry.district} entry={entry} rank={i + 1} />
-                            ))}
-                            {stats.leaderboard.length === 0 && (
-                                <p className="text-center text-white/50 py-8">No data available</p>
+                <Card>
+                    <CardContent className="p-5">
+                        <div className="flex items-center gap-3 mb-3">
+                            <div className="p-2 rounded-lg bg-emerald-100">
+                                <BadgeIndianRupee className="h-5 w-5 text-emerald-600" />
+                            </div>
+                            <span className="text-sm font-medium text-muted-foreground">Est. Annual Revenue</span>
+                        </div>
+                        <div className="text-3xl font-bold">{formatCurrency(stats.economic.projectedRevenue)}</div>
+                        <div className="text-xs text-muted-foreground mt-1">Based on 40% avg occupancy</div>
+                    </CardContent>
+                </Card>
+
+                <Card>
+                    <CardContent className="p-5">
+                        <div className="flex items-center gap-3 mb-3">
+                            <div className="p-2 rounded-lg bg-purple-100">
+                                <Building2 className="h-5 w-5 text-purple-600" />
+                            </div>
+                            <span className="text-sm font-medium text-muted-foreground">Property Categories</span>
+                        </div>
+                        <div className="flex items-center gap-6 mt-2">
+                            {stats.economic.categorySplit.length > 0 ? (
+                                <>
+                                    <div className="h-20 w-20 flex-shrink-0">
+                                        <ResponsiveContainer width="100%" height="100%">
+                                            <PieChart>
+                                                <Pie data={stats.economic.categorySplit} cx="50%" cy="50%" innerRadius={20} outerRadius={35} paddingAngle={3} dataKey="value">
+                                                    {stats.economic.categorySplit.map((entry, index) => (
+                                                        <Cell key={`cell-${index}`} fill={CATEGORY_COLORS[entry.name.toLowerCase()] || "#6b7280"} />
+                                                    ))}
+                                                </Pie>
+                                            </PieChart>
+                                        </ResponsiveContainer>
+                                    </div>
+                                    <div className="flex flex-col gap-1.5">
+                                        {stats.economic.categorySplit.map(cat => (
+                                            <div key={cat.name} className="flex items-center gap-2 text-xs">
+                                                <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: CATEGORY_COLORS[cat.name.toLowerCase()] || "#6b7280" }} />
+                                                <span className="text-muted-foreground">{cat.name}:</span>
+                                                <span className="font-semibold">{cat.value}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </>
+                            ) : (
+                                <p className="text-sm text-muted-foreground">No approved properties yet</p>
                             )}
                         </div>
                     </CardContent>
                 </Card>
             </div>
-
-            {/* Bottom Row - Economic + Activity Feed */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                {/* Beds */}
-                <Card className="bg-gradient-to-br from-blue-900/50 to-blue-800/30 border-blue-500/20 backdrop-blur">
-                    <CardContent className="p-6">
-                        <div className="flex items-center gap-3 mb-3">
-                            <div className="p-2 rounded-lg bg-blue-500/20">
-                                <BedDouble className="h-5 w-5 text-blue-400" />
-                            </div>
-                            <span className="text-sm font-medium text-white/70">Tourism Capacity</span>
-                        </div>
-                        <div className="text-4xl font-bold text-white">{formatNumber(stats.economic.totalBeds)}</div>
-                        <div className="text-sm text-white/50 mt-1">Total approved beds</div>
-                    </CardContent>
-                </Card>
-
-                {/* Revenue */}
-                <Card className="bg-gradient-to-br from-emerald-900/50 to-emerald-800/30 border-emerald-500/20 backdrop-blur">
-                    <CardContent className="p-6">
-                        <div className="flex items-center gap-3 mb-3">
-                            <div className="p-2 rounded-lg bg-emerald-500/20">
-                                <BadgeIndianRupee className="h-5 w-5 text-emerald-400" />
-                            </div>
-                            <span className="text-sm font-medium text-white/70">Est. Annual Revenue</span>
-                        </div>
-                        <div className="text-4xl font-bold text-white">{formatCurrency(stats.economic.projectedRevenue)}</div>
-                        <div className="text-sm text-white/50 mt-1">Based on 40% occupancy</div>
-                    </CardContent>
-                </Card>
-
-                {/* Category Distribution */}
-                <Card className="bg-gradient-to-br from-purple-900/50 to-purple-800/30 border-purple-500/20 backdrop-blur">
-                    <CardContent className="p-6">
-                        <div className="flex items-center gap-3 mb-3">
-                            <div className="p-2 rounded-lg bg-purple-500/20">
-                                <Building2 className="h-5 w-5 text-purple-400" />
-                            </div>
-                            <span className="text-sm font-medium text-white/70">Inventory Quality</span>
-                        </div>
-                        <div className="h-24">
-                            <ResponsiveContainer width="100%" height="100%">
-                                <PieChart>
-                                    <Pie data={stats.economic.categorySplit} cx="50%" cy="50%" innerRadius={25} outerRadius={40} paddingAngle={3} dataKey="value">
-                                        {stats.economic.categorySplit.map((entry, index) => (
-                                            <Cell key={`cell-${index}`} fill={CATEGORY_COLORS[entry.name.toLowerCase()] || "#6b7280"} />
-                                        ))}
-                                    </Pie>
-                                    <Tooltip contentStyle={{ background: '#1e293b', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px' }} />
-                                </PieChart>
-                            </ResponsiveContainer>
-                        </div>
-                        <div className="flex justify-center gap-4 mt-2">
-                            {stats.economic.categorySplit.slice(0, 3).map((cat) => (
-                                <div key={cat.name} className="flex items-center gap-1 text-xs text-white/60">
-                                    <span className="w-2 h-2 rounded-full" style={{ backgroundColor: CATEGORY_COLORS[cat.name.toLowerCase()] || "#6b7280" }} />
-                                    {cat.name}: {cat.value}
-                                </div>
-                            ))}
-                        </div>
-                    </CardContent>
-                </Card>
-            </div>
-
-            {/* Activity Feed */}
-            <Card className="bg-white/5 border-white/10 backdrop-blur mt-6">
-                <CardHeader className="pb-2">
-                    <div className="flex items-center justify-between">
-                        <CardTitle className="text-white flex items-center gap-2">
-                            <Zap className="h-5 w-5 text-amber-400" />
-                            Recent Activity
-                        </CardTitle>
-                        <Badge variant="outline" className="text-white/50 border-white/20 text-xs">
-                            Auto-refresh 30s
-                        </Badge>
-                    </div>
-                </CardHeader>
-                <CardContent>
-                    <div className="divide-y divide-white/5">
-                        {activities && activities.length > 0 ? (
-                            activities.slice(0, 10).map((item) => (
-                                <ActivityFeedItem key={item.id} item={item} />
-                            ))
-                        ) : (
-                            <p className="text-center text-white/50 py-8">No recent activity</p>
-                        )}
-                    </div>
-                </CardContent>
-            </Card>
         </div>
     );
 }

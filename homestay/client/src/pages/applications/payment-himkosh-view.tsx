@@ -38,6 +38,7 @@ import {
 import type { HomestayApplication } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { formatDateTimeIST } from "@/lib/dateUtils";
 
 type PaymentInitiationResponse = {
   success: boolean;
@@ -85,17 +86,7 @@ const HIMKOSH_PORTAL_URL =
   "https://himkosh.hp.nic.in/echallan/WebPages/wrfApplicationRequest.aspx";
 
 const formatDateTime = (iso?: string | null) => {
-  if (!iso) return "—";
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return "—";
-  return date.toLocaleString("en-IN", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: true,
-  });
+  return formatDateTimeIST(iso);
 };
 
 const getStatusMeta = (transaction: HimkoshTransaction | null) => {

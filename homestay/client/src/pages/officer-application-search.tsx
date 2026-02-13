@@ -29,6 +29,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
+import { formatDateIST } from "@/lib/dateUtils";
 import type { HomestayApplication, User } from "@shared/schema";
 
 type SearchParams = {
@@ -430,13 +431,7 @@ export default function OfficerApplicationSearch() {
                         <Badge variant="secondary">{application.status}</Badge>
                       </TableCell>
                       <TableCell>
-                        {application.createdAt
-                          ? new Date(application.createdAt).toLocaleDateString("en-IN", {
-                            day: "2-digit",
-                            month: "short",
-                            year: "numeric",
-                          })
-                          : "—"}
+                        {formatDateIST(application.createdAt)}
                       </TableCell>
                       <TableCell className="text-right">
                         <Button

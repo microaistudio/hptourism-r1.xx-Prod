@@ -1,13 +1,13 @@
 {
   "name": "hptourism-homestay",
-  "version": "1.0.25",
+  "version": "1.1.5",
   "private": true,
   "type": "module",
-  "description": "HP Tourism Homestay Portal - RC8",
+  "description": "HP Tourism Homestay Portal - v1.1.4 - Form UX Metrics",
   "license": "MIT",
   "scripts": {
     "dev": "PORT=${PORT:-5057} NODE_ENV=development tsx server/index.ts",
-    "build": "vite build && esbuild server/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist && esbuild server/seed.ts --platform=node --packages=external --bundle --format=esm --outfile=dist/seed.js && cp server/himkosh/echallan.key dist/echallan.key 2>/dev/null || :",
+    "build": "vite build && esbuild server/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist && esbuild server/seed.ts --platform=node --packages=external --bundle --format=esm --outfile=dist/seed.js && esbuild scripts/patch-baseline.ts --platform=node --packages=external --bundle --format=esm --outfile=dist/patch-baseline.js && esbuild scripts/check-schema.ts --platform=node --packages=external --bundle --format=esm --outfile=dist/check-schema.js && cp server/himkosh/echallan.key dist/echallan.key 2>/dev/null || :",
     "start": "NODE_ENV=production node dist/index.js",
     "pm2:start": "pm2 start ecosystem.config.cjs",
     "pm2:stop": "pm2 stop hptourism-rc7 || true",

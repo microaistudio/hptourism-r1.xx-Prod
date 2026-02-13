@@ -1,16 +1,16 @@
 /**
  * Application Version Configuration
  * SINGLE SOURCE OF TRUTH - Keep in sync with package.json
- * Current: 1.0.7
+ * Current: 1.0.29
  */
 
 export const APP_VERSION = {
     major: 1,
-    minor: 0,
-    patch: 25,
+    minor: 1,
+    patch: 5,
     releaseCandidate: "R1",
-    codename: "Diagnostic Release",
-    buildDate: "2026-02-10",
+    codename: "Existing RC Integration",
+    buildDate: "2026-02-13",
 
     // Full version string
     get full(): string {
@@ -68,13 +68,13 @@ export function getVersionInfo(role: "owner" | "officer" | "admin" | "superadmin
             buildDate: APP_VERSION.buildDate,
             environment: process.env.NODE_ENV || "development",
             features: [
-                "DTDO Failsafe Filtering",
-                "Diagnostic Tool Included",
-                "Lahaul/Spiti Robust Exclusion",
-                "Split District Logic (Final)",
-                "Lahaul Priority Fix",
+                "Existing RC Badge & Pill",
+                "Reports 500 Error Fix",
+                "Horizontal Tabs Fix",
                 "District Performance Report",
                 "Timer Persist Fix",
+                "Online Users Dashboard",
+                "8-Hour Session Security",
             ],
         };
     }

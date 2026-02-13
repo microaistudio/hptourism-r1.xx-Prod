@@ -29,7 +29,7 @@ import {
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { format } from "date-fns";
+import { formatDateIST } from "@/lib/dateUtils";
 import type { HomestayApplication, InspectionReport, InspectionOrder } from "@shared/schema";
 import hpGovLogo from "@/assets/logos_tr/HP_Gov_TR.png";
 import hpTourismLogo from "@/assets/logos_tr/HP_Touris_TR.png";
@@ -88,14 +88,7 @@ const reportPrintStyles = `
   }
 `;
 
-const formatDate = (value?: string | Date | null) => {
-  if (!value) return "—";
-  const parsedValue = value instanceof Date ? value : new Date(value);
-  if (Number.isNaN(parsedValue.getTime())) {
-    return "—";
-  }
-  return format(parsedValue, "dd/MM/yyyy");
-};
+
 
 export default function DTDOInspectionReview() {
   const { id } = useParams<{ id: string }>();
@@ -262,9 +255,9 @@ export default function DTDOInspectionReview() {
   const desirableMetCount = DESIRABLE_POINTS.filter((point) => desirableChecklist?.[point.key]).length;
   const mandatoryTotalPoints = MANDATORY_POINTS.length;
   const desirableTotalPoints = DESIRABLE_POINTS.length;
-  const scheduledOn = formatDate(inspectionOrder?.inspectionDate ?? null);
-  const inspectionDoneOn = formatDate(report.actualInspectionDate ?? null);
-  const reportSubmittedOn = formatDate(report.createdAt ?? null);
+  const scheduledOn = formatDateIST(inspectionOrder?.inspectionDate ?? null);
+  const inspectionDoneOn = formatDateIST(report.actualInspectionDate ?? null);
+  const reportSubmittedOn = formatDateIST(report.createdAt ?? null);
 
   const handlePrint = () => {
     if (typeof window === "undefined") {
@@ -480,11 +473,11 @@ export default function DTDOInspectionReview() {
                     </div>
                     <div>
                       <p className="text-muted-foreground">Inspection Date</p>
-                      <p className="font-medium">{formatDate(report.actualInspectionDate ?? null)}</p>
+                      <p className="font-medium">{formatDateIST(report.actualInspectionDate ?? null)}</p>
                     </div>
                     <div>
                       <p className="text-muted-foreground">Report Submitted</p>
-                      <p className="font-medium">{formatDate(report.submittedDate ?? null)}</p>
+                      <p className="font-medium">{formatDateIST(report.submittedDate ?? null)}</p>
                     </div>
                   </TabsContent>
                 </CardContent>

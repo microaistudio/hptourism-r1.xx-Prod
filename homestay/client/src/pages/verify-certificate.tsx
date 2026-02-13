@@ -19,6 +19,7 @@ import {
     Award,
     Clock
 } from "lucide-react";
+import { formatDateIST } from "@/lib/dateUtils";
 
 export default function VerifyCertificatePage() {
     const [, setLocation] = useLocation();
@@ -196,11 +197,7 @@ export default function VerifyCertificatePage() {
                                             <p className="text-sm text-muted-foreground">Valid Until</p>
                                             <p className="font-medium">
                                                 {certificate.validUntil
-                                                    ? new Date(certificate.validUntil).toLocaleDateString('en-IN', {
-                                                        day: 'numeric',
-                                                        month: 'long',
-                                                        year: 'numeric'
-                                                    })
+                                                    ? formatDateIST(certificate.validUntil)
                                                     : 'Lifetime'}
                                             </p>
                                         </div>

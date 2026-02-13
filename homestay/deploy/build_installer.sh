@@ -3,7 +3,7 @@
 # Usage: ./deploy/build_installer.sh [version]
 
 VERSION=${1:-"v0.9.9.5"}
-OUTPUT_DIR="../setup"
+OUTPUT_DIR="/home/subhash.thakur.india/Projects/setup"
 INSTALLER_NAME="hptourism-$VERSION-installer.tar.gz"
 
 echo "📦 Packaging HPTourism Installer ($VERSION)..."
@@ -41,6 +41,7 @@ tar -czvf "$OUTPUT_DIR/$INSTALLER_NAME" \
     -C .. \
     ecosystem.config.cjs \
     package.json \
+    package-lock.json \
     drizzle.config.ts \
     shared/ \
     Database/ \

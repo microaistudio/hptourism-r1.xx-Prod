@@ -13,7 +13,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, ArrowLeft, Eye, AlertCircle } from "lucide-react";
-import { format } from "date-fns";
+import { formatDateTimeLongIST } from "@/lib/dateUtils";
 import type { HomestayApplication } from "@shared/schema";
 
 interface IncompleteApplication extends HomestayApplication {
@@ -98,7 +98,7 @@ export default function DAIncompleteApplications() {
                                             {app.tehsil && <span className="text-muted-foreground">, {app.tehsil}</span>}
                                         </TableCell>
                                         <TableCell>
-                                            {app.updatedAt ? format(new Date(app.updatedAt), "PP p") : "N/A"}
+                                            {app.updatedAt ? formatDateTimeLongIST(app.updatedAt) : "N/A"}
                                         </TableCell>
                                         <TableCell>
                                             <Badge variant="secondary">

@@ -59,7 +59,7 @@ import {
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { format } from "date-fns";
+import { formatDateTimeLongIST, formatTimeIST, formatDateLongIST } from "@/lib/dateUtils";
 import type { HomestayApplication, Document as HomestayDocument } from "@shared/schema";
 import { buildObjectViewUrl } from "@/lib/utils";
 import { ApplicationTimelineCard } from "@/components/application/application-timeline-card";
@@ -113,7 +113,7 @@ const formatTimeLabel = (slot: string) => {
   const [hour, minute] = slot.split(":").map(Number);
   const date = new Date();
   date.setHours(hour, minute, 0, 0);
-  return format(date, "h:mm a");
+  return formatTimeIST(date);
 };
 
 const combineDateAndTime = (date: Date, time: string) => {
@@ -126,7 +126,7 @@ const combineDateAndTime = (date: Date, time: string) => {
 const formatCorrectionTimestamp = (value?: string | null) => {
   if (!value) return "No resubmission yet";
   const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? "No resubmission yet" : format(parsed, "PPP p");
+  return Number.isNaN(parsed.getTime()) ? "No resubmission yet" : formatDateTimeLongIST(parsed);
 };
 
 export default function DTDOApplicationReview() {
@@ -1357,7 +1357,7 @@ export default function DTDOApplicationReview() {
                             data-testid="button-inspection-date"
                           >
                             <CalendarIcon className="mr-2 h-4 w-4" />
-                            {selectedDate ? format(selectedDate, "PPP") : "Pick a date"}
+                            {selectedDate ? formatDateLongIST(selectedDate) : "Pick a date"}
                           </Button>
                         </PopoverTrigger>
                         <PopoverContent className="w-auto p-0" align="start">

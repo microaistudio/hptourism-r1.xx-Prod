@@ -12,6 +12,7 @@ import { generateCertificatePDF, type CertificateFormat } from "@/lib/certificat
 import { fetchInspectionReportSummary } from "@/lib/inspection-report";
 import type { HomestayApplication } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
+import { formatDateIST } from "@/lib/dateUtils";
 
 type LegacyApplicationResponse = {
   application: HomestayApplication;
@@ -31,16 +32,7 @@ const certificateFormatOptions: { value: CertificateFormat; label: string; descr
 ];
 
 const formatDisplayDate = (value?: string | Date | null) => {
-  if (!value) return "—";
-  const resolved = value instanceof Date ? value : new Date(value);
-  if (Number.isNaN(resolved.getTime())) {
-    return "—";
-  }
-  return resolved.toLocaleDateString("en-IN", {
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-  });
+  return formatDateIST(value);
 };
 
 const infoRow = (label: string, value: string | number | null | undefined) => (

@@ -63,6 +63,12 @@ export function AppSidebar() {
     staleTime: 30 * 1000,
   });
 
+  const { data: operationsData } = useQuery<{ pipeline: { existingRC: number } }>({
+    queryKey: ["/api/admin/reports/operations"],
+    enabled: ["admin", "super_admin", "state_officer"].includes(user?.role || ""),
+    staleTime: 60 * 1000,
+  });
+
   // Count Legacy RC applications that need attention
   const legacyRCCounts = useMemo(() => {
     if (user?.role !== "dealing_assistant" || !daApplications) {
@@ -117,8 +123,28 @@ export function AppSidebar() {
       }));
     }
 
+    // Add Existing RC count badge for Admins
+    if (["admin", "super_admin", "state_officer"].includes(user?.role || "") && operationsData?.pipeline?.existingRC) {
+      const count = operationsData.pipeline.existingRC;
+      if (count > 0) {
+        sections = sections.map((section) => ({
+          ...section,
+          items: section.items.map((item) => {
+            if (item.url === "/admin/existing-rc") {
+              return {
+                ...item,
+                badge: count > 99 ? "99+" : String(count),
+                badgeVariant: "neutral",
+              };
+            }
+            return item;
+          }),
+        }));
+      }
+    }
+
     return sections;
-  }, [navigation, pendingInspectionCount, legacyRCCounts, user?.role]);
+  }, [navigation, pendingInspectionCount, legacyRCCounts, user?.role, operationsData]);
 
   // Filter out Existing RC nav item if disabled
   const filteredNavigationSections = useMemo(() => {
@@ -263,7 +289,9 @@ export function AppSidebar() {
                             ? "bg-emerald-500 text-white"
                             : item.badgeVariant === "warning"
                               ? "bg-amber-500 text-white"
-                              : "bg-primary text-primary-foreground"
+                              : item.badgeVariant === "neutral"
+                                ? "bg-gray-100 text-gray-700 border border-gray-200"
+                                : "bg-primary text-primary-foreground"
                             }`}>
                             {item.badge}
                           </span>

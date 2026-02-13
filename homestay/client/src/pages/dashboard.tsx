@@ -20,6 +20,7 @@ import {
   Building2, MapPin, ClipboardCheck, Zap, Trash2, Eye
 } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
+import { formatDateTimeIST } from "@/lib/dateUtils";
 import { useToast } from "@/hooks/use-toast";
 import type { User, HomestayApplication } from "@shared/schema";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -750,9 +751,10 @@ export default function Dashboard() {
                           <span className="text-sm text-muted-foreground hidden md:block text-right">
                             {progress.summary}
                           </span>
+
                           <span className="text-xs text-muted-foreground flex items-center gap-1">
                             <Clock className="h-3 w-3" />
-                            Updated {new Date(app.updatedAt || app.createdAt || Date.now()).toLocaleDateString()}
+                            Updated {formatDateTimeIST(app.updatedAt || app.createdAt || new Date())}
                           </span>
                         </div>
                       </div>

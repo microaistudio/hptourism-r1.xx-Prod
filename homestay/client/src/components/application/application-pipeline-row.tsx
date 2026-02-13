@@ -1,5 +1,6 @@
 import { useMemo, type KeyboardEvent } from "react";
-import { format, formatDistanceToNow } from "date-fns";
+import { formatDistanceToNow } from "date-fns";
+import { formatDateLongIST } from "@/lib/dateUtils";
 import type { ApplicationKind, HomestayApplication } from "@shared/schema";
 import { ApplicationKindBadge, getApplicationKindLabel, isServiceApplication } from "@/components/application/application-kind-badge";
 import { Badge } from "@/components/ui/badge";
@@ -156,7 +157,7 @@ export function ApplicationPipelineRow({ application, actionLabel, applicationId
               </span>
               <span className="hidden lg:flex items-center gap-1">
                 <Calendar className="w-3 h-3" />
-                {application.submittedAt ? format(new Date(application.submittedAt), "MMM dd, yyyy") : "—"}
+                {formatDateLongIST(application.submittedAt)}
               </span>
             </div>
           </div>

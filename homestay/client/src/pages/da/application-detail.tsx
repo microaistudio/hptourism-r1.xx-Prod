@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { format } from "date-fns";
+import { formatDateTimeIST, formatTimeIST } from "@/lib/dateUtils";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useParams, useLocation } from "wouter";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -81,7 +81,7 @@ interface DocumentVerification {
 const formatCorrectionTimestamp = (value?: string | null) => {
   if (!value) return "No resubmission yet";
   const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? "No resubmission yet" : format(parsed, "PPP p");
+  return Number.isNaN(parsed.getTime()) ? "No resubmission yet" : formatDateTimeIST(parsed);
 };
 
 // Sort documents by upload timestamp (oldest first = original upload order)
@@ -341,7 +341,7 @@ export default function DAApplicationDetail() {
       return "Unsaved changes";
     }
     if (lastSavedAt) {
-      return `Saved at ${lastSavedAt.toLocaleTimeString()}`;
+      return `Saved at ${formatTimeIST(lastSavedAt)}`;
     }
     return "";
   }, [

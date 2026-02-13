@@ -14,10 +14,14 @@ router.get("/state", async (req, res) => {
         // ----------------------------------------------------------------
         const [heroData] = await db
             .select({
-                totalApplications: sql<number>`count(*)`,
-                totalRevenue: sql<number>`sum(CASE WHEN ${homestayApplications.status} = 'approved' OR ${homestayApplications.paymentStatus} = 'paid' THEN ${homestayApplications.totalFee} ELSE 0 END)`,
-                pendingScrutiny: sql<number>`count(*) filter (where ${homestayApplications.status} in ('submitted', 'document_verification', 'clarification_requested', 'site_inspection_scheduled', 'site_inspection_complete', 'payment_pending'))`,
-                avgClearanceDays: sql<number>`avg(extract(epoch from (${homestayApplications.approvedAt} - ${homestayApplications.submittedAt})) / 86400)`
+                totalApplications: sql<number>`count(*) filter (where ${homestayApplications.applicationNumber} NOT LIKE 'LG-HS-%')`,
+                totalRevenue: sql<number>`sum(CASE WHEN (${homestayApplications.status} = 'approved' OR ${homestayApplications.paymentStatus} = 'paid') AND ${homestayApplications.applicationNumber} NOT LIKE 'LG-HS-%' THEN ${homestayApplications.totalFee} ELSE 0 END)`,
+                pendingScrutiny: sql<number>`count(*) filter (where ${homestayApplications.status} in ('submitted', 'under_scrutiny') AND ${homestayApplications.applicationNumber} NOT LIKE 'LG-HS-%')`,
+                pendingDistrict: sql<number>`count(*) filter (where ${homestayApplications.status} in ('forwarded_to_dtdo', 'dtdo_review') AND ${homestayApplications.applicationNumber} NOT LIKE 'LG-HS-%')`,
+                pendingInspection: sql<number>`count(*) filter (where ${homestayApplications.status} in ('inspection_scheduled', 'inspection_completed', 'inspection_under_review') AND ${homestayApplications.applicationNumber} NOT LIKE 'LG-HS-%')`,
+                totalApproved: sql<number>`count(*) filter (where ${homestayApplications.status} = 'approved' AND ${homestayApplications.applicationNumber} NOT LIKE 'LG-HS-%')`,
+                avgClearanceDays: sql<number>`avg(extract(epoch from (${homestayApplications.approvedAt} - ${homestayApplications.submittedAt})) / 86400) filter (where ${homestayApplications.applicationNumber} NOT LIKE 'LG-HS-%')`,
+                existingRC: sql<number>`count(*) filter (where ${homestayApplications.applicationNumber} LIKE 'LG-HS-%')`,
             })
             .from(homestayApplications);
 
@@ -136,7 +140,7 @@ router.get("/state", async (req, res) => {
 
         // 6. Trend Data (Daily for last 30 days)
         // ----------------------------------------------------------------
-        
+
         // Revenue Trend (Daily)
         const revenueTrendRaw = await db
             .select({
@@ -174,7 +178,11 @@ router.get("/state", async (req, res) => {
                 totalApplications: Number(heroData.totalApplications),
                 totalRevenue: Number(heroData.totalRevenue || 0),
                 pendingScrutiny: Number(heroData.pendingScrutiny),
-                avgClearanceDays: Number(heroData.avgClearanceDays || 0).toFixed(1)
+                pendingDistrict: Number(heroData.pendingDistrict),
+                pendingInspection: Number(heroData.pendingInspection),
+                totalApproved: Number(heroData.totalApproved),
+                avgClearanceDays: Number(heroData.avgClearanceDays || 0).toFixed(1),
+                existingRC: Number(heroData.existingRC || 0),
             },
             trends: {
                 revenue: revenueTrendRaw.map(r => ({ date: r.date, value: Number(r.amount) })),
@@ -183,11 +191,13 @@ router.get("/state", async (req, res) => {
             pipeline_counts: {
                 draft: funnelMap.get("draft") || 0,
                 submitted: funnelMap.get("submitted") || 0,
-                scrutiny: (funnelMap.get("document_verification") || 0) + (funnelMap.get("clarification_requested") || 0),
-                district: (funnelMap.get("forwarded_to_dtdo") || 0), // Assuming 'forwarded_to_dtdo' is the status for district review
-                inspection: (funnelMap.get("site_inspection_scheduled") || 0) + (funnelMap.get("site_inspection_complete") || 0),
-                payment: (funnelMap.get("payment_pending") || 0),
-                approved: funnelMap.get("approved") || 0
+                scrutiny: (funnelMap.get("under_scrutiny") || 0),
+                district: (funnelMap.get("forwarded_to_dtdo") || 0) + (funnelMap.get("dtdo_review") || 0),
+                inspection: (funnelMap.get("inspection_scheduled") || 0) + (funnelMap.get("inspection_completed") || 0) + (funnelMap.get("inspection_under_review") || 0),
+                approved: funnelMap.get("approved") || 0,
+                objection: (funnelMap.get("objection_raised") || 0) + (funnelMap.get("sent_back_for_corrections") || 0) + (funnelMap.get("reverted_to_applicant") || 0) + (funnelMap.get("reverted_by_dtdo") || 0),
+                rejected: funnelMap.get("rejected") || 0,
+                existingRC: Number(heroData.existingRC || 0),
             },
             funnel: funnelData,
             heatmap: districtData,

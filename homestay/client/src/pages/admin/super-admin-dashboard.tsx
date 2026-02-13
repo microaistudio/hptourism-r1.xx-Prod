@@ -43,8 +43,20 @@ import {
     Lock,
     Unlock,
     Loader2,
-    ShieldAlert
+    ShieldAlert,
+    UserCheck,
+    Laptop,
 } from "lucide-react";
+import {
+    Table,
+    TableBody,
+    TableCell,
+    TableHead,
+    TableHeader,
+    TableRow,
+} from "@/components/ui/table";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Switch } from "@/components/ui/switch";
 
 import { formatDistanceToNow } from "date-fns";
 
@@ -167,6 +179,26 @@ export default function SuperAdminDashboard() {
         queryKey: ["/api/admin/stats"],
     });
 
+    const { data: activeSessionsData } = useQuery<{ users: any[] }>({
+        queryKey: ["/api/admin/active-sessions"],
+        refetchInterval: 30000,
+    });
+
+    const [activeSessionsDialogOpen, setActiveSessionsDialogOpen] = useState(false);
+    const [showAllSessions, setShowAllSessions] = useState(false);
+
+    const RECENT_THRESHOLD_SECS = 30 * 60; // 30 minutes in seconds
+
+    // Filter users based on the toggle
+    const filteredSessionUsers = (activeSessionsData?.users || []).filter((user: any) => {
+        if (showAllSessions) return true;
+        return (user.secondsAgo ?? Infinity) < RECENT_THRESHOLD_SECS;
+    });
+
+    const recentCount = (activeSessionsData?.users || []).filter((user: any) => {
+        return (user.secondsAgo ?? Infinity) < RECENT_THRESHOLD_SECS;
+    }).length;
+
     // Fetch current user so we can pass username for validation (bypass split-routing session issues)
     const { data: authData } = useQuery<{ user: any }>({
         queryKey: ["/api/auth/me"],
@@ -235,7 +267,7 @@ export default function SuperAdminDashboard() {
                     </div>
 
                     {/* Status Cards */}
-                    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
                         <Card>
                             <CardHeader className="flex flex-row items-center justify-between pb-2">
                                 <CardTitle className="text-sm font-medium text-muted-foreground">
@@ -277,6 +309,26 @@ export default function SuperAdminDashboard() {
                                 <div className="text-3xl font-bold">{totalUsers}</div>
                                 <p className="text-xs text-muted-foreground mt-1">
                                     {stats?.users?.byRole?.["property_owner"] ?? 0} owners
+                                </p>
+                            </CardContent>
+                        </Card>
+
+                        <Card
+                            className="cursor-pointer hover:border-primary/50 transition-colors"
+                            onClick={() => setActiveSessionsDialogOpen(true)}
+                        >
+                            <CardHeader className="flex flex-row items-center justify-between pb-2">
+                                <CardTitle className="text-sm font-medium text-muted-foreground">
+                                    Online Users
+                                </CardTitle>
+                                <UserCheck className="h-4 w-4 text-green-600" />
+                            </CardHeader>
+                            <CardContent>
+                                <div className="text-3xl font-bold text-green-600">
+                                    {recentCount}
+                                </div>
+                                <p className="text-xs text-muted-foreground mt-1">
+                                    Active in last 30 min
                                 </p>
                             </CardContent>
                         </Card>
@@ -455,16 +507,17 @@ export default function SuperAdminDashboard() {
                         </p>
                     </div>
                 </div>
-            </div>
+            </div >
 
             {/* Critical Access Password Dialog */}
-            <Dialog
+            < Dialog
                 open={passwordDialog.open}
                 onOpenChange={(open) => {
                     if (!open) {
                         setPasswordDialog({ open: false, password: "", error: "" });
                     }
-                }}
+                }
+                }
             >
                 <DialogContent className="sm:max-w-[400px]">
                     <DialogHeader>
@@ -523,6 +576,99 @@ export default function SuperAdminDashboard() {
                                 "Unlock"
                             )}
                         </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog >
+
+            {/* Active Sessions Dialog */}
+            <Dialog open={activeSessionsDialogOpen} onOpenChange={setActiveSessionsDialogOpen}>
+                <DialogContent className="sm:max-w-[750px]">
+                    <DialogHeader>
+                        <div className="flex items-center justify-between">
+                            <DialogTitle className="flex items-center gap-2">
+                                <Laptop className="w-5 h-5 text-primary" />
+                                {showAllSessions ? "All Sessions" : "Recently Active"} ({filteredSessionUsers.length})
+                            </DialogTitle>
+                            <div className="flex items-center gap-2">
+                                <Label htmlFor="session-mode-switch" className="text-xs text-muted-foreground cursor-pointer">
+                                    {showAllSessions ? "All sessions" : "Last 30 min"}
+                                </Label>
+                                <Switch
+                                    id="session-mode-switch"
+                                    checked={showAllSessions}
+                                    onCheckedChange={setShowAllSessions}
+                                />
+                            </div>
+                        </div>
+                        <DialogDescription>
+                            {showAllSessions
+                                ? "All users with valid (unexpired) sessions in the system."
+                                : "Users who interacted with the portal in the last 30 minutes."}
+                        </DialogDescription>
+                    </DialogHeader>
+                    <ScrollArea className="max-h-[60vh] mt-2">
+                        <Table>
+                            <TableHeader>
+                                <TableRow>
+                                    <TableHead>User</TableHead>
+                                    <TableHead>Role</TableHead>
+                                    <TableHead>District</TableHead>
+                                    <TableHead className="text-right">Last Active</TableHead>
+                                </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                                {filteredSessionUsers.length ? (
+                                    filteredSessionUsers.map((user: any) => {
+                                        const secs = user.secondsAgo ?? null;
+                                        const isRecentlyActive = secs !== null && secs < RECENT_THRESHOLD_SECS;
+                                        // Format secondsAgo into a human-readable string
+                                        const formatAgo = (s: number | null) => {
+                                            if (s === null) return "N/A";
+                                            if (s < 60) return "just now";
+                                            if (s < 3600) return `${Math.floor(s / 60)} min ago`;
+                                            if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+                                            return `${Math.floor(s / 86400)}d ago`;
+                                        };
+                                        return (
+                                            <TableRow key={user.id}>
+                                                <TableCell>
+                                                    <div className="flex items-center gap-2">
+                                                        <div className={`h-2 w-2 rounded-full flex-shrink-0 ${isRecentlyActive ? 'bg-green-500' : 'bg-gray-300'}`} />
+                                                        <div>
+                                                            <div className="font-medium text-sm">{user.fullName}</div>
+                                                            <div className="text-xs text-muted-foreground">{user.mobile}</div>
+                                                        </div>
+                                                    </div>
+                                                </TableCell>
+                                                <TableCell>
+                                                    <Badge variant="outline" className="text-[10px]">
+                                                        {user.role?.replace(/_/g, ' ')}
+                                                    </Badge>
+                                                </TableCell>
+                                                <TableCell className="text-sm">
+                                                    {user.district || "\u2014"}
+                                                </TableCell>
+                                                <TableCell className="text-right text-xs text-muted-foreground">
+                                                    {formatAgo(secs)}
+                                                </TableCell>
+                                            </TableRow>
+                                        );
+                                    })
+                                ) : (
+                                    <TableRow>
+                                        <TableCell colSpan={4} className="text-center py-8 text-muted-foreground">
+                                            {showAllSessions ? "No active sessions found." : "No users active in the last 30 minutes."}
+                                        </TableCell>
+                                    </TableRow>
+                                )}
+                            </TableBody>
+                        </Table>
+                    </ScrollArea>
+                    <DialogFooter className="flex items-center justify-between sm:justify-between">
+                        <p className="text-xs text-muted-foreground">
+                            {activeSessionsData?.users?.length || 0} total sessions &bull; {recentCount} recently active
+                        </p>
+                        <Button variant="secondary" onClick={() => setActiveSessionsDialogOpen(false)}>Close</Button>
                     </DialogFooter>
                 </DialogContent>
             </Dialog>

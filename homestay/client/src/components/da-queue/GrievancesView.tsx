@@ -10,7 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { format } from "date-fns";
+import { formatDateLongIST, formatDateTimeLongIST } from "@/lib/dateUtils";
 import { Loader2, MessageSquare, AlertCircle, CheckCircle2, Clock, User, ChevronRight, Bell, History, BarChart2, Send } from "lucide-react";
 import {
     Dialog,
@@ -264,7 +264,7 @@ export function GrievancesView({ role = 'da' }: GrievancesViewProps) {
                                             )}
                                         </div>
                                         <CardDescription>
-                                            Reported on {format(new Date(ticket.createdAt), "PPP")}
+                                            Reported on {formatDateLongIST(ticket.createdAt)}
                                         </CardDescription>
                                     </div>
                                     <div className="flex items-center gap-2">
@@ -281,7 +281,7 @@ export function GrievancesView({ role = 'da' }: GrievancesViewProps) {
                                         Category: <Badge variant="secondary" className="font-normal capitalize">{ticket.category}</Badge>
                                     </span>
                                     {ticket.updatedAt && (
-                                        <span>Last updated: {format(new Date(ticket.updatedAt), "MMM d, h:mm a")}</span>
+                                        <span>Last updated: {formatDateTimeLongIST(ticket.updatedAt)}</span>
                                     )}
                                 </div>
                             </CardContent>
@@ -440,7 +440,7 @@ export function GrievancesView({ role = 'da' }: GrievancesViewProps) {
                                         </div>
                                         <div>
                                             <Label className="text-sm font-medium text-gray-700">Submitted</Label>
-                                            <p className="mt-1 text-sm">{format(new Date(selectedGrievance.createdAt), "PPP p")}</p>
+                                            <p className="mt-1 text-sm">{formatDateTimeLongIST(selectedGrievance.createdAt)}</p>
                                         </div>
                                     </div>
 
@@ -528,7 +528,7 @@ export function GrievancesView({ role = 'da' }: GrievancesViewProps) {
                                                                 {comment.isInternal ? 'Internal Note' : 'Reply'}
                                                             </span>
                                                             <span className="text-xs text-gray-400">
-                                                                {format(new Date(comment.createdAt), "MMM d, h:mm a")}
+                                                                {formatDateTimeLongIST(comment.createdAt)}
                                                             </span>
                                                         </div>
                                                         <p className="text-gray-700">{comment.comment}</p>
@@ -574,7 +574,7 @@ export function GrievancesView({ role = 'da' }: GrievancesViewProps) {
                                                     <div className="flex items-center justify-between">
                                                         <span className="font-medium capitalize">{log.action.replace('_', ' ')}</span>
                                                         <span className="text-xs text-gray-500">
-                                                            {format(new Date(log.performedAt), "MMM d, h:mm a")}
+                                                            {formatDateTimeLongIST(log.performedAt)}
                                                         </span>
                                                     </div>
                                                     {log.oldValue && log.newValue && (

@@ -8,6 +8,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { RefreshCw } from "lucide-react";
 import { Link } from "wouter";
 import type { HomestayApplication } from "@shared/schema";
+import { formatDateIST } from "@/lib/dateUtils";
 
 interface LegacyApplicationRow {
   application: HomestayApplication;
@@ -21,16 +22,7 @@ interface LegacyApplicationRow {
 }
 
 const formatDate = (value?: Date | string | null) => {
-  if (!value) return "–";
-  const dateValue = value instanceof Date ? value : new Date(value);
-  if (Number.isNaN(dateValue.getTime())) {
-    return "–";
-  }
-  return dateValue.toLocaleDateString(undefined, {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
+  return formatDateIST(value);
 };
 
 export default function AdminRcApplications() {
@@ -98,78 +90,78 @@ export default function AdminRcApplications() {
             </div>
           ) : (
             <>
-            <div className="overflow-x-auto hidden md:block">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="min-w-[140px]">Application</TableHead>
-                    <TableHead className="min-w-[160px]">Owner</TableHead>
-                    <TableHead className="min-w-[200px]">Property</TableHead>
-                    <TableHead className="min-w-[120px]">Category</TableHead>
-                    <TableHead className="min-w-[130px]">Submitted</TableHead>
-                    <TableHead className="min-w-[120px] text-right">Status</TableHead>
-                    <TableHead className="min-w-[110px] text-right">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {applications.map(({ application, owner }) => (
-                    <TableRow key={application.id}>
-                      <TableCell>
-                        <div className="font-medium">{application.applicationNumber ?? "Draft"}</div>
-                        <div className="text-xs text-muted-foreground">{application.district ?? "District TBD"}</div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="font-medium">{owner.fullName ?? "Unnamed Owner"}</div>
-                        <div className="text-xs text-muted-foreground">{owner.mobile ?? "–"}</div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="font-medium">{application.propertyName}</div>
-                        <div className="text-xs text-muted-foreground">{application.tehsil || application.block || application.address}</div>
-                      </TableCell>
-                      <TableCell className="capitalize">
-                        <Badge variant="outline">{application.category ?? "–"}</Badge>
-                      </TableCell>
-                      <TableCell>{formatDate(application.submittedAt)}</TableCell>
-                      <TableCell className="text-right">
-                        <Badge className="capitalize" variant="secondary">
-                          {(application.status ?? "unknown").replaceAll("_", " ")}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <Button size="sm" variant="outline" asChild>
-                          <Link href={`/admin/rc-applications/${application.id}`}>Edit</Link>
-                        </Button>
-                      </TableCell>
+              <div className="overflow-x-auto hidden md:block">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="min-w-[140px]">Application</TableHead>
+                      <TableHead className="min-w-[160px]">Owner</TableHead>
+                      <TableHead className="min-w-[200px]">Property</TableHead>
+                      <TableHead className="min-w-[120px]">Category</TableHead>
+                      <TableHead className="min-w-[130px]">Submitted</TableHead>
+                      <TableHead className="min-w-[120px] text-right">Status</TableHead>
+                      <TableHead className="min-w-[110px] text-right">Actions</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-            <div className="md:hidden space-y-4">
-              {applications.map(({ application, owner }) => (
-                <div key={application.id} className="rounded-lg border p-4 shadow-sm space-y-2">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <p className="text-sm font-semibold">{application.applicationNumber ?? "Draft"}</p>
-                      <p className="text-xs text-muted-foreground">{application.district ?? "District TBD"}</p>
+                  </TableHeader>
+                  <TableBody>
+                    {applications.map(({ application, owner }) => (
+                      <TableRow key={application.id}>
+                        <TableCell>
+                          <div className="font-medium">{application.applicationNumber ?? "Draft"}</div>
+                          <div className="text-xs text-muted-foreground">{application.district ?? "District TBD"}</div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="font-medium">{owner.fullName ?? "Unnamed Owner"}</div>
+                          <div className="text-xs text-muted-foreground">{owner.mobile ?? "–"}</div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="font-medium">{application.propertyName}</div>
+                          <div className="text-xs text-muted-foreground">{application.tehsil || application.block || application.address}</div>
+                        </TableCell>
+                        <TableCell className="capitalize">
+                          <Badge variant="outline">{application.category ?? "–"}</Badge>
+                        </TableCell>
+                        <TableCell>{formatDate(application.submittedAt)}</TableCell>
+                        <TableCell className="text-right">
+                          <Badge className="capitalize" variant="secondary">
+                            {(application.status ?? "unknown").replaceAll("_", " ")}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Button size="sm" variant="outline" asChild>
+                            <Link href={`/admin/rc-applications/${application.id}`}>Edit</Link>
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+              <div className="md:hidden space-y-4">
+                {applications.map(({ application, owner }) => (
+                  <div key={application.id} className="rounded-lg border p-4 shadow-sm space-y-2">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold">{application.applicationNumber ?? "Draft"}</p>
+                        <p className="text-xs text-muted-foreground">{application.district ?? "District TBD"}</p>
+                      </div>
+                      <Badge variant="outline">{application.category ?? "—"}</Badge>
                     </div>
-                    <Badge variant="outline">{application.category ?? "—"}</Badge>
-                  </div>
-                  <div className="text-sm">
-                    <p className="font-medium">{application.propertyName}</p>
-                    <p className="text-muted-foreground">
-                      {owner.fullName ?? "Unnamed Owner"} · {owner.mobile ?? "–"}
+                    <div className="text-sm">
+                      <p className="font-medium">{application.propertyName}</p>
+                      <p className="text-muted-foreground">
+                        {owner.fullName ?? "Unnamed Owner"} · {owner.mobile ?? "–"}
+                      </p>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Submitted {formatDate(application.submittedAt)}
                     </p>
+                    <Button size="sm" variant="outline" className="w-full" asChild>
+                      <Link href={`/admin/rc-applications/${application.id}`}>Edit Application</Link>
+                    </Button>
                   </div>
-                  <p className="text-xs text-muted-foreground">
-                    Submitted {formatDate(application.submittedAt)}
-                  </p>
-                  <Button size="sm" variant="outline" className="w-full" asChild>
-                    <Link href={`/admin/rc-applications/${application.id}`}>Edit Application</Link>
-                  </Button>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
             </>
           )}
         </CardContent>

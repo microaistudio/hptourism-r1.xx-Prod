@@ -1,5 +1,5 @@
 import jsPDF from "jspdf";
-import { format } from "date-fns";
+import { formatDateIST } from "@/lib/dateUtils";
 import hpGovLogo from "@/assets/logos_tr/HP_Gov_TR.png?inline";
 import hpTourismLogo from "@/assets/logos_tr/HP_Touris_TR.png?inline";
 import { DESIRABLE_TOTAL, MANDATORY_TOTAL } from "@/constants/inspection";
@@ -17,14 +17,7 @@ const LOGO_SPECS: LogoSpec[] = [
   { width: 32, x: 160 },
 ];
 
-const formatDate = (value?: string | Date | null) => {
-  if (!value) return "—";
-  const parsed = typeof value === "string" ? new Date(value) : value;
-  if (Number.isNaN(parsed?.getTime?.())) {
-    return "—";
-  }
-  return format(parsed, "dd/MM/yyyy");
-};
+
 
 export function generateInspectionReportPdf(summary: InspectionReportSummary) {
   const doc: JsPDFInstance = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
@@ -81,10 +74,10 @@ function drawStatusStrip(doc: JsPDFInstance, summary: InspectionReportSummary) {
   doc.text(displayStatus, 24, y + 6);
   doc.setFont("helvetica", "normal");
   doc.setFontSize(9);
-  const startText = formatDate(summary.inspectionOrder?.inspectionDate);
-  const endText = formatDate(summary.report.actualInspectionDate);
+  const startText = formatDateIST(summary.inspectionOrder?.inspectionDate);
+  const endText = formatDateIST(summary.report.actualInspectionDate);
   doc.text(`${startText} - ${endText}`, 84, y + 6);
-  doc.text(`${formatDate(summary.report.submittedDate)}`, 150, y + 6);
+  doc.text(`${formatDateIST(summary.report.submittedDate)}`, 150, y + 6);
 }
 
 function drawMetricCards(doc: JsPDFInstance, summary: InspectionReportSummary) {
@@ -156,9 +149,9 @@ function drawOwnerAndInspection(doc: JsPDFInstance, summary: InspectionReportSum
 
   const inspectionLines = [
     `Inspector: ${summary.da?.fullName ?? "—"}`,
-    `Scheduled: ${formatDate(summary.inspectionOrder?.inspectionDate)}`,
-    `Visited: ${formatDate(summary.report.actualInspectionDate)}`,
-    `Report: ${formatDate(summary.report.submittedDate)}`,
+    `Scheduled: ${formatDateIST(summary.inspectionOrder?.inspectionDate)}`,
+    `Visited: ${formatDateIST(summary.report.actualInspectionDate)}`,
+    `Report: ${formatDateIST(summary.report.submittedDate)}`,
   ];
   inspectionLines.forEach((line, idx) => doc.text(line, 116, blockY + 18 + idx * 5));
 }

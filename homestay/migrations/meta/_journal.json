@@ -8,6 +8,13 @@
       "when": 1765322309640,
       "tag": "0000_add_payment_fields",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1770799718745,
+      "tag": "0001_condemned_thor_girl",
+      "breakpoints": true
     }
   ]
 }

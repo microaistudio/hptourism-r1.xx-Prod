@@ -32,7 +32,7 @@ export interface NavItem {
   url: string;
   icon: LucideIcon;
   badge?: string;
-  badgeVariant?: "default" | "success" | "warning";
+  badgeVariant?: "default" | "success" | "warning" | "neutral";
 }
 
 export interface NavSection {
@@ -134,6 +134,11 @@ export const officerNavigation: NavSection[] = [
         title: "Reports & Insights",
         url: "/admin/payment-reports",
         icon: LineChart,
+      },
+      {
+        title: "Existing RC",
+        url: "/admin/existing-rc",
+        icon: FileArchive,
       },
     ],
   },
@@ -247,6 +252,16 @@ export const superAdminNavigation: NavSection[] = [
         title: "Analytics",
         url: "/analytics",
         icon: BarChart3,
+      },
+      {
+        title: "Reports & Insights",
+        url: "/admin/payment-reports",
+        icon: LineChart,
+      },
+      {
+        title: "Existing RC",
+        url: "/admin/existing-rc",
+        icon: FileArchive,
       },
     ],
   },
@@ -392,6 +407,11 @@ export const dtdoNavigation: NavSection[] = [
         title: "Reports & Insights",
         url: "/admin/payment-reports",
         icon: LineChart,
+      },
+      {
+        title: "Existing RC",
+        url: "/admin/existing-rc",
+        icon: FileArchive,
       },
     ],
   },

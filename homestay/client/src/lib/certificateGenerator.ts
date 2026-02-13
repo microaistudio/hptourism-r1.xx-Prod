@@ -3,6 +3,7 @@ import type { HomestayApplication } from "@shared/schema";
 import hpGovLogo from "@/assets/logos_tr/HP_Gov_TR.png?inline";
 import hpTourismLogo from "@/assets/logos_tr/HP_Touris_TR.png?inline";
 import type { InspectionReportSummary } from "@/lib/inspection-report";
+import { formatDateLongIST } from "@/lib/dateUtils";
 import jsPDF from "jspdf";
 
 type JsPDFInstance = any;
@@ -601,11 +602,7 @@ function formatDate(value?: string | Date | null) {
   if (Number.isNaN(resolvedDate.getTime())) {
     return null;
   }
-  return resolvedDate.toLocaleDateString("en-IN", {
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-  });
+  return formatDateLongIST(resolvedDate);
 }
 
 function formatCurrency(value?: string | number | null) {

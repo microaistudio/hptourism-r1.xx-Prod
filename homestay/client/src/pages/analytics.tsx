@@ -18,6 +18,7 @@ import {
   Globe,
   Repeat,
 } from "lucide-react";
+import { formatDateTimeIST, formatDateLongIST } from "@/lib/dateUtils";
 
 const WORKFLOW_STATUS_CONFIG = [
   { key: "submitted", label: "New Applications", color: "#3b82f6" },
@@ -275,240 +276,294 @@ export default function AnalyticsPage() {
 
   return (
     <div className="container mx-auto px-4 py-8">
-      <div className="max-w-7xl mx-auto">
+      <div className="max-w-7xl mx-auto space-y-8">
 
-        {/* Production Portal Statistics (Live from eservices.himachaltourism.gov.in) */}
+        {/* ── Page Header ── */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <div className="p-3 rounded-2xl bg-gradient-to-br from-amber-500 to-orange-600 shadow-lg shadow-amber-500/20">
+              <BarChart3 className="h-6 w-6 text-white" />
+            </div>
+            <div>
+              <h1 className="text-3xl font-bold text-foreground tracking-tight">
+                Tourism Analytics
+              </h1>
+              <p className="text-sm text-muted-foreground mt-1">
+                Real-time insights and production data analysis
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <Badge variant="outline" className="text-xs bg-white border-slate-200 py-1.5 px-3">
+              <Globe className="w-3 h-3 mr-1.5 text-blue-500" />
+              Live Production Data
+            </Badge>
+          </div>
+        </div>
+
+        {/* Production Portal Statistics (Live) - Hero Grid */}
         {liveProductionStats && (
-          <Card className="mb-8 border-primary/20">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Globe className="w-5 h-5 text-primary" />
-                Live Production Portal Statistics
-              </CardTitle>
-              <CardDescription>
-                Combined Statistics (Legacy System + New Portal)
-                {liveProductionStats.scrapedAt && (
-                  <span className="ml-2 text-xs">
-                    • Last updated: {new Date(liveProductionStats.scrapedAt).toLocaleString('en-IN')}
-                  </span>
-                )}
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                <div className="space-y-2">
-                  <p className="text-sm text-muted-foreground">Total Applications</p>
-                  <div>
-                    <p className="text-3xl font-bold" data-testid="prod-stat-total">
-                      {liveProductionStats.totalApplications.toLocaleString('en-IN')}
-                    </p>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      {parseInt(liveProductionStats.legacy?.total || '0') > 0 ? `${parseInt(liveProductionStats.legacy?.total || '0').toLocaleString('en-IN')} (Legacy) + ` : ''}
-                      {liveProductionStats.baseline?.total ? `${liveProductionStats.baseline.total.toLocaleString('en-IN')} (Manual) + ` : ''}
-                      <span className="text-primary font-medium">{liveProductionStats.realtime?.total || 0} (New)</span>
-                    </p>
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <p className="text-sm text-muted-foreground">Approved</p>
-                  <div>
-                    <p className="text-3xl font-bold text-green-600" data-testid="prod-stat-approved">
-                      {liveProductionStats.approvedApplications.toLocaleString('en-IN')}
-                    </p>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      {parseInt(liveProductionStats.legacy?.approved || '0') > 0 ? `${parseInt(liveProductionStats.legacy?.approved || '0').toLocaleString('en-IN')} (Legacy) + ` : ''}
-                      {liveProductionStats.baseline?.approved ? `${liveProductionStats.baseline.approved.toLocaleString('en-IN')} (Manual) + ` : ''}
-                      <span className="text-green-600 font-medium">{liveProductionStats.realtime?.approved || 0} (New)</span>
-                    </p>
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <p className="text-sm text-muted-foreground">Rejected</p>
-                  <div>
-                    <p className="text-3xl font-bold text-red-600" data-testid="prod-stat-rejected">
-                      {liveProductionStats.rejectedApplications.toLocaleString('en-IN')}
-                    </p>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      {parseInt(liveProductionStats.legacy?.rejected || '0') > 0 ? `${parseInt(liveProductionStats.legacy?.rejected || '0').toLocaleString('en-IN')} (Legacy) + ` : ''}
-                      {liveProductionStats.baseline?.rejected ? `${liveProductionStats.baseline.rejected.toLocaleString('en-IN')} (Manual) + ` : ''}
-                      <span className="text-red-600 font-medium">{liveProductionStats.realtime?.rejected || 0} (New)</span>
-                    </p>
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <p className="text-sm text-muted-foreground">Pending</p>
-                  <div>
-                    <p className="text-3xl font-bold text-orange-600" data-testid="prod-stat-pending">
-                      {liveProductionStats.pendingApplications.toLocaleString('en-IN')}
-                    </p>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      {parseInt(liveProductionStats.legacy?.pending || '0') > 0 ? `${parseInt(liveProductionStats.legacy?.pending || '0').toLocaleString('en-IN')} (Legacy) + ` : ''}
-                      {liveProductionStats.baseline?.pending ? `${liveProductionStats.baseline.pending.toLocaleString('en-IN')} (Manual) + ` : ''}
-                      <span className="text-orange-600 font-medium">{liveProductionStats.realtime?.pending || 0} (New)</span>
-                    </p>
-                  </div>
-                </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* Total Stats */}
+            <Card className="relative overflow-hidden border-blue-200 bg-blue-50/50">
+              <div className="absolute top-0 right-0 p-3 opacity-10">
+                <Globe className="w-24 h-24 text-blue-600" />
               </div>
-            </CardContent>
-          </Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-blue-700">Total Applications</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-3xl font-bold text-blue-700 mb-1">
+                  {liveProductionStats.totalApplications.toLocaleString('en-IN')}
+                </div>
+                <div className="flex flex-wrap gap-1 mt-2">
+                  {(liveProductionStats.legacy?.total || '0') > 0 && (
+                    <Badge variant="secondary" className="bg-blue-100 text-blue-700 border-blue-200 text-[10px] px-1.5">
+                      {parseInt(liveProductionStats.legacy?.total || '0').toLocaleString('en-IN')} Legacy
+                    </Badge>
+                  )}
+                  <Badge className="bg-blue-600 hover:bg-blue-700 text-[10px] px-1.5">
+                    {liveProductionStats.realtime?.total || 0} New
+                  </Badge>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Approved Stats */}
+            <Card className="relative overflow-hidden border-emerald-200 bg-emerald-50/50">
+              <div className="absolute top-0 right-0 p-3 opacity-10">
+                <CheckCircle className="w-24 h-24 text-emerald-600" />
+              </div>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-emerald-700">Approved</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-3xl font-bold text-emerald-700 mb-1">
+                  {liveProductionStats.approvedApplications.toLocaleString('en-IN')}
+                </div>
+                <div className="flex flex-wrap gap-1 mt-2">
+                  {(liveProductionStats.legacy?.approved || '0') > 0 && (
+                    <Badge variant="secondary" className="bg-emerald-100 text-emerald-700 border-emerald-200 text-[10px] px-1.5">
+                      {parseInt(liveProductionStats.legacy?.approved || '0').toLocaleString('en-IN')} Legacy
+                    </Badge>
+                  )}
+                  <Badge className="bg-emerald-600 hover:bg-emerald-700 text-[10px] px-1.5">
+                    {liveProductionStats.realtime?.approved || 0} New
+                  </Badge>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Pending Stats */}
+            <Card className="relative overflow-hidden border-amber-200 bg-amber-50/50">
+              <div className="absolute top-0 right-0 p-3 opacity-10">
+                <Clock className="w-24 h-24 text-amber-600" />
+              </div>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-amber-700">Pending</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-3xl font-bold text-amber-700 mb-1">
+                  {liveProductionStats.pendingApplications.toLocaleString('en-IN')}
+                </div>
+                <div className="flex flex-wrap gap-1 mt-2">
+                  {(liveProductionStats.legacy?.pending || '0') > 0 && (
+                    <Badge variant="secondary" className="bg-amber-100 text-amber-700 border-amber-200 text-[10px] px-1.5">
+                      {parseInt(liveProductionStats.legacy?.pending || '0').toLocaleString('en-IN')} Legacy
+                    </Badge>
+                  )}
+                  <Badge className="bg-amber-600 hover:bg-amber-700 text-[10px] px-1.5">
+                    {liveProductionStats.realtime?.pending || 0} New
+                  </Badge>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Rejected Stats */}
+            <Card className="relative overflow-hidden border-rose-200 bg-rose-50/50">
+              <div className="absolute top-0 right-0 p-3 opacity-10">
+                <AlertCircle className="w-24 h-24 text-rose-600" />
+              </div>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-rose-700">Rejected</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-3xl font-bold text-rose-700 mb-1">
+                  {liveProductionStats.rejectedApplications.toLocaleString('en-IN')}
+                </div>
+                <div className="flex flex-wrap gap-1 mt-2">
+                  {(liveProductionStats.legacy?.rejected || '0') > 0 && (
+                    <Badge variant="secondary" className="bg-rose-100 text-rose-700 border-rose-200 text-[10px] px-1.5">
+                      {parseInt(liveProductionStats.legacy?.rejected || '0').toLocaleString('en-IN')} Legacy
+                    </Badge>
+                  )}
+                  <Badge className="bg-rose-600 hover:bg-rose-700 text-[10px] px-1.5">
+                    {liveProductionStats.realtime?.rejected || 0} New
+                  </Badge>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
         )}
 
         {/* Workflow Snapshot */}
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6 mb-8">
-          <Card
-            className="cursor-pointer hover:shadow-md transition-shadow"
-            onClick={() => setLocation("/workflow-monitoring?status=submitted&tab=pipeline")}
-          >
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">New Applications</CardTitle>
-              <FileText className="w-4 h-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold" data-testid="stat-new">{submittedCount}</div>
-              <p className="text-xs text-muted-foreground">Awaiting initial scrutiny</p>
-            </CardContent>
-          </Card>
+        <div>
+          <div className="flex items-center gap-2 mb-4">
+            <div className="h-6 w-1 rounded-full bg-blue-500" />
+            <h3 className="text-lg font-semibold text-slate-800">Processing Pipeline</h3>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+            <Card
+              className="cursor-pointer hover:shadow-lg transition-all hover:-translate-y-1 border-slate-200 group"
+              onClick={() => setLocation("/workflow-monitoring?status=submitted&tab=pipeline")}
+            >
+              <CardContent className="p-6 flex items-center gap-4">
+                <div className="p-3 rounded-xl bg-blue-100 text-blue-600 group-hover:bg-blue-600 group-hover:text-white transition-colors">
+                  <FileText className="w-6 h-6" />
+                </div>
+                <div>
+                  <div className="text-2xl font-bold text-slate-900">{submittedCount}</div>
+                  <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">New Applications</p>
+                </div>
+              </CardContent>
+            </Card>
 
-          <Card
-            className="cursor-pointer hover:shadow-md transition-shadow"
-            onClick={() => setLocation("/workflow-monitoring?status=under_scrutiny&tab=pipeline")}
-          >
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Under Scrutiny</CardTitle>
-              <Clock className="w-4 h-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold" data-testid="stat-scrutiny">{scrutinyCount}</div>
-              <p className="text-xs text-muted-foreground">With dealing assistants</p>
-            </CardContent>
-          </Card>
+            <Card
+              className="cursor-pointer hover:shadow-lg transition-all hover:-translate-y-1 border-slate-200 group"
+              onClick={() => setLocation("/workflow-monitoring?status=under_scrutiny&tab=pipeline")}
+            >
+              <CardContent className="p-6 flex items-center gap-4">
+                <div className="p-3 rounded-xl bg-orange-100 text-orange-600 group-hover:bg-orange-600 group-hover:text-white transition-colors">
+                  <Clock className="w-6 h-6" />
+                </div>
+                <div>
+                  <div className="text-2xl font-bold text-slate-900">{scrutinyCount}</div>
+                  <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Under Scrutiny</p>
+                </div>
+              </CardContent>
+            </Card>
 
-          <Card
-            className="cursor-pointer hover:shadow-md transition-shadow"
-            onClick={() => setLocation("/workflow-monitoring?status=forwarded_to_dtdo&tab=pipeline")}
-          >
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Forwarded to DTDO</CardTitle>
-              <Repeat className="w-4 h-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold" data-testid="stat-forwarded">{forwardedCount}</div>
-              <p className="text-xs text-muted-foreground">Awaiting district tourism action</p>
-            </CardContent>
-          </Card>
+            <Card
+              className="cursor-pointer hover:shadow-lg transition-all hover:-translate-y-1 border-slate-200 group"
+              onClick={() => setLocation("/workflow-monitoring?status=forwarded_to_dtdo&tab=pipeline")}
+            >
+              <CardContent className="p-6 flex items-center gap-4">
+                <div className="p-3 rounded-xl bg-indigo-100 text-indigo-600 group-hover:bg-indigo-600 group-hover:text-white transition-colors">
+                  <Repeat className="w-6 h-6" />
+                </div>
+                <div>
+                  <div className="text-2xl font-bold text-slate-900">{forwardedCount}</div>
+                  <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Forwarded to DTDO</p>
+                </div>
+              </CardContent>
+            </Card>
 
-          <Card
-            className="cursor-pointer hover:shadow-md transition-shadow"
-            onClick={() => setLocation("/workflow-monitoring?status=site_inspection_scheduled&tab=pipeline")}
-          >
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Inspection / DTDO Review</CardTitle>
-              <CheckCircle className="w-4 h-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold" data-testid="stat-dtdo">{dtdoReviewCount + inspectionQueueCount}</div>
-              <p className="text-xs text-muted-foreground">Under inspection or officer review</p>
-            </CardContent>
-          </Card>
+            <Card
+              className="cursor-pointer hover:shadow-lg transition-all hover:-translate-y-1 border-slate-200 group"
+              onClick={() => setLocation("/workflow-monitoring?status=site_inspection_scheduled&tab=pipeline")}
+            >
+              <CardContent className="p-6 flex items-center gap-4">
+                <div className="p-3 rounded-xl bg-purple-100 text-purple-600 group-hover:bg-purple-600 group-hover:text-white transition-colors">
+                  <CheckCircle className="w-6 h-6" />
+                </div>
+                <div>
+                  <div className="text-2xl font-bold text-slate-900">{dtdoReviewCount + inspectionQueueCount}</div>
+                  <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Inspection / Review</p>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
         </div>
 
         {/* Operational Metrics */}
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6 mb-8">
-          <Card
-            className="cursor-pointer hover:shadow-md transition-shadow"
-            onClick={() => setLocation("/workflow-monitoring?status=rc_issued&tab=pipeline")}
-          >
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Approved Applications</CardTitle>
-              <CheckCircle className="w-4 h-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-green-600" data-testid="stat-approved">{approvedCount}</div>
-              <p className="text-xs text-muted-foreground">
-                {overview.total > 0
-                  ? `${Math.round((approvedCount / overview.total) * 100)}% approval rate`
-                  : "No approvals yet"}
-              </p>
-            </CardContent>
-          </Card>
+        <div>
+          <div className="flex items-center gap-2 mb-4 mt-8">
+            <div className="h-6 w-1 rounded-full bg-emerald-500" />
+            <h3 className="text-lg font-semibold text-slate-800">Operational Performance</h3>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+            <Card
+              className="cursor-pointer hover:shadow-lg transition-all hover:-translate-y-1 border-slate-200 group"
+              onClick={() => setLocation("/workflow-monitoring?status=rc_issued&tab=pipeline")}
+            >
+              <CardContent className="p-6 flex items-center gap-4">
+                <div className="p-3 rounded-xl bg-emerald-100 text-emerald-600 group-hover:bg-emerald-600 group-hover:text-white transition-colors">
+                  <CheckCircle className="w-6 h-6" />
+                </div>
+                <div>
+                  <div className="text-2xl font-bold text-slate-900">{approvedCount}</div>
+                  <p className="text-xs text-emerald-600 font-medium tracking-wide">
+                    {overview.total > 0
+                      ? `${Math.round((approvedCount / overview.total) * 100)}% APPROVAL RATE`
+                      : "NO DATA"}
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
 
-          <Card
-            className="cursor-pointer hover:shadow-md transition-shadow"
-            onClick={() => setLocation("/workflow-monitoring?status=rc_issued&tab=pipeline")}
-          >
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Avg Processing Time</CardTitle>
-              <Clock className="w-4 h-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold" data-testid="stat-processing-time">
-                {overview.avgProcessingTime} days
-              </div>
-              <p className="text-xs text-muted-foreground">
-                {overview.avgProcessingTime <= 15 ? "Within 15-day SLA" : "Above SLA target"}
-              </p>
-            </CardContent>
-          </Card>
+            <Card className="cursor-pointer hover:shadow-lg transition-all hover:-translate-y-1 border-slate-200 group">
+              <CardContent className="p-6 flex items-center gap-4">
+                <div className="p-3 rounded-xl bg-rose-100 text-rose-600 group-hover:bg-rose-600 group-hover:text-white transition-colors">
+                  <Clock className="w-6 h-6" />
+                </div>
+                <div>
+                  <div className="text-2xl font-bold text-slate-900">{overview.avgProcessingTime} days</div>
+                  <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">
+                    {overview.avgProcessingTime <= 15 ? "Within SLA (15 Days)" : "Exceeds SLA"}
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
 
-          <Card className="cursor-pointer hover:shadow-md transition-shadow">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Avg Form Fill Time</CardTitle>
-              <Clock className="w-4 h-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold" data-testid="stat-form-time">
-                {(() => {
-                  const s = overview.avgFormTimeSeconds || 0;
-                  if (!s) return "N/A";
-                  const h = Math.floor(s / 3600);
-                  const m = Math.floor((s % 3600) / 60);
-                  const sec = s % 60;
-                  if (h > 0) return `${h}h ${m}m`;
-                  return `${m}m ${sec}s`;
-                })()}
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Time spent by user on form
-              </p>
-            </CardContent>
-          </Card>
+            <Card className="cursor-pointer hover:shadow-lg transition-all hover:-translate-y-1 border-slate-200 group">
+              <CardContent className="p-6 flex items-center gap-4">
+                <div className="p-3 rounded-xl bg-cyan-100 text-cyan-600 group-hover:bg-cyan-600 group-hover:text-white transition-colors">
+                  <Clock className="w-6 h-6" />
+                </div>
+                <div>
+                  <div className="text-2xl font-bold text-slate-900">
+                    {(() => {
+                      const s = overview.avgFormTimeSeconds || 0;
+                      if (!s) return "N/A";
+                      const h = Math.floor(s / 3600);
+                      const m = Math.floor((s % 3600) / 60);
+                      const sec = s % 60;
+                      if (h > 0) return `${h}h ${m}m`;
+                      return `${m}m ${sec}s`;
+                    })()}
+                  </div>
+                  <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Avg Form Fill Time</p>
+                </div>
+              </CardContent>
+            </Card>
 
-          <Card
-            className="cursor-pointer hover:shadow-md transition-shadow"
-            onClick={() => setLocation("/workflow-monitoring?tab=pipeline")}
-          >
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Applications</CardTitle>
-              <FileText className="w-4 h-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold" data-testid="stat-total">{overview.total}</div>
-              <p className="text-xs text-muted-foreground">All submissions in the system</p>
-            </CardContent>
-          </Card>
-
-          <Card
-            className="cursor-pointer hover:shadow-md transition-shadow"
-            onClick={() => setLocation("/workflow-monitoring?status=rc_issued&tab=pipeline")}
-          >
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Registered Owners</CardTitle>
-              <Users className="w-4 h-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold" data-testid="stat-owners">{overview.totalOwners}</div>
-              <p className="text-xs text-muted-foreground">Active property-owner accounts</p>
-            </CardContent>
-          </Card>
+            <Card
+              className="cursor-pointer hover:shadow-lg transition-all hover:-translate-y-1 border-slate-200 group"
+              onClick={() => setLocation("/workflow-monitoring?status=rc_issued&tab=pipeline")}
+            >
+              <CardContent className="p-6 flex items-center gap-4">
+                <div className="p-3 rounded-xl bg-teal-100 text-teal-600 group-hover:bg-teal-600 group-hover:text-white transition-colors">
+                  <Users className="w-6 h-6" />
+                </div>
+                <div>
+                  <div className="text-2xl font-bold text-slate-900">{overview.totalOwners}</div>
+                  <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Registered Owners</p>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
         </div>
 
         {/* Charts Section */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Status Distribution */}
-          <Card>
+          <Card className="border-slate-200 shadow-sm">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <TrendingUp className="w-5 h-5" />
+                <div className="p-1.5 rounded-lg bg-indigo-50 text-indigo-600">
+                  <TrendingUp className="w-4 h-4" />
+                </div>
                 Application Status Distribution
               </CardTitle>
               <CardDescription>Current workflow stage breakdown</CardDescription>
@@ -537,7 +592,7 @@ export default function AnalyticsPage() {
                         <Cell key={`cell-${index}`} fill={entry.color} />
                       ))}
                     </Pie>
-                    <Tooltip />
+                    <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
                   </PieChart>
                 </ResponsiveContainer>
               )}
@@ -545,10 +600,12 @@ export default function AnalyticsPage() {
           </Card>
 
           {/* Category Distribution */}
-          <Card>
+          <Card className="border-slate-200 shadow-sm">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <BarChart3 className="w-5 h-5" />
+                <div className="p-1.5 rounded-lg bg-orange-50 text-orange-600">
+                  <BarChart3 className="w-4 h-4" />
+                </div>
                 Category Distribution
               </CardTitle>
               <CardDescription>Diamond, Gold, Silver breakdown</CardDescription>
@@ -556,11 +613,11 @@ export default function AnalyticsPage() {
             <CardContent>
               <ResponsiveContainer width="100%" height={300}>
                 <BarChart data={categoryData}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="name" />
-                  <YAxis />
-                  <Tooltip />
-                  <Bar dataKey="value" fill="hsl(var(--primary))">
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                  <XAxis dataKey="name" axisLine={false} tickLine={false} />
+                  <YAxis axisLine={false} tickLine={false} />
+                  <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} cursor={{ fill: '#f1f5f9' }} />
+                  <Bar dataKey="value" radius={[4, 4, 0, 0]}>
                     {categoryData.map((entry, index) => (
                       <Cell key={`cell-${index}`} fill={entry.color} />
                     ))}
@@ -572,10 +629,12 @@ export default function AnalyticsPage() {
         </div>
 
         {/* District Coverage */}
-        <Card className="mb-8">
+        <Card className="border-slate-200 shadow-sm">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <MapPin className="w-5 h-5" />
+              <div className="p-1.5 rounded-lg bg-blue-50 text-blue-600">
+                <MapPin className="w-4 h-4" />
+              </div>
               Top Districts by Applications
             </CardTitle>
             <CardDescription>Geographic distribution across Himachal Pradesh</CardDescription>
@@ -588,13 +647,15 @@ export default function AnalyticsPage() {
             ) : (
               <ResponsiveContainer width="100%" height={300}>
                 <BarChart data={districtData}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="name" angle={-45} textAnchor="end" height={80} fontSize={12} />
-                  <YAxis />
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                  <XAxis dataKey="name" angle={-45} textAnchor="end" height={80} fontSize={12} axisLine={false} tickLine={false} />
+                  <YAxis axisLine={false} tickLine={false} />
                   <Tooltip
                     formatter={(value: number) => [`${value} applications`, 'Count']}
+                    contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                    cursor={{ fill: '#f1f5f9' }}
                   />
-                  <Bar dataKey="count" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="count" fill="#3b82f6" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             )}
@@ -602,7 +663,7 @@ export default function AnalyticsPage() {
         </Card>
 
         {/* Recent Applications */}
-        <Card>
+        <Card className="border-slate-200">
           <CardHeader>
             <CardTitle>Recent Applications</CardTitle>
             <CardDescription>Latest 10 submissions to the system</CardDescription>
@@ -615,24 +676,34 @@ export default function AnalyticsPage() {
                 recentApplications.map((app) => (
                   <div
                     key={app.id}
-                    className="flex items-center justify-between p-3 rounded-lg border"
+                    className="flex flex-col sm:flex-row sm:items-center justify-between p-4 rounded-xl border border-slate-100 hover:border-slate-200 bg-slate-50/50 hover:bg-slate-50 transition-colors gap-4"
                     data-testid={`recent-app-${app.id}`}
                   >
                     <div className="flex-1">
-                      <p className="font-medium">{app.propertyName}</p>
-                      <p className="text-sm text-muted-foreground">
-                        {app.district} • {app.ownerName}
-                      </p>
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="font-semibold text-slate-900">{app.propertyName}</span>
+                        <Badge variant="outline" className="text-[10px] font-normal text-muted-foreground bg-white">
+                          {app.id}
+                        </Badge>
+                      </div>
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <MapPin className="w-3 h-3" />
+                        {app.district}
+                        <span className="text-slate-300">|</span>
+                        <Users className="w-3 h-3" />
+                        {app.ownerName}
+                      </div>
                     </div>
                     <div className="flex items-center gap-3">
-                      <Badge variant={getStatusBadge(app.status)}>
+                      {app.submittedAt && (
+                        <div className="text-right hidden sm:block">
+                          <div className="text-xs font-medium text-slate-700">Submitted</div>
+                          <div className="text-[10px] text-muted-foreground">{formatDateLongIST(app.submittedAt)}</div>
+                        </div>
+                      )}
+                      <Badge variant={getStatusBadge(app.status)} className="h-7 px-3">
                         {formatStatusLabel(app.status)}
                       </Badge>
-                      {app.submittedAt && (
-                        <span className="text-sm text-muted-foreground">
-                          {new Date(app.submittedAt).toLocaleDateString()}
-                        </span>
-                      )}
                     </div>
                   </div>
                 ))

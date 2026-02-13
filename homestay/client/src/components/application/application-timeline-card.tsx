@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { format, formatDistanceToNow } from "date-fns";
+import { formatDistanceToNow } from "date-fns";
+import { formatDateTimeLongIST } from "@/lib/dateUtils";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -363,7 +364,7 @@ export function ApplicationTimelineCard({
                     </div>
                     {timestamp && (
                       <div className="text-[10px] text-muted-foreground text-right shrink-0 leading-tight">
-                        <div>{format(timestamp, "MMM d, h:mm a")}</div>
+                        <div>{formatDateTimeLongIST(timestamp)}</div>
                         <div className="opacity-70">{formatDistanceToNow(timestamp, { addSuffix: true })}</div>
                       </div>
                     )}

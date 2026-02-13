@@ -15,7 +15,16 @@ Current production version. Includes critical security fixes, unified portal arc
 
 ---
 
-## Upcoming Version: v1.0.7 (In Progress)
+## Version: v1.1.0
+**Date**: 2026-02-12
+
+### Changes
+- **Reports & Insights Overhaul**: Complete redesign with Him-Darshan aesthetics.
+- **Global Search**: Added search functionality to reports filters.
+- **Performance Improvements**: Client-side optimized filtering.
+- **Bug Fixes**: Resolved blank screen issue in Payment Reports.
+
+## Previous Version: v1.0.29
 
 ### Planned Changes
 - **Configurable Correction Limit**: allow Super Admins to configure the max number of correction attempts (currently hardcoded to 1).

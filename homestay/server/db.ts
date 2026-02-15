@@ -1,10 +1,22 @@
 import ws from "ws";
-import { Pool as PgPool } from "pg";
+import { Pool as PgPool, types } from "pg";
 import { drizzle as drizzlePg } from "drizzle-orm/node-postgres";
 import { Pool as NeonPool, neonConfig } from "@neondatabase/serverless";
 import { drizzle as drizzleNeon } from "drizzle-orm/neon-serverless";
 import * as schema from "@shared/schema";
 import { config } from "@shared/config";
+
+// ── Timezone Configuration ───────────────────────────────────────────
+// IMPORTANT: Drizzle ORM's node-postgres session deliberately overrides pg's
+// type parsers for TIMESTAMP columns (returns raw string, then applies its own
+// mapping in pg-core/columns/timestamp.js). Therefore, this setTypeParser
+// ONLY affects raw pool.query() calls, NOT Drizzle ORM queries.
+// For Drizzle, the fix is in the patched timestamp.js (+0530 instead of +0000).
+// See: scripts/patch-drizzle-timestamp.sh
+const TIMESTAMP_WITHOUT_TZ_OID = 1114;
+types.setTypeParser(TIMESTAMP_WITHOUT_TZ_OID, (val: string): Date => {
+  return new Date(val.replace(" ", "T") + "+05:30");
+});
 
 const { url, driver } = config.database;
 

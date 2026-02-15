@@ -3,13 +3,15 @@ module.exports = {
     // hptourism-rc7 removed to avoid conflict. Managed independently in its own folder.
 
     {
-      name: "hptourism-dev",
+      name: "hptourism-dev1",
       script: "dist/index.js",
       instances: 1,
       exec_mode: "fork",
       cwd: __dirname,
       node_args: "--enable-source-maps",
       env: {
+        TZ: "Asia/Kolkata",
+        PGTZ: "Asia/Kolkata",
         NODE_ENV: "production",
         PORT: "5040",
         // DATABASE_URL: process.env.DATABASE_URL, // Load from .env 
@@ -32,6 +34,8 @@ module.exports = {
         CCAVENUE_URL: process.env.CCAVENUE_URL,
         CCAVENUE_ENV: process.env.CCAVENUE_ENV,
         ENABLE_TEST_RUNNER: "true",
+        TZ: "Asia/Kolkata",
+        PGTZ: "Asia/Kolkata",
       },
       autorestart: true,
       watch: false,

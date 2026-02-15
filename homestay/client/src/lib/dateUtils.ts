@@ -3,12 +3,17 @@
  * All dates are displayed in IST (Indian Standard Time) since this
  * portal is exclusively for Himachal Pradesh Government.
  *
- * Database stores timestamps in UTC (via Node.js new Date()).
- * These helpers ensure display is always in IST to match HimKosh
- * and other government systems.
+ * Pipeline:
+ *  1. DB (Asia/Kolkata) stores IST wall-clock in "timestamp without time zone"
+ *  2. Server's pg driver appends "+05:30" (manual override) when parsing (see server/db.ts)
+ *  3. Express JSON serialisation converts Date → ISO-8601 UTC string ("…Z")
+ *  4. Client receives UTC string and displays in IST via DISPLAY_TIMEZONE
+ *
+ * This relies on the server environment being correctly set to IST.
  */
 
-const IST_TIMEZONE = "Asia/Kolkata";
+// localized format to Indian Standard Time
+const DISPLAY_TIMEZONE = "Asia/Kolkata";
 
 /**
  * Format a date/timestamp to IST display string
@@ -18,7 +23,7 @@ export function formatDateTimeIST(value?: string | Date | null): string {
     if (!value) return "—";
     const parsed = new Date(value);
     if (Number.isNaN(parsed.getTime())) return String(value);
-    return parsed.toLocaleString("en-IN", { timeZone: IST_TIMEZONE });
+    return parsed.toLocaleString("en-IN", { timeZone: DISPLAY_TIMEZONE });
 }
 
 /**
@@ -29,7 +34,7 @@ export function formatDateIST(value?: string | Date | null): string {
     if (!value) return "—";
     const parsed = new Date(value);
     if (Number.isNaN(parsed.getTime())) return String(value);
-    return parsed.toLocaleDateString("en-IN", { timeZone: IST_TIMEZONE });
+    return parsed.toLocaleDateString("en-IN", { timeZone: DISPLAY_TIMEZONE });
 }
 
 /**
@@ -41,7 +46,7 @@ export function formatDateTimeLongIST(value?: string | Date | null): string {
     const parsed = new Date(value);
     if (Number.isNaN(parsed.getTime())) return String(value);
     return parsed.toLocaleString("en-IN", {
-        timeZone: IST_TIMEZONE,
+        timeZone: DISPLAY_TIMEZONE,
         day: "2-digit",
         month: "long",
         year: "numeric",
@@ -60,7 +65,7 @@ export function formatPaymentDateIST(value?: string | Date | null): string {
     const parsed = new Date(value);
     if (Number.isNaN(parsed.getTime())) return String(value);
     return parsed.toLocaleString("en-IN", {
-        timeZone: IST_TIMEZONE,
+        timeZone: DISPLAY_TIMEZONE,
         day: "2-digit",
         month: "2-digit",
         year: "numeric",
@@ -80,7 +85,7 @@ export function formatTimeIST(value?: string | Date | null): string {
     const parsed = new Date(value);
     if (Number.isNaN(parsed.getTime())) return String(value);
     return parsed.toLocaleTimeString("en-IN", {
-        timeZone: IST_TIMEZONE,
+        timeZone: DISPLAY_TIMEZONE,
         hour: "2-digit",
         minute: "2-digit",
         hour12: true,
@@ -96,7 +101,7 @@ export function formatDateLongIST(value?: string | Date | null): string {
     const parsed = new Date(value);
     if (Number.isNaN(parsed.getTime())) return String(value);
     return parsed.toLocaleDateString("en-IN", {
-        timeZone: IST_TIMEZONE,
+        timeZone: DISPLAY_TIMEZONE,
         day: "numeric",
         month: "long",
         year: "numeric",
@@ -113,7 +118,7 @@ export function formatDateInputIST(value?: string | Date | null): string {
     if (Number.isNaN(parsed.getTime())) return "";
     // en-CA locale formats as YYYY-MM-DD
     return new Intl.DateTimeFormat('en-CA', {
-        timeZone: IST_TIMEZONE,
+        timeZone: DISPLAY_TIMEZONE,
         year: 'numeric',
         month: '2-digit',
         day: '2-digit'
@@ -121,19 +126,16 @@ export function formatDateInputIST(value?: string | Date | null): string {
 }
 
 /**
- * Format a DB timestamp that was stored as IST wall-clock time but treated as UTC by Node.
- * This avoids the "Double Shift" problem (IST -> UTC -> IST (+5:30) = +5:30 ahead).
- * We simply display the raw UTC time components, which match the original IST wall-clock time.
+ * Format a DB timestamp. Since the server environment is now correctly configured to IST,
+ * the pg driver handles timezone offsets correctly, and we can simply display as IST.
  */
 export function formatDbTimestamp(value?: string | Date | null): string {
     if (!value) return "—";
     const parsed = new Date(value);
     if (Number.isNaN(parsed.getTime())) return String(value);
 
-    // Display using UTC timezone to reveal the raw value stored in DB/API
-    // (which effectively represents the IST time)
     return parsed.toLocaleString("en-IN", {
-        timeZone: "UTC",
+        timeZone: DISPLAY_TIMEZONE,
         day: "2-digit",
         month: "long",
         year: "numeric",

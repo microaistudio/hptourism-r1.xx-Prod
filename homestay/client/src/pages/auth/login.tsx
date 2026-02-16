@@ -14,7 +14,7 @@ import { useToast } from "@/hooks/use-toast";
 import { ArrowLeft, User, Building2, Lock, Phone, ArrowRight, Loader2, RefreshCw } from "lucide-react";
 import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
 import heroImagePine from "@assets/stock_images/beautiful_himachal_p_50139e3f.jpg";
-import hpsedcLogo from "@/assets/logos/hpsedc.svg";
+import hpsedcLogo from "@/assets/logos/logo-hpsedc.png";
 import vCliqLogo from "@/assets/logos/v-cliq-logo.jpg";
 import type { User as UserType } from "@shared/schema";
 

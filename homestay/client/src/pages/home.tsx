@@ -27,7 +27,7 @@ import { AnimatedCounter } from "@/components/animated-counter";
 import { HeroCarousel } from "@/components/hero-carousel";
 import { useTheme } from "@/contexts/theme-context";
 import { getHeroImagesForTime, getCmImage } from "@/config/hero-images";
-import hpsedcLogo from "@/assets/logos/hpsedc.svg";
+import hpsedcLogo from "@/assets/logos/logo-hpsedc.png";
 import vCliqLogoFinal from "@/assets/vcliq/vcliq_final.jpg";
 import { VCliqFab } from "@/components/vcliq/VCliqFab";
 import { CATEGORY_REQUIREMENTS, MAX_ROOMS_ALLOWED, MAX_BEDS_ALLOWED } from "@shared/fee-calculator";

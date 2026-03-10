@@ -46,6 +46,7 @@ import {
     ShieldAlert,
     UserCheck,
     Laptop,
+    RefreshCw,
 } from "lucide-react";
 import {
     Table,
@@ -164,6 +165,14 @@ const criticalActions: QuickAction[] = [
         icon: Database,
         badge: "Danger Zone",
         badgeVariant: "destructive",
+    },
+    {
+        title: "Reconciliation Engine",
+        description: "Auto-reconciliation cron interval and background sync layers",
+        href: "/admin/reconciliation",
+        icon: RefreshCw,
+        badge: "Critical Data",
+        badgeVariant: "default",
     },
 ];
 

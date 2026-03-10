@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
     Dialog,
     DialogContent,
@@ -28,6 +29,10 @@ import {
     CheckCircle,
     XCircle,
     Clock,
+    Timer,
+    CalendarClock,
+    Eye,
+    EyeOff,
 } from "lucide-react";
 
 import {
@@ -40,6 +45,207 @@ import {
 } from "@shared/appSettings";
 import { formatDateTimeIST } from "@/lib/dateUtils";
 
+// ==================== Shared Helpers ====================
+
+function formatElapsedTime(startedAt: string | null): string {
+    if (!startedAt) return "—";
+    const start = new Date(startedAt).getTime();
+    if (isNaN(start)) return "—";
+    const now = Date.now();
+    const diffMs = now - start;
+    if (diffMs < 0) return "Not started yet";
+
+    const totalSeconds = Math.floor(diffMs / 1000);
+    const days = Math.floor(totalSeconds / 86400);
+    const hours = Math.floor((totalSeconds % 86400) / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+
+    const parts: string[] = [];
+    if (days > 0) parts.push(`${days}d`);
+    if (hours > 0) parts.push(`${hours}h`);
+    if (minutes > 0) parts.push(`${minutes}m`);
+    if (parts.length === 0) parts.push(`${seconds}s`);
+    return parts.join(" ");
+}
+
+function isEtaPast(eta: string | null): boolean {
+    if (!eta) return false;
+    return new Date(eta).getTime() < Date.now();
+}
+
+function toLocalDatetimeInputValue(isoString: string | null): string {
+    if (!isoString) return "";
+    const d = new Date(isoString);
+    if (isNaN(d.getTime())) return "";
+    // Adjust to IST (UTC+5:30)
+    const istOffset = 5.5 * 60 * 60 * 1000;
+    const istDate = new Date(d.getTime() + istOffset);
+    return istDate.toISOString().slice(0, 16);
+}
+
+function fromLocalDatetimeInputValue(localValue: string): string | null {
+    if (!localValue) return null;
+    // Input value is in local (IST) time, convert to UTC ISO string
+    // Browser datetime-local inputs are in local time, so we parse directly
+    const d = new Date(localValue);
+    if (isNaN(d.getTime())) return null;
+    return d.toISOString();
+}
+
+// ==================== Live Downtime Badge ====================
+function LiveDowntimeBadge({ startedAt, label = "Downtime" }: { startedAt: string | null; label?: string }) {
+    const [elapsed, setElapsed] = useState(formatElapsedTime(startedAt));
+
+    useEffect(() => {
+        if (!startedAt) return;
+        const interval = setInterval(() => {
+            setElapsed(formatElapsedTime(startedAt));
+        }, 1000);
+        return () => clearInterval(interval);
+    }, [startedAt]);
+
+    if (!startedAt) return null;
+
+    return (
+        <div className="flex items-center gap-2 text-sm p-3 bg-slate-100 dark:bg-slate-800 rounded">
+            <Timer className="h-4 w-4 text-orange-500 animate-pulse" />
+            <span className="text-muted-foreground">{label}:</span>
+            <span className="font-mono font-semibold text-orange-600 dark:text-orange-400">{elapsed}</span>
+        </div>
+    );
+}
+
+// ==================== ETA + Timing Controls ====================
+function TimingControls({
+    startedAt,
+    estimatedRestoreAt,
+    showEtaToPublic,
+    showDowntimeToPublic,
+    enabled,
+    onEstimatedRestoreAtChange,
+    onShowEtaToPublicChange,
+    onShowDowntimeToPublicChange,
+}: {
+    startedAt: string | null;
+    estimatedRestoreAt: string | null;
+    showEtaToPublic: boolean;
+    showDowntimeToPublic: boolean;
+    enabled: boolean;
+    onEstimatedRestoreAtChange: (value: string | null) => void;
+    onShowEtaToPublicChange: (value: boolean) => void;
+    onShowDowntimeToPublicChange: (value: boolean) => void;
+}) {
+    if (!enabled) return null;
+
+    const etaPast = isEtaPast(estimatedRestoreAt);
+
+    return (
+        <div className="space-y-4 p-4 rounded-lg border bg-blue-50/50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800">
+            <div className="flex items-center gap-2 mb-2">
+                <CalendarClock className="h-4 w-4 text-blue-600" />
+                <Label className="font-semibold text-blue-700 dark:text-blue-300">Timing & ETA</Label>
+            </div>
+
+            {/* Started At (read-only) */}
+            {startedAt && (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Clock className="h-4 w-4" />
+                    Started at: <span className="font-medium">{formatDateTimeIST(startedAt)}</span>
+                </div>
+            )}
+
+            {/* Live Downtime */}
+            <LiveDowntimeBadge startedAt={startedAt} />
+
+            {/* ETA Input */}
+            <div className="space-y-2">
+                <Label className="text-sm">Estimated Restore Time (IST)</Label>
+                <Input
+                    type="datetime-local"
+                    value={toLocalDatetimeInputValue(estimatedRestoreAt)}
+                    onChange={(e) => onEstimatedRestoreAtChange(fromLocalDatetimeInputValue(e.target.value))}
+                    className="max-w-xs"
+                />
+                {estimatedRestoreAt && (
+                    <div className="flex items-center gap-2">
+                        <p className="text-xs text-muted-foreground">
+                            ETA: {formatDateTimeIST(estimatedRestoreAt)}
+                        </p>
+                        {etaPast && (
+                            <span className="text-xs bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 px-2 py-0.5 rounded-full font-medium animate-pulse">
+                                ⚠ Past estimated restore time
+                            </span>
+                        )}
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-6 text-xs text-muted-foreground"
+                            onClick={() => onEstimatedRestoreAtChange(null)}
+                        >
+                            Clear
+                        </Button>
+                    </div>
+                )}
+            </div>
+
+            {/* Show to Public Checkboxes */}
+            <div className="grid gap-3 sm:grid-cols-2">
+                {/* Show ETA Checkbox */}
+                <div className="flex items-start space-x-3 p-3 rounded-lg border bg-white dark:bg-slate-950">
+                    <Checkbox
+                        id="showEtaToPublic"
+                        checked={showEtaToPublic}
+                        onCheckedChange={(checked) => onShowEtaToPublicChange(checked === true)}
+                    />
+                    <div className="grid gap-1.5 leading-none">
+                        <label
+                            htmlFor="showEtaToPublic"
+                            className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 flex items-center gap-2"
+                        >
+                            {showEtaToPublic ? (
+                                <Eye className="h-4 w-4 text-green-600" />
+                            ) : (
+                                <EyeOff className="h-4 w-4 text-slate-400" />
+                            )}
+                            Display ETA to public
+                        </label>
+                        <p className="text-xs text-muted-foreground">
+                            Users will see the estimated restore time.
+                        </p>
+                    </div>
+                </div>
+
+                {/* Show Downtime Checkbox */}
+                <div className="flex items-start space-x-3 p-3 rounded-lg border bg-white dark:bg-slate-950">
+                    <Checkbox
+                        id="showDowntimeToPublic"
+                        checked={showDowntimeToPublic}
+                        onCheckedChange={(checked) => onShowDowntimeToPublicChange(checked === true)}
+                    />
+                    <div className="grid gap-1.5 leading-none">
+                        <label
+                            htmlFor="showDowntimeToPublic"
+                            className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 flex items-center gap-2"
+                        >
+                            {showDowntimeToPublic ? (
+                                <Eye className="h-4 w-4 text-green-600" />
+                            ) : (
+                                <EyeOff className="h-4 w-4 text-slate-400" />
+                            )}
+                            Display downtime to public
+                        </label>
+                        <p className="text-xs text-muted-foreground">
+                            Users will see how long the site has been down.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+// ==================== Main Page ====================
 export default function SystemControlsPage() {
     const { toast } = useToast();
     const queryClient = useQueryClient();
@@ -173,6 +379,9 @@ function PaymentPipelinePauseCard({
 
     const [messageType, setMessageType] = useState<PaymentPauseMessageType>("Payment process is being updated");
     const [customMessage, setCustomMessage] = useState("");
+    const [estimatedRestoreAt, setEstimatedRestoreAt] = useState<string | null>(null);
+    const [showEtaToPublic, setShowEtaToPublic] = useState(false);
+    const [showDowntimeToPublic, setShowDowntimeToPublic] = useState(false);
 
     const { data: config, isLoading } = useQuery<PaymentPipelinePauseSetting>({
         queryKey: ["/api/settings/payment-pipeline-pause"],
@@ -182,11 +391,21 @@ function PaymentPipelinePauseCard({
         if (config) {
             setMessageType(config.messageType);
             setCustomMessage(config.customMessage || "");
+            setEstimatedRestoreAt(config.estimatedRestoreAt || null);
+            setShowEtaToPublic(config.showEtaToPublic ?? false);
+            setShowDowntimeToPublic(config.showDowntimeToPublic ?? false);
         }
     }, [config]);
 
     const mutation = useMutation({
-        mutationFn: async (data: { enabled: boolean; messageType: PaymentPauseMessageType; customMessage: string }) => {
+        mutationFn: async (data: {
+            enabled: boolean;
+            messageType: PaymentPauseMessageType;
+            customMessage: string;
+            estimatedRestoreAt?: string | null;
+            showEtaToPublic?: boolean;
+            showDowntimeToPublic?: boolean;
+        }) => {
             await apiRequest("POST", "/api/settings/payment-pipeline-pause", data);
         },
         onSuccess: () => {
@@ -215,16 +434,22 @@ function PaymentPipelinePauseCard({
                 enabled: newEnabled,
                 messageType,
                 customMessage,
+                estimatedRestoreAt: newEnabled ? estimatedRestoreAt : null,
+                showEtaToPublic: newEnabled ? showEtaToPublic : false,
+                showDowntimeToPublic: newEnabled ? showDowntimeToPublic : false,
             });
         });
     };
 
-    const handleSaveMessage = () => {
+    const handleSaveSettings = () => {
         if (config?.enabled) {
             mutation.mutate({
                 enabled: true,
                 messageType,
                 customMessage,
+                estimatedRestoreAt,
+                showEtaToPublic,
+                showDowntimeToPublic,
             });
         }
     };
@@ -293,6 +518,18 @@ function PaymentPipelinePauseCard({
                             </div>
                         )}
 
+                        {/* Timing & ETA Controls */}
+                        <TimingControls
+                            startedAt={config?.pausedAt || null}
+                            estimatedRestoreAt={estimatedRestoreAt}
+                            showEtaToPublic={showEtaToPublic}
+                            showDowntimeToPublic={showDowntimeToPublic}
+                            enabled={enabled}
+                            onEstimatedRestoreAtChange={setEstimatedRestoreAt}
+                            onShowEtaToPublicChange={setShowEtaToPublic}
+                            onShowDowntimeToPublicChange={setShowDowntimeToPublic}
+                        />
+
                         {/* Message Selection */}
                         <div className="space-y-4 p-4 rounded-lg border bg-slate-50 dark:bg-slate-900/50">
                             <Label className="font-semibold">Pause Message (shown to users)</Label>
@@ -328,13 +565,13 @@ function PaymentPipelinePauseCard({
 
                             {enabled && (
                                 <Button
-                                    onClick={handleSaveMessage}
+                                    onClick={handleSaveSettings}
                                     disabled={mutation.isPending}
                                     variant="outline"
                                     size="sm"
                                 >
                                     {mutation.isPending && <Loader2 className="mr-2 h-3 w-3 animate-spin" />}
-                                    Update Message
+                                    Update Settings
                                 </Button>
                             )}
                         </div>
@@ -354,6 +591,16 @@ function PaymentPipelinePauseCard({
                                 <p className="text-sm text-orange-600 dark:text-orange-400 mt-1">
                                     Please save your application and try again later.
                                 </p>
+                                {showEtaToPublic && estimatedRestoreAt && (
+                                    <p className="text-sm text-blue-600 dark:text-blue-400 mt-2 font-medium">
+                                        ⏰ Expected back by: {formatDateTimeIST(estimatedRestoreAt)}
+                                    </p>
+                                )}
+                                {showDowntimeToPublic && config?.pausedAt && (
+                                    <p className="text-sm text-blue-600 dark:text-blue-400 mt-1 font-medium">
+                                        ⏳ Down for: {formatElapsedTime(config.pausedAt)}
+                                    </p>
+                                )}
                             </div>
                         </div>
                     </>
@@ -375,6 +622,9 @@ function MaintenanceModeCard({
     const [accessKey, setAccessKey] = useState("");
     const [messageType, setMessageType] = useState<MaintenanceMessageType>("System Upgrade in Progress");
     const [customMessage, setCustomMessage] = useState("");
+    const [estimatedRestoreAt, setEstimatedRestoreAt] = useState<string | null>(null);
+    const [showEtaToPublic, setShowEtaToPublic] = useState(false);
+    const [showDowntimeToPublic, setShowDowntimeToPublic] = useState(false);
 
     const { data: config, isLoading } = useQuery<MaintenanceModeSetting>({
         queryKey: ["/api/settings/maintenance-mode"],
@@ -385,11 +635,23 @@ function MaintenanceModeCard({
             setAccessKey(config.accessKey || "launch2026");
             setMessageType(config.messageType || "System Upgrade in Progress");
             setCustomMessage(config.customMessage || "");
+            setEstimatedRestoreAt(config.estimatedRestoreAt || null);
+            setShowEtaToPublic(config.showEtaToPublic ?? false);
+            setShowDowntimeToPublic(config.showDowntimeToPublic ?? false);
         }
     }, [config]);
 
     const mutation = useMutation({
-        mutationFn: async (data: { enabled: boolean; accessKey: string; messageType: MaintenanceMessageType; customMessage: string }) => {
+        mutationFn: async (data: {
+            enabled: boolean;
+            accessKey: string;
+            messageType: MaintenanceMessageType;
+            customMessage: string;
+            startedAt?: string | null;
+            estimatedRestoreAt?: string | null;
+            showEtaToPublic?: boolean;
+            showDowntimeToPublic?: boolean;
+        }) => {
             await apiRequest("POST", "/api/settings/maintenance-mode", data);
         },
         onSuccess: () => {
@@ -418,7 +680,12 @@ function MaintenanceModeCard({
                 enabled: newEnabled,
                 accessKey,
                 messageType,
-                customMessage
+                customMessage,
+                // Preserve existing startedAt if already enabled, otherwise auto-set
+                startedAt: newEnabled ? (config?.startedAt || new Date().toISOString()) : null,
+                estimatedRestoreAt: newEnabled ? estimatedRestoreAt : null,
+                showEtaToPublic: newEnabled ? showEtaToPublic : false,
+                showDowntimeToPublic: newEnabled ? showDowntimeToPublic : false,
             });
         });
     };
@@ -428,7 +695,11 @@ function MaintenanceModeCard({
             enabled: config?.enabled || false,
             accessKey,
             messageType,
-            customMessage
+            customMessage,
+            startedAt: config?.startedAt || null,
+            estimatedRestoreAt,
+            showEtaToPublic,
+            showDowntimeToPublic,
         });
     };
 
@@ -478,6 +749,18 @@ function MaintenanceModeCard({
                                 className={enabled ? "data-[state=checked]:bg-orange-500" : ""}
                             />
                         </div>
+
+                        {/* Timing & ETA Controls */}
+                        <TimingControls
+                            startedAt={config?.startedAt || null}
+                            estimatedRestoreAt={estimatedRestoreAt}
+                            showEtaToPublic={showEtaToPublic}
+                            showDowntimeToPublic={showDowntimeToPublic}
+                            enabled={enabled}
+                            onEstimatedRestoreAtChange={setEstimatedRestoreAt}
+                            onShowEtaToPublicChange={setShowEtaToPublic}
+                            onShowDowntimeToPublicChange={setShowDowntimeToPublic}
+                        />
 
                         {/* Bypass Key */}
                         <div className="space-y-3 p-4 rounded-lg border bg-slate-50 dark:bg-slate-900/50">

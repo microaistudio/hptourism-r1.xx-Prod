@@ -182,7 +182,7 @@ export function ServiceCenterPanel() {
       }
 
       // Generate PDF client-side
-      generateCertificatePDF(data.application, "policy_heritage");
+      await generateCertificatePDF(data.application, "policy_heritage");
 
       toast({
         title: "Download Started",

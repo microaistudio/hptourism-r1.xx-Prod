@@ -5,7 +5,7 @@ import { db } from "../../db";
 import { homestayApplications, applicationActions, users, himkoshTransactions } from "@shared/schema";
 import { requireRole } from "../core/middleware";
 import { logger } from "../../logger";
-import { districtsMatch } from "../helpers/district";
+import { districtsMatch, isCoveredBySplitDistrict } from "../helpers/district";
 import { getDistrictsCoveredBy } from "@shared/districtRouting";
 
 const routeLog = logger.child({ module: "admin-actions" });
@@ -52,8 +52,7 @@ router.post("/api/admin/applications/:id/reactivate", requireRole("super_admin",
         }
 
         if (userRole !== 'super_admin') {
-            const coveredDistricts = getDistrictsCoveredBy(user?.district);
-            const isCovered = coveredDistricts.some(d => districtsMatch(d, application.district));
+            const isCovered = isCoveredBySplitDistrict(user?.district ?? "", application.district, application.tehsil);
 
             if (user?.district && !isCovered) {
                 return res.status(403).json({ message: "You can only reactivate applications from your district coverage area" });
@@ -129,14 +128,13 @@ router.post("/api/admin/transactions/:id/mark-refunded", requireRole("super_admi
             // Join with application to get district? Or fetch app manually?
             // Transaction has applicationId.
             const [app] = await db
-                .select({ district: homestayApplications.district })
+                .select({ district: homestayApplications.district, tehsil: homestayApplications.tehsil })
                 .from(homestayApplications)
                 .where(eq(homestayApplications.id, transaction.applicationId))
                 .limit(1);
 
             if (app) {
-                const coveredDistricts = getDistrictsCoveredBy(user!.district);
-                const isCovered = coveredDistricts.some(d => districtsMatch(d, app.district));
+                const isCovered = isCoveredBySplitDistrict(user!.district!, app.district, app.tehsil);
                 if (!isCovered) {
                     return res.status(403).json({ message: "You can only process refunds for your district coverage area" });
                 }

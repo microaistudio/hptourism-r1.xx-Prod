@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, integer, decimal, boolean, timestamp, jsonb, index, primaryKey } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, decimal, boolean, timestamp, jsonb, index, primaryKey, bigint } from "drizzle-orm/pg-core";
 import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -177,7 +177,7 @@ export const users = pgTable("users", {
   officePhone: varchar("office_phone", { length: 15 }),
 
   // System fields
-  role: varchar("role", { length: 50 }).notNull().default('property_owner'), // 'property_owner', 'district_officer', 'state_officer', 'admin', 'dealing_assistant', 'district_tourism_officer', 'super_admin', 'admin_rc', 'system_admin'
+  role: varchar("role", { length: 50 }).notNull().default('property_owner'), // 'property_owner', 'district_officer', 'state_officer', 'admin', 'dealing_assistant', 'district_tourism_officer', 'super_admin', 'admin_rc', 'system_admin', 'payment_officer', 'inspector'
   aadhaarNumber: varchar("aadhaar_number", { length: 12 }).unique(),
   ssoId: varchar("sso_id", { length: 50 }).unique(), // HP SSO integration ID
   district: varchar("district", { length: 100 }),
@@ -211,7 +211,7 @@ export const insertUserSchema = createInsertSchema(users, {
   employeeId: z.string().optional().or(z.literal('')),
   officeAddress: z.string().optional().or(z.literal('')),
   officePhone: z.string().regex(/^[6-9]\d{9}$/, "Invalid phone number").optional().or(z.literal('')),
-  role: z.enum(['property_owner', 'district_officer', 'state_officer', 'admin', 'dealing_assistant', 'district_tourism_officer', 'super_admin', 'admin_rc', 'system_admin']),
+  role: z.enum(['property_owner', 'district_officer', 'state_officer', 'admin', 'dealing_assistant', 'district_tourism_officer', 'super_admin', 'admin_rc', 'system_admin', 'payment_officer', 'inspector']),
   aadhaarNumber: z.string().regex(/^\d{12}$/, "Invalid Aadhaar number").optional().or(z.literal('')),
   district: z.string().optional().or(z.literal('')),
   signatureUrl: z.string().optional().or(z.literal('')),
@@ -512,6 +512,12 @@ export const homestayApplications = pgTable("homestay_applications", {
   revertCount: integer("revert_count").notNull().default(0), // Tracks how many times app was sent back
   dtdoRemarks: text("dtdo_remarks"),
 
+  // v1.3.0 - Correction Type Tags (set by DTDO when reverting for specific corrections)
+  pendingCorrectionType: varchar("pending_correction_type", { length: 50 }), // 'category_correction', 'payment_term_correction', 'general', null when cleared
+  previousCategory: varchar("previous_category", { length: 20 }), // Snapshot of old category before correction
+  previousValidityYears: integer("previous_validity_years"), // Snapshot of old term (1 or 3)
+  previousTotalFee: decimal("previous_total_fee", { precision: 10, scale: 2 }), // Snapshot of previously paid/calculated fee
+
   rejectionReason: text("rejection_reason"),
   clarificationRequested: text("clarification_requested"),
 
@@ -572,7 +578,8 @@ export const homestayApplications = pgTable("homestay_applications", {
   updatedAt: timestamp("updated_at").defaultNow(),
 
   // Analytics: Time spent filling the form (seconds) - for internal use only
-  formCompletionTimeSeconds: integer("form_completion_time_seconds"),
+  // NOTE: Changed to bigint to support potential microsecond/Date.now() storage (v1.1.8 Fix)
+  formCompletionTimeSeconds: bigint("form_completion_time_seconds", { mode: "number" }),
 }, (table) => {
   return {
     // Indexes for high-performance dashboards (Scalability for 10k+ records)
@@ -922,6 +929,9 @@ export const applicationActions = pgTable("application_actions", {
   // Feedback and Comments
   feedback: text("feedback"), // Officer's comments explaining the action
   issuesFound: jsonb("issues_found").$type<Array<string>>(), // List of issues if sending back for corrections
+
+  // v1.3.0 - Correction type tag (set when DTDO reverts with specific correction type)
+  correctionType: varchar("correction_type", { length: 50 }), // 'general', 'category_correction', 'payment_term_correction'
 
   createdAt: timestamp("created_at").defaultNow(),
 });
@@ -1963,3 +1973,54 @@ export const sessions = pgTable("session", {
 
 
 export type GrievanceAuditLog = typeof grievanceAuditLog.$inferSelect;
+
+// ============================================================================
+// CREDIT LEDGER - Tracks overpayment credits from category/term corrections
+// v1.3.0 - Silent ledger: records credits but does NOT auto-apply them
+// ============================================================================
+
+export const CREDIT_LEDGER_REASONS = ['category_downgrade', 'term_reduction', 'manual_adjustment'] as const;
+export const CREDIT_LEDGER_STATUSES = ['recorded', 'applied', 'expired', 'refunded'] as const;
+
+export const creditLedger = pgTable("credit_ledger", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  applicationId: varchar("application_id").notNull().references(() => homestayApplications.id, { onDelete: 'cascade' }),
+  userId: varchar("user_id").notNull().references(() => users.id), // Property owner who has the credit
+
+  // What triggered this credit
+  reason: varchar("reason", { length: 100 }).notNull(), // 'category_downgrade', 'term_reduction', 'manual_adjustment'
+  correctionActionId: varchar("correction_action_id").references(() => applicationActions.id), // Links to the action that created this credit
+
+  // Amounts
+  previousFee: decimal("previous_fee", { precision: 10, scale: 2 }).notNull(),
+  newFee: decimal("new_fee", { precision: 10, scale: 2 }).notNull(),
+  creditAmount: decimal("credit_amount", { precision: 10, scale: 2 }).notNull(), // previousFee - newFee (always positive)
+
+  // Status (disabled for now - all entries will stay 'recorded' until policy is defined)
+  status: varchar("status", { length: 50 }).notNull().default('recorded'), // 'recorded', 'applied', 'expired', 'refunded'
+  appliedToApplicationId: varchar("applied_to_application_id").references(() => homestayApplications.id), // If credit is applied to another application
+  appliedAt: timestamp("applied_at"),
+
+  // Metadata
+  notes: text("notes"), // Officer remarks
+  createdBy: varchar("created_by").notNull().references(() => users.id), // Officer who triggered the correction
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => {
+  return {
+    userIdx: index("credit_ledger_user_idx").on(table.userId),
+    applicationIdx: index("credit_ledger_app_idx").on(table.applicationId),
+    statusIdx: index("credit_ledger_status_idx").on(table.status),
+  };
+});
+
+export const insertCreditLedgerSchema = createInsertSchema(creditLedger, {
+  reason: z.enum(CREDIT_LEDGER_REASONS),
+  status: z.enum(CREDIT_LEDGER_STATUSES).default('recorded'),
+  creditAmount: z.string().or(z.number()),
+  previousFee: z.string().or(z.number()),
+  newFee: z.string().or(z.number()),
+}).omit({ id: true, createdAt: true });
+
+export const selectCreditLedgerSchema = createSelectSchema(creditLedger);
+export type InsertCreditLedger = z.infer<typeof insertCreditLedgerSchema>;
+export type CreditLedger = typeof creditLedger.$inferSelect;

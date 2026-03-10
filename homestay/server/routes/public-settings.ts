@@ -4,7 +4,9 @@ import {
     ENABLE_LEGACY_REGISTRATION_SETTING_KEY,
     PAYMENT_PIPELINE_PAUSE_SETTING_KEY,
     normalizePaymentPipelinePauseSetting,
-    getPaymentPauseMessage
+    getPaymentPauseMessage,
+    normalizeMaintenanceModeSetting,
+    getMaintenanceMessage,
 } from "@shared/appSettings";
 import { logger } from "../logger";
 
@@ -40,11 +42,8 @@ export function createPublicSettingsRouter() {
                 optionalKinds: []
             };
 
-            // Safe default: Disabled
-            const maintenance = (maintenanceSetting?.settingValue as { enabled: boolean, accessKey: string }) ?? {
-                enabled: false,
-                accessKey: "launch2026"
-            };
+            // Safe default: Disabled — use full normalizer for new fields
+            const maintenance = normalizeMaintenanceModeSetting(maintenanceSetting?.settingValue);
 
             // Payment Pipeline Pause
             const paymentPause = normalizePaymentPipelinePauseSetting(paymentPauseSetting?.settingValue);
@@ -54,16 +53,33 @@ export function createPublicSettingsRouter() {
             // Allow bypass if key matches (even if maintenance is enabled)
             const isBypassed = maintenance.enabled && bypassKey && bypassKey === maintenance.accessKey;
 
+            const maintenanceEnabled = isBypassed ? false : !!maintenance.enabled;
+
             res.json({
                 serviceVisibility: visibility,
                 inspectionConfig: inspection,
                 maintenanceMode: {
-                    enabled: isBypassed ? false : !!maintenance.enabled
+                    enabled: maintenanceEnabled,
+                    message: maintenanceEnabled ? getMaintenanceMessage(maintenance) : null,
+                    // Individually controlled: ETA and downtime visibility
+                    ...(maintenanceEnabled && maintenance.showEtaToPublic && maintenance.estimatedRestoreAt ? {
+                        estimatedRestoreAt: maintenance.estimatedRestoreAt,
+                    } : {}),
+                    ...(maintenanceEnabled && maintenance.showDowntimeToPublic && maintenance.startedAt ? {
+                        startedAt: maintenance.startedAt,
+                    } : {}),
                 },
                 enableLegacyRegistrations: registrationSetting?.settingValue !== false, // Default true if null/undefined
                 paymentPipelinePause: {
                     enabled: paymentPause.enabled,
-                    message: paymentPause.enabled ? getPaymentPauseMessage(paymentPause) : null
+                    message: paymentPause.enabled ? getPaymentPauseMessage(paymentPause) : null,
+                    // Individually controlled: ETA and downtime visibility
+                    ...(paymentPause.enabled && paymentPause.showEtaToPublic && paymentPause.estimatedRestoreAt ? {
+                        estimatedRestoreAt: paymentPause.estimatedRestoreAt,
+                    } : {}),
+                    ...(paymentPause.enabled && paymentPause.showDowntimeToPublic && paymentPause.pausedAt ? {
+                        startedAt: paymentPause.pausedAt,
+                    } : {}),
                 }
             });
         } catch (error) {

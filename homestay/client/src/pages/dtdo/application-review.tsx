@@ -136,6 +136,7 @@ export default function DTDOApplicationReview() {
 
   const [actionType, setActionType] = useState<'accept' | 'reject' | 'revert' | 'approve-cancellation' | 'approve-bypass' | 'reset-revert' | 'reactivate' | null>(null);
   const [remarks, setRemarks] = useState("");
+  const [correctionType, setCorrectionType] = useState<'general' | 'category_correction' | 'payment_term_correction' | 'location_type_correction'>('general');
   const [previewDoc, setPreviewDoc] = useState<HomestayDocument | null>(null);
   const [copied, setCopied] = useState(false);
 
@@ -173,18 +174,34 @@ export default function DTDOApplicationReview() {
     queryKey: ["/api/settings/public"],
   });
 
+  // v1.3.0: Revert limit confirmation dialog state
+  const [revertLimitDialog, setRevertLimitDialog] = useState<{
+    open: boolean;
+    message: string;
+    revertCount: number;
+    maxReverts: number;
+    pendingRemarks: string;
+    pendingCorrectionType: string;
+  }>({ open: false, message: '', revertCount: 0, maxReverts: 0, pendingRemarks: '', pendingCorrectionType: 'general' });
+
   const actionMutation = useMutation({
-    mutationFn: async ({ action, remarks, inspectionDate, assignedTo }: {
+    mutationFn: async ({ action, remarks, inspectionDate, assignedTo, correctionType, forceReject, resetAndRevert }: {
       action: string;
       remarks: string;
       inspectionDate?: string;
       assignedTo?: string;
+      correctionType?: string;
+      forceReject?: boolean;
+      resetAndRevert?: boolean;
     }) => {
       let endpoint = `/api/dtdo/applications/${id}/${action}`;
       let body: any = {
         remarks,
         inspectionDate,
         assignedTo,
+        correctionType, // v1.3.0: correction type tag for revert actions
+        forceReject,
+        resetAndRevert,
       };
 
       if (action === 'reset-revert') {
@@ -193,6 +210,36 @@ export default function DTDOApplicationReview() {
       } else if (action === 'reactivate') {
         endpoint = `/api/admin/applications/${id}/reactivate`;
         body = { reason: remarks };
+      }
+      // For revert action, use raw fetch to intercept 409 (revert limit confirmation)
+      // apiRequest throws on non-2xx which prevents us from reading the 409 body
+      if (action === 'revert') {
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+          credentials: 'include',
+        });
+        const data = await response.json();
+
+        // Handle 409 — revert limit reached, DTDO must confirm
+        if (response.status === 409 && data.requiresConfirmation) {
+          setRevertLimitDialog({
+            open: true,
+            message: data.message,
+            revertCount: data.revertCount,
+            maxReverts: data.maxReverts,
+            pendingRemarks: remarks,
+            pendingCorrectionType: correctionType || 'general',
+          });
+          throw Object.assign(new Error('REVERT_LIMIT_CONFIRMATION'), { isConfirmation: true });
+        }
+
+        if (!response.ok) {
+          throw new Error(data.message || 'Failed to process revert');
+        }
+
+        return data;
       }
 
       const response = await apiRequest("POST", endpoint, body);
@@ -223,14 +270,17 @@ export default function DTDOApplicationReview() {
       } else {
         toast({
           title: "Success",
-          description: "Application processed successfully",
+          description: data?.message || "Application processed successfully",
         });
       }
 
       // Redirect for other actions
       setLocation(isLegacyRC ? "/dtdo/legacy" : "/dtdo/dashboard");
     },
-    onError: (error: Error) => {
+    onError: (error: any) => {
+      // Skip toast for confirmation dialogs — the dialog handles it
+      if (error?.isConfirmation) return;
+
       toast({
         title: "Error",
         description: error.message || "Failed to process application",
@@ -378,6 +428,7 @@ export default function DTDOApplicationReview() {
   const handleAction = (action: 'accept' | 'reject' | 'revert' | 'approve-cancellation' | 'approve-bypass' | 'reset-revert' | 'reactivate') => {
     setActionType(action);
     setRemarks("");
+    setCorrectionType('general'); // Reset correction type when opening a new action
     // Reset scheduling fields when opening accept dialog
     if (action === 'accept') {
       setSelectedDate(undefined);
@@ -467,7 +518,7 @@ export default function DTDOApplicationReview() {
         assignedTo: assignedDA,
       });
     } else {
-      actionMutation.mutate({ action: actionType, remarks: remarks.trim() });
+      actionMutation.mutate({ action: actionType, remarks: remarks.trim(), correctionType: actionType === 'revert' ? correctionType : undefined });
     }
   };
 
@@ -476,7 +527,7 @@ export default function DTDOApplicationReview() {
     if (!application) return;
     setIsGeneratingCertificate(true);
     try {
-      generateCertificatePDF(application, certificateFormat);
+      await generateCertificatePDF(application, certificateFormat);
       toast({
         title: "Certificate Downloaded",
         description: "RC certificate has been generated and downloaded.",
@@ -1114,6 +1165,16 @@ export default function DTDOApplicationReview() {
                         {/* Editable Fields */}
                         <div className="space-y-3">
                           <div>
+                            <Label className="text-xs text-gray-600">Owner / Applicant Name</Label>
+                            <Input
+                              value={getFieldValue('ownerName') ?? ''}
+                              onChange={(e) => handleEditField('ownerName', e.target.value)}
+                              placeholder="Full name as on RC"
+                              className="h-8 text-sm"
+                            />
+                          </div>
+
+                          <div>
                             <Label className="text-xs text-gray-600">Property Name</Label>
                             <Input
                               value={getFieldValue('propertyName') ?? ''}
@@ -1336,6 +1397,29 @@ export default function DTDOApplicationReview() {
                 />
               </div>
 
+              {/* v1.3.0: Correction Type selector (only for Revert action) */}
+              {actionType === 'revert' && (
+                <div className="space-y-2">
+                  <Label htmlFor="correctionType">Correction Type</Label>
+                  <Select value={correctionType} onValueChange={(val: 'general' | 'category_correction' | 'payment_term_correction' | 'location_type_correction') => setCorrectionType(val)}>
+                    <SelectTrigger id="correctionType" data-testid="select-correction-type">
+                      <SelectValue placeholder="Select correction type" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="general">General Correction</SelectItem>
+                      <SelectItem value="category_correction">Category Correction (Diamond/Gold/Silver)</SelectItem>
+                      <SelectItem value="payment_term_correction">Payment Term Correction (1yr / 3yr)</SelectItem>
+                      <SelectItem value="location_type_correction">Location Type Correction (GP/MC/TCP Zone)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {correctionType !== 'general' && (
+                    <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                      ⚠️ This will tag the application for fee recalculation. The applicant will be asked to update their {correctionType === 'category_correction' ? 'category' : correctionType === 'payment_term_correction' ? 'payment term' : 'location type (GP/MC zone)'} and pay any fee difference.
+                    </p>
+                  )}
+                </div>
+              )}
+
               {/* Scheduling fields for Accept action - Only if NOT Legacy RC */}
               {actionType === 'accept' && !isLegacyRC && (
                 <>
@@ -1441,6 +1525,78 @@ export default function DTDOApplicationReview() {
               >
                 {actionMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 {actionType === 'accept' ? (isLegacyRC ? 'Approve Directly' : 'Accept & Schedule') : actionType === 'approve-bypass' ? 'Confirm Approval' : actionType === 'reject' ? 'Confirm Rejection' : actionType === 'reset-revert' ? 'Reset Count' : actionType === 'reactivate' ? 'Confirm Reactivation' : 'Confirm Revert'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* v1.3.0: Revert Limit Confirmation Dialog */}
+        <Dialog open={revertLimitDialog.open} onOpenChange={(open) => !open && setRevertLimitDialog(prev => ({ ...prev, open: false }))}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-amber-600">
+                <AlertTriangle className="h-5 w-5" />
+                Revert Limit Reached
+              </DialogTitle>
+              <DialogDescription>
+                {revertLimitDialog.message}
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="py-4 space-y-3">
+              <div className="p-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg">
+                <p className="text-sm text-amber-800 dark:text-amber-300">
+                  <strong>Current revert count:</strong> {revertLimitDialog.revertCount} / {revertLimitDialog.maxReverts} (limit)
+                </p>
+                <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">
+                  You can reject the application or reset the counter and send it back for corrections.
+                </p>
+              </div>
+            </div>
+
+            <DialogFooter className="flex-col sm:flex-row gap-2">
+              <Button
+                variant="ghost"
+                onClick={() => setRevertLimitDialog(prev => ({ ...prev, open: false }))}
+                disabled={actionMutation.isPending}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setRevertLimitDialog(prev => ({ ...prev, open: false }));
+                  setActionType(null);
+                  actionMutation.mutate({
+                    action: 'revert',
+                    remarks: revertLimitDialog.pendingRemarks,
+                    correctionType: revertLimitDialog.pendingCorrectionType,
+                    resetAndRevert: true,
+                  });
+                }}
+                disabled={actionMutation.isPending}
+                data-testid="button-reset-and-revert"
+              >
+                {actionMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Reset Count & Revert
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={() => {
+                  setRevertLimitDialog(prev => ({ ...prev, open: false }));
+                  setActionType(null);
+                  actionMutation.mutate({
+                    action: 'revert',
+                    remarks: revertLimitDialog.pendingRemarks,
+                    correctionType: revertLimitDialog.pendingCorrectionType,
+                    forceReject: true,
+                  });
+                }}
+                disabled={actionMutation.isPending}
+                data-testid="button-force-reject"
+              >
+                {actionMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Reject Application
               </Button>
             </DialogFooter>
           </DialogContent>

@@ -82,6 +82,14 @@ interface SystemStats {
   superConsoleOverride?: boolean;
 }
 
+interface ReconciliationSettings {
+  cronIntervalMinutes: number;
+  staleThresholdMinutes: number;
+  maxBatchSize: number;
+  enabled: boolean;
+  pageLoadEnabled: boolean;
+}
+
 type ResetOperation =
   | "full"
   | "applications"
@@ -318,6 +326,16 @@ export default function SuperAdminConsole() {
 
   const [staffImportResult, setStaffImportResult] = useState<StaffImportResponse | null>(null);
   const [hardDeleteLogs, setHardDeleteLogs] = useState(false);
+
+  // Reconciliation settings state
+  const [reconForm, setReconForm] = useState<ReconciliationSettings>({
+    cronIntervalMinutes: 15,
+    staleThresholdMinutes: 30,
+    maxBatchSize: 10,
+    enabled: true,
+    pageLoadEnabled: true,
+  });
+  const [reconFormDirty, setReconFormDirty] = useState(false);
 
   // Granular reset state
   const [granularResetDialog, setGranularResetDialog] = useState({
@@ -633,6 +651,82 @@ export default function SuperAdminConsole() {
       return response.json();
     },
   });
+
+  // ─── Reconciliation Settings ─────────────────────────────────────────────────
+  const {
+    data: reconSettings,
+    isLoading: reconSettingsLoading,
+    refetch: refetchReconSettings,
+  } = useQuery<ReconciliationSettings>({
+    queryKey: ["/api/himkosh/reconciliation/settings"],
+    queryFn: async () => {
+      const response = await apiRequest("GET", "/api/himkosh/reconciliation/settings");
+      return response.json();
+    },
+  });
+
+  useEffect(() => {
+    if (reconSettings) {
+      setReconForm(reconSettings);
+      setReconFormDirty(false);
+    }
+  }, [reconSettings]);
+
+  const updateReconSettingsMutation = useMutation({
+    mutationFn: async (settings: ReconciliationSettings) => {
+      const response = await apiRequest("PUT", "/api/himkosh/reconciliation/settings", settings);
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || "Failed to update settings");
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/himkosh/reconciliation/settings"] });
+      setReconFormDirty(false);
+      toast({
+        title: "Reconciliation settings saved",
+        description: "Auto-reconciliation configuration has been updated.",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Update failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const runReconNowMutation = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest("POST", "/api/himkosh/reconciliation/run-now");
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || "Reconciliation cycle failed");
+      }
+      return response.json();
+    },
+    onSuccess: (data) => {
+      toast({
+        title: "Reconciliation complete",
+        description: data.message || "Cron cycle ran successfully.",
+      });
+      refetchHimkoshActivity();
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Reconciliation failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleReconFormChange = (field: keyof ReconciliationSettings, value: number | boolean) => {
+    setReconForm((prev) => ({ ...prev, [field]: value }));
+    setReconFormDirty(true);
+  };
 
   const {
     data: himkoshGatewayData,
@@ -2735,6 +2829,180 @@ export default function SuperAdminConsole() {
                       <p className="text-xs text-muted-foreground">
                         Showing latest {latestTransactions.length} of {totalHimkoshTransactions} transactions.
                       </p>
+                    )}
+                  </CardContent>
+                </Card>
+
+                {/* Reconciliation Engine Settings */}
+                <Card>
+                  <CardHeader>
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <RefreshCw className="w-5 h-5 text-primary" />
+                          <CardTitle>Reconciliation Engine</CardTitle>
+                          {reconSettings?.enabled ? (
+                            <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200">
+                              🟢 Active
+                            </Badge>
+                          ) : (
+                            <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200">
+                              ⏸ Paused
+                            </Badge>
+                          )}
+                        </div>
+                        <CardDescription>
+                          Configure automatic payment reconciliation (Layer 1 cron + Layer 2 page-load).
+                          Handles stuck payments where HimKosh confirms but app stays pending.
+                        </CardDescription>
+                      </div>
+                      <div className="flex gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => refetchReconSettings()}
+                          disabled={reconSettingsLoading}
+                        >
+                          <RefreshCw className={`w-4 h-4 mr-2 ${reconSettingsLoading ? "animate-spin" : ""}`} />
+                          Refresh
+                        </Button>
+                        <Button
+                          variant="default"
+                          size="sm"
+                          onClick={() => runReconNowMutation.mutate()}
+                          disabled={runReconNowMutation.isPending}
+                        >
+                          {runReconNowMutation.isPending ? (
+                            <>
+                              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                              Running...
+                            </>
+                          ) : (
+                            <>
+                              <PlayCircle className="w-4 h-4 mr-2" />
+                              Run Now
+                            </>
+                          )}
+                        </Button>
+                      </div>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-6">
+                    {reconSettingsLoading ? (
+                      <div className="flex items-center justify-center py-6 text-muted-foreground">
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" /> Loading reconciliation settings…
+                      </div>
+                    ) : (
+                      <>
+                        {/* Layer 1 & 2 Toggles */}
+                        <div className="grid gap-4 md:grid-cols-2">
+                          <div className="flex items-center justify-between p-4 border rounded-lg">
+                            <div className="space-y-1">
+                              <div className="flex items-center gap-2">
+                                <h4 className="font-medium text-sm">Layer 1: Background Cron</h4>
+                                <Badge variant="outline" className={reconForm.enabled ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-slate-100 text-slate-500 border-slate-200"}>
+                                  {reconForm.enabled ? "Enabled" : "Disabled"}
+                                </Badge>
+                              </div>
+                              <p className="text-xs text-muted-foreground">
+                                Periodically scans for stale pending transactions and auto-verifies via SearchChallan.
+                              </p>
+                            </div>
+                            <Switch
+                              checked={reconForm.enabled}
+                              onCheckedChange={(checked) => handleReconFormChange("enabled", checked)}
+                            />
+                          </div>
+                          <div className="flex items-center justify-between p-4 border rounded-lg">
+                            <div className="space-y-1">
+                              <div className="flex items-center gap-2">
+                                <h4 className="font-medium text-sm">Layer 2: Page-Load Check</h4>
+                                <Badge variant="outline" className={reconForm.pageLoadEnabled ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-slate-100 text-slate-500 border-slate-200"}>
+                                  {reconForm.pageLoadEnabled ? "Enabled" : "Disabled"}
+                                </Badge>
+                              </div>
+                              <p className="text-xs text-muted-foreground">
+                                When an owner views their stuck application, auto-checks with HimKosh in the background.
+                              </p>
+                            </div>
+                            <Switch
+                              checked={reconForm.pageLoadEnabled}
+                              onCheckedChange={(checked) => handleReconFormChange("pageLoadEnabled", checked)}
+                            />
+                          </div>
+                        </div>
+
+                        {/* Cron Parameters */}
+                        <div className="grid gap-4 md:grid-cols-3">
+                          <div className="space-y-2">
+                            <Label htmlFor="recon-interval">Cron Interval (minutes)</Label>
+                            <Input
+                              id="recon-interval"
+                              type="number"
+                              min={5}
+                              max={1440}
+                              value={reconForm.cronIntervalMinutes}
+                              onChange={(e) => handleReconFormChange("cronIntervalMinutes", parseInt(e.target.value) || 15)}
+                            />
+                            <p className="text-[10px] text-muted-foreground">
+                              How often the background job runs (5–1440 min). Default: 15 min.
+                            </p>
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="recon-stale">Stale Threshold (minutes)</Label>
+                            <Input
+                              id="recon-stale"
+                              type="number"
+                              min={5}
+                              max={1440}
+                              value={reconForm.staleThresholdMinutes}
+                              onChange={(e) => handleReconFormChange("staleThresholdMinutes", parseInt(e.target.value) || 30)}
+                            />
+                            <p className="text-[10px] text-muted-foreground">
+                              Pending txn must be this old before cron picks it up. Default: 30 min.
+                            </p>
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="recon-batch">Max Batch Size</Label>
+                            <Input
+                              id="recon-batch"
+                              type="number"
+                              min={1}
+                              max={50}
+                              value={reconForm.maxBatchSize}
+                              onChange={(e) => handleReconFormChange("maxBatchSize", parseInt(e.target.value) || 10)}
+                            />
+                            <p className="text-[10px] text-muted-foreground">
+                              Max transactions per cron cycle (1–50). Default: 10.
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Info Box */}
+                        <div className="rounded-lg border border-blue-200 bg-blue-50/50 p-4">
+                          <p className="text-sm text-blue-800">
+                            <strong>⚠️ Firewall Note:</strong> Layers 1 & 2 require outbound connectivity to HimKosh SearchChallan.
+                            On PROD, if the firewall blocks server→HimKosh, these layers will gracefully skip.
+                            Use the <strong>"Run Now"</strong> button to test if connectivity is working.
+                          </p>
+                        </div>
+
+                        {/* Save Button */}
+                        <div className="flex items-center gap-3">
+                          <Button
+                            onClick={() => updateReconSettingsMutation.mutate(reconForm)}
+                            disabled={!reconFormDirty || updateReconSettingsMutation.isPending}
+                          >
+                            {updateReconSettingsMutation.isPending && (
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            )}
+                            Save Settings
+                          </Button>
+                          {reconFormDirty && (
+                            <span className="text-xs text-amber-600 font-medium">Unsaved changes</span>
+                          )}
+                        </div>
+                      </>
                     )}
                   </CardContent>
                 </Card>

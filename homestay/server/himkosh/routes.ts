@@ -418,8 +418,22 @@ router.post('/initiate', async (req, res) => {
       return res.status(400).json({ error: 'Total fee not calculated for this application' });
     }
     // Determine actual amount to send
-    // In Test Mode, use configurable amount (default ₹1)
-    let actualAmount = Math.round(parseFloat(application.totalFee.toString())); // Ensure integer
+    // v1.3.0: For supplementary payments (category/term correction), send only the delta
+    const rawTotalFee = Math.round(parseFloat(application.totalFee.toString()));
+    const previousFee = application.previousTotalFee
+      ? Math.round(parseFloat(application.previousTotalFee.toString()))
+      : 0;
+    const isSupplementaryPayment = previousFee > 0 && rawTotalFee > previousFee;
+    let actualAmount = isSupplementaryPayment ? rawTotalFee - previousFee : rawTotalFee;
+
+    if (isSupplementaryPayment) {
+      himkoshLogger.info({
+        applicationId: application.id,
+        rawTotalFee,
+        previousFee,
+        supplementaryAmount: actualAmount,
+      }, "[himkosh] Supplementary payment: charging delta only");
+    }
 
     // Check if test payment mode is enabled
     const [testModeSetting] = await db
@@ -443,7 +457,7 @@ router.post('/initiate', async (req, res) => {
           : false;
 
     if (isTestMode) {
-      actualAmount = appConfig.himkosh.testAmount; // Use configured test amount
+      actualAmount = appConfig.himkosh.testAmount || 1; // Use configured test amount
       himkoshLogger.info({ actualAmount, isTestMode }, "[himkosh] Test mode active: Overriding amount");
     }
 
@@ -877,7 +891,8 @@ router.post('/callback', async (req, res) => {
 
         const issueDate = new Date();
         const expiryDate = new Date(issueDate);
-        expiryDate.setFullYear(expiryDate.getFullYear() + 1);
+        const validityYears = currentApplication.certificateValidityYears || 1;
+        expiryDate.setFullYear(expiryDate.getFullYear() + validityYears);
         const formatTimelineDate = (value: Date) =>
           value.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
 
@@ -1227,10 +1242,12 @@ router.post('/verify/:appRefNo/manual', async (req, res) => {
     };
 
     if (isVerified && grn) {
-      // Always ensure echTxnId and statusCd are set correctly on manual verify
+      // Always ensure echTxnId, statusCd, AND transactionStatus are set correctly
       updateFields.echTxnId = grn;
       updateFields.respondedAt = new Date();
       updateFields.statusCd = '1';
+      updateFields.transactionStatus = 'success';  // FIX: Was missing! Reports/Him-Darshan filter on this
+      updateFields.bankName = 'Manual';  // Indicate manual verification in the bank field
       if (receiptNo) {
         updateFields.bankCIN = receiptNo;
       }
@@ -1322,9 +1339,24 @@ router.post('/verify/:appRefNo/manual', async (req, res) => {
             );
           }
         } else {
+          // App is already in a forwarded/terminal state (submitted, under_scrutiny, etc.)
+          // Still update paymentStatus to 'paid' so dashboards stay in sync
+          // This eliminates the need for a separate Step B script
+          const now = new Date();
+          await db
+            .update(homestayApplications)
+            .set({
+              paymentStatus: 'paid',
+              paymentId: grn,
+              paymentAmount: transaction.totalAmount?.toString(),
+              paymentDate: now,
+              updatedAt: now,
+            })
+            .where(eq(homestayApplications.id, app.id));
+
           himkoshLogger.info(
             { appRefNo, applicationId: app.id, currentStatus: app.status, grn, method: 'manual' },
-            'Manual verification: App already in terminal state, no status change needed',
+            'Manual verification: App in terminal state — paymentStatus set to paid (no status change)',
           );
         }
       }
@@ -1544,6 +1576,7 @@ router.get('/application/:applicationId/transactions', async (req, res) => {
         'district_tourism_officer',
         'super_admin',
         'admin',
+        'payment_officer',
       ]);
 
       if (!actor || !allowedOfficerRoles.has(actor.role)) {
@@ -1604,6 +1637,7 @@ router.post('/application/:applicationId/reset', async (req, res) => {
         'district_tourism_officer',
         'super_admin',
         'admin',
+        'payment_officer',
       ]);
 
       if (!actor || !allowedOfficerRoles.has(actor.role)) {
@@ -1767,6 +1801,199 @@ router.post('/test-callback-url', async (req, res) => {
   } catch (error) {
     himkoshLogger.error({ err: error, route: req.path }, "[himkosh-test] Error generating payload");
     res.status(500).json({ error: 'Failed to generate test data' });
+  }
+});
+
+// ─── Layer 2: Page-Load Reconciliation Endpoint ─────────────────────────────
+
+import {
+  reconcileOnPageLoad,
+  getReconciliationSettings,
+  runCronCycle,
+  getRecentReconLogs
+} from './reconciliation';
+
+/**
+ * POST /api/himkosh/reconcile/:applicationId
+ * Layer 2: Check if a pending transaction can be auto-verified.
+ * Called when owner or officer views an application with stuck payment.
+ * Runs in background — does NOT block the page from loading.
+ */
+router.post('/reconcile/:applicationId', async (req, res) => {
+  try {
+    const { applicationId } = req.params;
+
+    if (!applicationId) {
+      return res.status(400).json({ error: 'applicationId is required' });
+    }
+
+    // Fire and return immediately — don't make the page wait
+    const result = await reconcileOnPageLoad(applicationId);
+
+    if (!result) {
+      return res.json({
+        attempted: false,
+        message: 'No pending transaction to reconcile, or reconciliation disabled',
+      });
+    }
+
+    res.json({
+      attempted: true,
+      action: result.action,
+      appRefNo: result.appRefNo,
+      grn: result.grn ?? null,
+      error: result.error ?? null,
+    });
+  } catch (error: any) {
+    himkoshLogger.error({ err: error }, '[reconcile] Page-load reconciliation error');
+    res.status(500).json({ error: 'Reconciliation failed' });
+  }
+});
+
+/**
+ * GET /api/himkosh/reconciliation/settings
+ * Get current reconciliation settings (for Super Admin UI)
+ */
+router.get('/reconciliation/settings', async (req, res) => {
+  try {
+    const settings = await getReconciliationSettings();
+    res.json(settings);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to load settings' });
+  }
+});
+
+/**
+ * PUT /api/himkosh/reconciliation/settings
+ * Update reconciliation settings (Super Admin only)
+ */
+router.put('/reconciliation/settings', async (req, res) => {
+  try {
+    const userId = req.session?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    // Check role
+    const [user] = await db
+      .select({ role: users.role })
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+
+    if (!user || !['super_admin', 'admin'].includes(user.role)) {
+      return res.status(403).json({ error: 'Super Admin access required' });
+    }
+
+    const {
+      cronIntervalMinutes,
+      staleThresholdMinutes,
+      maxBatchSize,
+      enabled,
+      pageLoadEnabled,
+    } = req.body;
+
+    const newSettings = {
+      cronIntervalMinutes: Math.max(5, Math.min(1440, Number(cronIntervalMinutes) || 15)),
+      staleThresholdMinutes: Math.max(5, Math.min(1440, Number(staleThresholdMinutes) || 30)),
+      maxBatchSize: Math.max(1, Math.min(50, Number(maxBatchSize) || 10)),
+      enabled: enabled !== false,
+      pageLoadEnabled: pageLoadEnabled !== false,
+    };
+
+    // Upsert into system_settings
+    const [existing] = await db
+      .select({ id: systemSettings.id })
+      .from(systemSettings)
+      .where(eq(systemSettings.settingKey, 'reconciliation_config'))
+      .limit(1);
+
+    if (existing) {
+      await db
+        .update(systemSettings)
+        .set({
+          settingValue: newSettings,
+          updatedBy: userId,
+          updatedAt: new Date(),
+        })
+        .where(eq(systemSettings.id, existing.id));
+    } else {
+      await db.insert(systemSettings).values({
+        settingKey: 'reconciliation_config',
+        settingValue: newSettings,
+        description: 'Payment reconciliation engine configuration (Layer 1 cron + Layer 2 page-load)',
+        category: 'payment',
+        updatedBy: userId,
+      });
+    }
+
+    himkoshLogger.info({ newSettings, updatedBy: userId }, 'Reconciliation settings updated');
+    res.json({ message: 'Settings updated', settings: newSettings });
+  } catch (error) {
+    himkoshLogger.error({ err: error }, 'Failed to update reconciliation settings');
+    res.status(500).json({ error: 'Failed to update settings' });
+  }
+});
+
+/**
+ * POST /api/himkosh/reconciliation/run-now
+ * Manually trigger a cron cycle (for testing / Super Admin)
+ */
+router.post('/reconciliation/run-now', async (req, res) => {
+  try {
+    const userId = req.session?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    const [user] = await db
+      .select({ role: users.role })
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+
+    if (!user || !['super_admin', 'admin', 'payment_officer'].includes(user.role)) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    himkoshLogger.info({ triggeredBy: userId }, 'Manual reconciliation cycle triggered');
+
+    // Run synchronously so the caller sees results
+    await runCronCycle();
+
+    res.json({ message: 'Reconciliation cycle completed' });
+  } catch (error) {
+    himkoshLogger.error({ err: error }, 'Manual reconciliation failed');
+    res.status(500).json({ error: 'Reconciliation cycle failed' });
+  }
+});
+
+/**
+ * GET /api/himkosh/reconciliation/logs
+ * Retrieve recent in-memory log buffer for the UI
+ */
+router.get('/reconciliation/logs', async (req, res) => {
+  try {
+    const userId = req.session?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    const [user] = await db
+      .select({ role: users.role })
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+
+    if (!user || !['super_admin', 'admin', 'payment_officer'].includes(user.role)) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    const logs = getRecentReconLogs();
+    res.json(logs);
+  } catch (error) {
+    himkoshLogger.error({ err: error }, 'Failed to fetch reconciliation logs');
+    res.status(500).json({ error: 'Failed to fetch logs' });
   }
 });
 

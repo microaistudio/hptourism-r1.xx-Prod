@@ -1,16 +1,16 @@
 /**
  * Application Version Configuration
  * SINGLE SOURCE OF TRUTH - Keep in sync with package.json
- * Current: 1.0.29
+ * Current: 1.1.7
  */
 
 export const APP_VERSION = {
     major: 1,
     minor: 1,
-    patch: 5,
+    patch: 8,
     releaseCandidate: "R1",
-    codename: "Existing RC Integration",
-    buildDate: "2026-02-13",
+    codename: "Integer Overflow Nuclear Fix",
+    buildDate: "2026-02-19",
 
     // Full version string
     get full(): string {

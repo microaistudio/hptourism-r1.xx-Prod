@@ -9,6 +9,7 @@ export type LogApplicationActionPayload = {
   previousStatus?: string | null;
   newStatus?: string | null;
   feedback?: string | null;
+  correctionType?: string | null; // v1.3.0: 'general', 'category_correction', 'payment_term_correction'
 };
 
 export async function logApplicationAction({
@@ -18,6 +19,7 @@ export async function logApplicationAction({
   previousStatus,
   newStatus,
   feedback,
+  correctionType,
 }: LogApplicationActionPayload) {
   if (!actorId) {
     logger.warn("[timeline] Skipping log due to missing actor", {
@@ -35,6 +37,7 @@ export async function logApplicationAction({
       previousStatus: previousStatus ?? null,
       newStatus: newStatus ?? null,
       feedback: feedback ?? null,
+      correctionType: correctionType ?? null,
     });
   } catch (error) {
     logger.error({ err: error, applicationId, action }, "[timeline] Failed to log application action");

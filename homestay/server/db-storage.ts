@@ -39,6 +39,54 @@ const isApplicationNumberUniqueViolation = (error: unknown) => {
   return err.code === '23505' && err.constraint === APPLICATION_NUMBER_UNIQUE_CONSTRAINT;
 };
 
+/**
+ * PostgreSQL int4 (integer) range: -2,147,483,648 to 2,147,483,647
+ * V10 FIX: Only clamp actual numeric fields that map to integer columns.
+ * String fields (ownerMobile, ownerAadhaar, pincode, etc.) are NEVER touched.
+ * formCompletionTimeSeconds is now bigint - no clamping needed.
+ */
+const PG_INT32_MAX = 2_147_483_647;
+
+// Fields stored as varchar in DB - must NEVER be clamped even if they look numeric
+const VARCHAR_FIELDS = new Set([
+  'ownerMobile', 'owner_mobile',
+  'ownerAadhaar', 'owner_aadhaar',
+  'aadhaarNumber', 'aadhaar_number',
+  'mobile', 'telephone', 'pincode',
+  'applicationNumber', 'application_number',
+  'gstin', 'panNumber', 'pan_number',
+  'accountNumber', 'account_number',
+  'ifscCode', 'ifsc_code',
+]);
+
+// Fields stored as bigint in DB - can hold values > INT32
+const BIGINT_FIELDS = new Set([
+  'formCompletionTimeSeconds', 'form_completion_time_seconds',
+]);
+
+const sanitizeInt32Overflow = <T extends Record<string, any>>(obj: T): T => {
+  if (!obj) return obj;
+
+  for (const key of Object.keys(obj)) {
+    // Skip varchar fields - they are strings in the DB, not integers
+    if (VARCHAR_FIELDS.has(key)) continue;
+
+    // Skip bigint fields - they can hold values > INT32
+    if (BIGINT_FIELDS.has(key)) continue;
+
+    // Only clamp actual number values that would overflow int4
+    const val = obj[key];
+    if (typeof val === 'number') {
+      if (Number.isFinite(val) && (val > PG_INT32_MAX || val < -PG_INT32_MAX)) {
+        console.warn(`[db-storage] INT32 OVERFLOW BLOCKED: field="${'$'}{key}" value=${val} - clamping to 0`);
+        (obj as any)[key] = 0;
+      }
+    }
+    // V10: Do NOT clamp string values - they go to varchar/text columns
+  }
+  return obj;
+};
+
 export class DbStorage implements IStorage {
   // User methods
   async getUser(id: string): Promise<User | undefined> {
@@ -173,10 +221,8 @@ export class DbStorage implements IStorage {
 
 
       try {
-        // Safety check at DB layer
-        if (appToInsert.formCompletionTimeSeconds && Number(appToInsert.formCompletionTimeSeconds) > 2000000000) {
-          appToInsert.formCompletionTimeSeconds = 0;
-        }
+        // Nuclear safety: clamp ANY int32 overflow across ALL fields
+        sanitizeInt32Overflow(appToInsert);
 
         const result = await db.insert(homestayApplications).values([appToInsert]).returning();
         return result[0];
@@ -193,8 +239,11 @@ export class DbStorage implements IStorage {
   }
 
   async updateApplication(id: string, updates: Partial<HomestayApplication>): Promise<HomestayApplication | undefined> {
+    // Nuclear safety: clamp ANY int32 overflow across ALL fields
+    const safeUpdates = { ...updates };
+    sanitizeInt32Overflow(safeUpdates);
     const result = await db.update(homestayApplications)
-      .set({ ...updates, updatedAt: new Date() })
+      .set({ ...safeUpdates, updatedAt: new Date() })
       .where(eq(homestayApplications.id, id))
       .returning();
     return result[0];
@@ -487,9 +536,16 @@ export class DbStorage implements IStorage {
   private async nextApplicationSequence(): Promise<number> {
     const [row] = await db
       .select({
-        maxSerial: sql<number>`COALESCE(MAX(CAST(substring(${homestayApplications.applicationNumber} from '([0-9]+)$') AS INTEGER)), 0)`,
+        maxSerial: sql<number>`COALESCE(MAX(
+          CASE
+            WHEN substring(${homestayApplications.applicationNumber} from '([0-9]+)$') ~ '^[0-9]{1,6}$'
+            THEN CAST(substring(${homestayApplications.applicationNumber} from '([0-9]+)$') AS INTEGER)
+            ELSE 0
+          END
+        ), 0)`,
       })
-      .from(homestayApplications);
+      .from(homestayApplications)
+      .where(sql`${homestayApplications.applicationNumber} NOT LIKE 'TEST-%' AND ${homestayApplications.applicationNumber} NOT LIKE 'HP-TEST-%'`);
 
     const seedRow = await db
       .select({ value: systemSettings.settingValue })

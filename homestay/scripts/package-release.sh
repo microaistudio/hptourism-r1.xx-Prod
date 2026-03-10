@@ -46,7 +46,11 @@ cp -r node_modules "$INSTALLER_DIR/"
 
 # Use the robust installer script
 cp deploy/install.sh "$INSTALLER_DIR/"
+cp scripts/deploy-prod.sh "$INSTALLER_DIR/"
+cp scripts/kill-ghosts.sh "$INSTALLER_DIR/"
 chmod +x "$INSTALLER_DIR/install.sh"
+chmod +x "$INSTALLER_DIR/deploy-prod.sh"
+chmod +x "$INSTALLER_DIR/kill-ghosts.sh"
 
 # Create README for Installer
 cat > "$INSTALLER_DIR/README.md" << EOF

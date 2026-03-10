@@ -1,5 +1,5 @@
 import express from "express";
-import { and, desc, eq, like, sql } from "drizzle-orm";
+import { and, desc, eq, like, ilike, isNotNull, sql, or } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../../db";
 import { requireRole } from "../core/middleware";
@@ -94,7 +94,12 @@ export function createAdminLegacyRcRouter() {
         .select(legacySelection)
         .from(homestayApplications)
         .leftJoin(users, eq(users.id, homestayApplications.userId))
-        .where(like(homestayApplications.applicationNumber, `${LEGACY_RC_PREFIX}%`))
+        .where(
+          or(
+            like(homestayApplications.applicationNumber, `${LEGACY_RC_PREFIX}%`),
+            like(homestayApplications.applicationNumber, "LG-HS-%")
+          )
+        )
         .orderBy(desc(legacyOrderBy));
 
       const applications = rows.map((row) => ({
@@ -116,7 +121,15 @@ export function createAdminLegacyRcRouter() {
         .select(legacySelection)
         .from(homestayApplications)
         .leftJoin(users, eq(users.id, homestayApplications.userId))
-        .where(and(eq(homestayApplications.id, id), like(homestayApplications.applicationNumber, `${LEGACY_RC_PREFIX}%`)))
+        .where(
+          and(
+            eq(homestayApplications.id, id),
+            or(
+              like(homestayApplications.applicationNumber, `${LEGACY_RC_PREFIX}%`),
+              like(homestayApplications.applicationNumber, "LG-HS-%")
+            )
+          )
+        )
         .limit(1);
 
       if (!record) {
@@ -125,8 +138,44 @@ export function createAdminLegacyRcRouter() {
 
       const docList = await db.select().from(documents).where(eq(documents.applicationId, id));
 
+      // Resolve DTDO signature for RC certificate printing
+      // Legacy applications don't have dtdoId set, so look up the DTDO by district
+      let dtdoSignatureUrl: string | null = null;
+      const appDistrict = record.application.district;
+
+      // First try dtdoId if it exists (in case it was set by admin)
+      if (record.application.dtdoId) {
+        const [dtdoUser] = await db
+          .select({ signatureUrl: users.signatureUrl })
+          .from(users)
+          .where(eq(users.id, record.application.dtdoId))
+          .limit(1);
+        if (dtdoUser?.signatureUrl) {
+          dtdoSignatureUrl = dtdoUser.signatureUrl;
+        }
+      }
+
+      // Fallback: look up DTDO by district
+      if (!dtdoSignatureUrl && appDistrict) {
+        const [districtDtdo] = await db
+          .select({ signatureUrl: users.signatureUrl })
+          .from(users)
+          .where(
+            and(
+              eq(users.role, 'district_tourism_officer'),
+              eq(users.isActive, true),
+              ilike(users.district, `%${appDistrict.split(' ')[0]}%`),
+              isNotNull(users.signatureUrl)
+            )
+          )
+          .limit(1);
+        if (districtDtdo?.signatureUrl) {
+          dtdoSignatureUrl = districtDtdo.signatureUrl;
+        }
+      }
+
       res.json({
-        application: record.application,
+        application: { ...record.application, dtdoSignatureUrl },
         owner: record.owner?.id ? record.owner : null,
         documents: docList,
       });
@@ -143,7 +192,15 @@ export function createAdminLegacyRcRouter() {
         .select(legacySelection)
         .from(homestayApplications)
         .leftJoin(users, eq(users.id, homestayApplications.userId))
-        .where(and(eq(homestayApplications.id, id), like(homestayApplications.applicationNumber, `${LEGACY_RC_PREFIX}%`)))
+        .where(
+          and(
+            eq(homestayApplications.id, id),
+            or(
+              like(homestayApplications.applicationNumber, `${LEGACY_RC_PREFIX}%`),
+              like(homestayApplications.applicationNumber, "LG-HS-%")
+            )
+          )
+        )
         .limit(1);
 
       if (!existing) {

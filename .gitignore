@@ -14,11 +14,20 @@
 .DS_Store
 Thumbs.db
 
-# Large runtime data (keeping specific backups/deploy-packages as requested but ignoring generic ones if any)
+# Old stale folders (no longer needed in v1.3.0+)
+backups/
+deploy-packages/
+setup/
+
+# Large runtime data
 **/local-object-storage/
 **/tmp/
 **/logs/
 **/attached_assets/
+
+# PMD -HS heavy folders
+PMD -HS/archive/
+PMD -HS/Install_packs/
 
 # PM2 & Tools
 .pm2/

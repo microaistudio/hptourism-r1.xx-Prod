@@ -107,6 +107,16 @@ type RefundableRow = {
     district: string;
 };
 
+type OverpaidRow = {
+    applicationId: string;
+    applicationNumber: string;
+    ownerName: string;
+    district: string;
+    status: string;
+    totalCredit: number;
+    latestCreditDate: string;
+};
+
 type SummaryStats = {
     totalTransactions: number;
     successfulTransactions: number;
@@ -297,6 +307,23 @@ export default function PaymentReportsPage() {
             const res = await apiRequest("GET", `/api/admin/reports/refundable?${params.toString()}`);
             return res.json();
         },
+    });
+
+    // Overpaid report
+    const {
+        data: overpaidData,
+        isLoading: overpaidLoading,
+    } = useQuery<{ overpaid: OverpaidRow[] }>({
+        queryKey: ["reports-overpaid", selectedDistrict],
+        queryFn: async () => {
+            const params = new URLSearchParams();
+            if (selectedDistrict && selectedDistrict !== "all") {
+                params.set("district", selectedDistrict);
+            }
+            const res = await apiRequest("GET", `/api/admin/reports/overpaid?${params.toString()}`);
+            return res.json();
+        },
+        enabled: activeTab === "overpaid",
     });
 
     // Mark as Refunded Mutation
@@ -840,6 +867,13 @@ export default function PaymentReportsPage() {
                     >
                         Refundable
                         {refundableData?.summary?.count !== undefined && refundableData.summary.count > 0 && <Badge variant="secondary" className="ml-2">{refundableData.summary.count}</Badge>}
+                    </TabsTrigger>
+                    <TabsTrigger
+                        value="overpaid"
+                        className="rounded-none border-b-2 border-transparent data-[state=active]:border-indigo-600 data-[state=active]:bg-transparent data-[state=active]:text-indigo-600 px-3 py-3 font-medium text-slate-500 hover:text-slate-700 hover:bg-slate-50/50 transition-colors whitespace-nowrap"
+                    >
+                        Overpaid
+                        {(overpaidData?.overpaid?.length ?? 0) > 0 && <Badge variant="secondary" className="ml-2 bg-emerald-100 text-emerald-700">{overpaidData?.overpaid.length}</Badge>}
                     </TabsTrigger>
                     {!isDTDO && <TabsTrigger
                         value="performance"
@@ -1613,6 +1647,77 @@ export default function PaymentReportsPage() {
                         </Card>
                     </TabsContent>
                 )}
+
+                {/* Overpaid Tab */}
+                <TabsContent value="overpaid" className="mt-6">
+                    <Card className="border-slate-200">
+                        <CardHeader className="bg-emerald-50/50 border-b border-slate-200">
+                            <div className="flex justify-between items-center">
+                                <div>
+                                    <CardTitle>Overpaid Applications</CardTitle>
+                                    <CardDescription>
+                                        Applications that have accumulated an overpayment credit (e.g. from corrections).
+                                    </CardDescription>
+                                </div>
+                            </div>
+                        </CardHeader>
+                        <CardContent className="pt-6 p-0 md:p-6">
+                            {overpaidLoading ? (
+                                <div className="space-y-4">
+                                    <Skeleton className="h-10 w-full" />
+                                    <Skeleton className="h-20 w-full" />
+                                    <Skeleton className="h-20 w-full" />
+                                </div>
+                            ) : (
+                                <div className="rounded-md border border-slate-200 overflow-x-auto shadow-sm pb-10">
+                                    <Table>
+                                        <TableHeader className="bg-slate-50">
+                                            <TableRow>
+                                                <TableHead>Application Ref</TableHead>
+                                                <TableHead>Applicant Name</TableHead>
+                                                <TableHead>District</TableHead>
+                                                <TableHead>Status</TableHead>
+                                                <TableHead>Latest Credit Date</TableHead>
+                                                <TableHead className="text-right">Total Credit</TableHead>
+                                                <TableHead></TableHead>
+                                            </TableRow>
+                                        </TableHeader>
+                                        <TableBody>
+                                            {overpaidData?.overpaid.map((row) => (
+                                                <TableRow key={row.applicationId}>
+                                                    <TableCell className="font-medium">{row.applicationNumber}</TableCell>
+                                                    <TableCell>{row.ownerName}</TableCell>
+                                                    <TableCell>{row.district}</TableCell>
+                                                    <TableCell>
+                                                        <Badge variant="outline" className="capitalize">
+                                                            {row.status.replace(/_/g, " ")}
+                                                        </Badge>
+                                                    </TableCell>
+                                                    <TableCell>{row.latestCreditDate ? formatDateIST(new Date(row.latestCreditDate)) : 'N/A'}</TableCell>
+                                                    <TableCell className="text-right font-medium text-emerald-600">
+                                                        {formatCurrency(row.totalCredit)}
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        <Button variant="link" size="sm" onClick={() => window.open(`/applications/${row.applicationId}`, '_blank')}>
+                                                            View
+                                                        </Button>
+                                                    </TableCell>
+                                                </TableRow>
+                                            ))}
+                                            {(!overpaidData?.overpaid || overpaidData.overpaid.length === 0) && (
+                                                <TableRow>
+                                                    <TableCell colSpan={7} className="text-center py-8 text-slate-500">
+                                                        No overpaid applications found.
+                                                    </TableCell>
+                                                </TableRow>
+                                            )}
+                                        </TableBody>
+                                    </Table>
+                                </div>
+                            )}
+                        </CardContent>
+                    </Card>
+                </TabsContent>
 
                 <TabsContent value="drafts" className="mt-6">
                     <DraftApplicationsTable

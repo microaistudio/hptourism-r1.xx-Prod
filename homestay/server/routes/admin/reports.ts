@@ -5,6 +5,7 @@ import {
     homestayApplications,
     ddoCodes,
     users,
+    creditLedger,
 } from "@shared/schema";
 import { requireRole } from "../core/middleware";
 import { logger } from "../../logger";
@@ -70,7 +71,7 @@ export function createAdminReportsRouter() {
      */
     router.get(
         "/reports/collections",
-        requireRole("district_tourism_officer", "district_officer", "state_officer", "admin", "super_admin"),
+        requireRole("district_tourism_officer", "district_officer", "state_officer", "admin", "super_admin", "payment_officer"),
         async (req, res) => {
             try {
                 const userId = req.session.userId!;
@@ -180,7 +181,7 @@ export function createAdminReportsRouter() {
      */
     router.get(
         "/reports/payments",
-        requireRole("district_tourism_officer", "district_officer", "state_officer", "admin", "super_admin", "system_admin"),
+        requireRole("district_tourism_officer", "district_officer", "state_officer", "admin", "super_admin", "system_admin", "payment_officer"),
         async (req, res) => {
             try {
                 const userId = req.session.userId!;
@@ -295,7 +296,7 @@ export function createAdminReportsRouter() {
      */
     router.get(
         "/reports/refundable",
-        requireRole("district_tourism_officer", "district_officer", "state_officer", "admin", "super_admin"),
+        requireRole("district_tourism_officer", "district_officer", "state_officer", "admin", "super_admin", "payment_officer"),
         async (req, res) => {
             try {
                 const userId = req.session.userId!;
@@ -389,7 +390,7 @@ export function createAdminReportsRouter() {
      */
     router.get(
         "/reports/summary",
-        requireRole("district_tourism_officer", "district_officer", "state_officer", "admin", "super_admin"),
+        requireRole("district_tourism_officer", "district_officer", "state_officer", "admin", "super_admin", "payment_officer"),
         async (req, res) => {
             try {
                 const userId = req.session.userId!;
@@ -453,7 +454,7 @@ export function createAdminReportsRouter() {
      */
     router.get(
         "/reports/ddo-codes",
-        requireRole("district_tourism_officer", "district_officer", "state_officer", "admin", "super_admin", "system_admin"),
+        requireRole("district_tourism_officer", "district_officer", "state_officer", "admin", "super_admin", "system_admin", "payment_officer"),
         async (req, res) => {
             try {
                 const codes = await db
@@ -654,7 +655,7 @@ export function createAdminReportsRouter() {
      */
     router.get(
         "/reports/applications",
-        requireRole("district_tourism_officer", "district_officer", "state_officer", "admin", "super_admin"),
+        requireRole("district_tourism_officer", "district_officer", "state_officer", "admin", "super_admin", "payment_officer"),
         async (req, res) => {
             try {
                 const userId = req.session.userId!;
@@ -798,6 +799,54 @@ export function createAdminReportsRouter() {
             } catch (error: any) {
                 log.error({ err: error }, "[reports] Failed to fetch existing RC applications");
                 res.status(500).json({ message: "Failed to fetch existing RC data" });
+            }
+        }
+    );
+
+    /**
+     * GET /api/admin/reports/overpaid
+     * List applications with overpayment credits
+     */
+    router.get(
+        "/reports/overpaid",
+        requireRole("district_tourism_officer", "district_officer", "state_officer", "admin", "super_admin", "payment_officer"),
+        async (req, res) => {
+            try {
+                const userId = req.session.userId!;
+                const roleFilter = await getDistrictFilter(userId);
+
+                const conditions: any[] = [];
+                if (roleFilter && roleFilter.length > 0) {
+                    conditions.push(inArray(homestayApplications.district, roleFilter));
+                }
+
+                const results = await db
+                    .select({
+                        applicationId: homestayApplications.id,
+                        applicationNumber: homestayApplications.applicationNumber,
+                        ownerName: homestayApplications.ownerName,
+                        district: homestayApplications.district,
+                        status: homestayApplications.status,
+                        totalCredit: sql<number>`sum(${creditLedger.creditAmount}::numeric)::float`,
+                        latestCreditDate: sql<string>`max(${creditLedger.createdAt})::text`,
+                    })
+                    .from(creditLedger)
+                    .innerJoin(homestayApplications, eq(creditLedger.applicationId, homestayApplications.id))
+                    .where(and(eq(creditLedger.status, 'recorded'), ...(conditions.length > 0 ? conditions : [])))
+                    .groupBy(
+                        homestayApplications.id,
+                        homestayApplications.applicationNumber,
+                        homestayApplications.ownerName,
+                        homestayApplications.district,
+                        homestayApplications.status
+                    )
+                    .having(sql`sum(${creditLedger.creditAmount}::numeric) > 0`)
+                    .orderBy(desc(sql`max(${creditLedger.createdAt})`));
+
+                res.json({ overpaid: results });
+            } catch (error: any) {
+                log.error({ err: error }, "[reports] Failed to fetch overpaid applications");
+                res.status(500).json({ message: "Failed to fetch overpaid applications data" });
             }
         }
     );

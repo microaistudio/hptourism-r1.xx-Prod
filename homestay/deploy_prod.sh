@@ -33,7 +33,7 @@ sed -i 's/name: "hptourism-dev"/name: "hptourism-prod"/' "$CONFIG_FILE"
 sed -i 's/name: "hptourism-rc8"/name: "hptourism-prod"/' "$CONFIG_FILE"
 
 # Force Port = 5050
-sed -i 's/PORT: "5060"/PORT: "5050"/' "$CONFIG_FILE"
+sed -i 's/PORT: "5040"/PORT: "5050"/' "$CONFIG_FILE"
 
 echo "✅ Config updated: hptourism-prod (Port 5050)"
 

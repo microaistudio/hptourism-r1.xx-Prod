@@ -462,6 +462,8 @@ export default function AdminUsers() {
                       <SelectItem value="state_officer">State Officer</SelectItem>
                       <SelectItem value="admin">Admin</SelectItem>
                       <SelectItem value="admin_rc">Admin RC</SelectItem>
+                      <SelectItem value="payment_officer">Payment Officer</SelectItem>
+                      <SelectItem value="inspector">Inspector</SelectItem>
                       <SelectItem value="system_admin">System Admin</SelectItem>
                       <SelectItem value="super_admin">Super Admin</SelectItem>
                     </SelectContent>
@@ -821,6 +823,11 @@ export default function AdminUsers() {
                                   <SelectItem value="district_officer">District Officer</SelectItem>
                                   <SelectItem value="state_officer">State Officer</SelectItem>
                                   <SelectItem value="admin">Admin</SelectItem>
+                                  <SelectItem value="admin_rc">Admin RC</SelectItem>
+                                  <SelectItem value="payment_officer">Payment Officer</SelectItem>
+                                  <SelectItem value="inspector">Inspector</SelectItem>
+                                  <SelectItem value="system_admin">System Admin</SelectItem>
+                                  <SelectItem value="super_admin">Super Admin</SelectItem>
                                 </SelectContent>
                               </Select>
                             </TableCell>

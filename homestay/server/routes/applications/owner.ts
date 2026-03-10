@@ -1,7 +1,10 @@
 import express from "express";
 import { z } from "zod";
 import { randomUUID } from "crypto";
+import { eq, desc } from "drizzle-orm";
 import { requireAuth } from "../core/middleware";
+import { db } from "../../db";
+import { himkoshTransactions } from "@shared/schema";
 import { storage } from "../../storage";
 import { logger } from "../../logger";
 import { getUploadPolicy } from "../../services/uploadPolicy";
@@ -21,7 +24,10 @@ import { logApplicationAction } from "../../audit";
 import { linkDocumentToStorage } from "../../storageManifest";
 import { removeUndefined } from "../helpers/object";
 import type { HomestayApplication } from "@shared/schema";
+import { creditLedger } from "@shared/schema";
 import { CORRECTION_CONSENT_TEXT } from "../constants";
+import { recalculateFee, getCreditReason, describeFeeChange } from "@shared/fee-recalculator";
+import type { CategoryType as RecalcCategoryType, LocationType as RecalcLocationType } from "@shared/fee-calculator";
 
 const CORRECTION_RESUBMIT_TARGET = "dtdo"; // Enforce DTDO resubmission per final workflow
 
@@ -278,14 +284,26 @@ const sanitizeDraftForPersistence = (
     gstAmount: sNum(validatedData.gstAmount),
     formCompletionTimeSeconds: (() => {
       const val = sNum(validatedData.formCompletionTimeSeconds);
-      // Fix for overflow: If value > 2,000,000 (approx 23 days), it's likely a timestamp, not seconds.
-      // FIX_INTEGER_OVERFLOW_TIMESTAMP_CHECK
-      if (val && val > 2000000000) {
+      // Fix for overflow: If value > 86400 (24h), it's likely a timestamp, not seconds.
+      // Prevents PostgreSQL integer overflow (max ~2.1B) from Date.now() values.
+      if (val && val > 86400) {
         return 0;
       }
       return val;
     })(),
   };
+
+  // V4 Safety Valve: Force-clamp ANY integer overflow in the entire object
+  // This catches cases where frontend sends timestamps (e.g. in currentPage) that pass through schema checks.
+  // We iterate over all keys and if any number > 2.1B is found, we clamp it to 0.
+  // Exception: formCompletionTimeSeconds is allowed huge if it's bigint content, but here it's already sanitized above.
+  for (const key in result) {
+    const val = (result as any)[key];
+    if (typeof val === 'number' && val > 2100000000) {
+      // console.log(`[sanitize] Clamping overflow in field '${key}':`, val);
+      (result as any)[key] = 0;
+    }
+  }
 
   return removeUndefinedKeys(result);
 };
@@ -1007,6 +1025,27 @@ export function createOwnerApplicationsRouter({ getRoomRateBandsSetting }: Owner
         });
       }
 
+      // PAYMENT GUARDRAIL: Block submission if payment was initiated but not completed
+      if (existingApp) {
+        const [latestTxn] = await db
+          .select({
+            id: himkoshTransactions.id,
+            transactionStatus: himkoshTransactions.transactionStatus,
+          })
+          .from(himkoshTransactions)
+          .where(eq(himkoshTransactions.applicationId, existingApp.id))
+          .orderBy(desc(himkoshTransactions.createdAt))
+          .limit(1);
+
+        if (latestTxn && !['success', 'verified'].includes(latestTxn.transactionStatus ?? '')) {
+          // Payment was initiated but not confirmed — block submission
+          return res.status(402).json({
+            message: "Payment is pending. Please complete the HimKosh payment before submitting. If you have already paid, please wait for verification or contact support.",
+            paymentPending: true,
+          });
+        }
+      }
+
       const { tehsil: resolvedTehsilValue, tehsilOther: resolvedTehsilOther } = resolveTehsilFields(
         validatedData.tehsil,
         validatedData.tehsilOther,
@@ -1513,23 +1552,137 @@ export function createOwnerApplicationsRouter({ getRoomRateBandsSetting }: Owner
       const targetStatus =
         CORRECTION_RESUBMIT_TARGET === "dtdo" ? "dtdo_review" : "under_scrutiny";
 
+      // v1.3.0: Fee recalculation for category/term corrections
+      let feeRecalcResult: ReturnType<typeof recalculateFee> | null = null;
+      let supplementaryPaymentNeeded = false;
+      const pendingCorrection = application.pendingCorrectionType;
+
+      if (pendingCorrection === 'category_correction' || pendingCorrection === 'payment_term_correction' || pendingCorrection === 'location_type_correction') {
+        // Determine what changed
+        const newCategory = (normalizedUpdate.category as string || application.category) as RecalcCategoryType;
+        const newValidityYears = (normalizedUpdate.certificateValidityYears as number || application.certificateValidityYears || 1) as 1 | 3;
+        const oldCategory = (application.previousCategory || application.category) as RecalcCategoryType;
+        const oldValidityYears = (application.previousValidityYears || application.certificateValidityYears || 1) as 1 | 3;
+        const oldTotalFee = Number(application.previousTotalFee || application.totalFee || 0);
+
+        // Use updated values if the applicant changed them (e.g. GP ↔ MC zone correction)
+        const resolvedLocationType = (normalizedUpdate.locationType as string || application.locationType || 'gp') as RecalcLocationType;
+        const resolvedOwnerGender = (normalizedUpdate.ownerGender as string || application.ownerGender || 'male') as 'male' | 'female' | 'other';
+        const resolvedIsPangi = normalizedUpdate.isPangiSubDivision !== undefined
+          ? normalizedUpdate.isPangiSubDivision as boolean
+          : (application.isPangiSubDivision ?? false);
+
+        feeRecalcResult = recalculateFee({
+          oldCategory,
+          oldValidityYears,
+          oldTotalFee,
+          newCategory,
+          newValidityYears,
+          locationType: resolvedLocationType,
+          ownerGender: resolvedOwnerGender,
+          isPangiSubDivision: resolvedIsPangi,
+        });
+
+        ownerLog.info({
+          applicationId: id,
+          correctionType: pendingCorrection,
+          oldCategory,
+          newCategory,
+          oldValidityYears,
+          newValidityYears,
+          oldTotalFee,
+          newTotalFee: feeRecalcResult.newTotalFee,
+          delta: feeRecalcResult.feeDelta,
+          isUpgrade: feeRecalcResult.isUpgrade,
+          isDowngrade: feeRecalcResult.isDowngrade,
+        }, "[correction] Fee recalculation completed");
+
+        // If new fee > old fee, applicant needs supplementary payment
+        if (feeRecalcResult.isUpgrade) {
+          supplementaryPaymentNeeded = true;
+          // Update fee fields on the application but DON'T proceed to payment_pending yet
+          // The supplementary payment flow will be handled separately
+          normalizedUpdate.totalFee = feeRecalcResult.newTotalFee.toString();
+          normalizedUpdate.baseFee = feeRecalcResult.newFeeBreakdown.baseFee.toString();
+          normalizedUpdate.totalBeforeDiscounts = feeRecalcResult.newFeeBreakdown.totalBeforeDiscounts.toString();
+          normalizedUpdate.validityDiscount = feeRecalcResult.newFeeBreakdown.validityDiscount.toString();
+          normalizedUpdate.femaleOwnerDiscount = feeRecalcResult.newFeeBreakdown.femaleOwnerDiscount.toString();
+          normalizedUpdate.pangiDiscount = feeRecalcResult.newFeeBreakdown.pangiDiscount.toString();
+          normalizedUpdate.totalDiscount = feeRecalcResult.newFeeBreakdown.totalDiscount.toString();
+        }
+
+        // If new fee < old fee, record a credit (silently)
+        if (feeRecalcResult.isDowngrade) {
+          try {
+            await db.insert(creditLedger).values({
+              applicationId: id,
+              userId: application.userId,
+              reason: getCreditReason(feeRecalcResult.categoryChanged, feeRecalcResult.validityYearsChanged),
+              previousFee: oldTotalFee.toString(),
+              newFee: feeRecalcResult.newTotalFee.toString(),
+              creditAmount: feeRecalcResult.creditAmount.toString(),
+              status: 'recorded', // Silent ledger - not applied until policy is defined
+              notes: describeFeeChange(feeRecalcResult, {
+                oldCategory,
+                newCategory,
+                oldValidityYears,
+                newValidityYears,
+                oldTotalFee,
+                locationType: (application.locationType || 'gp') as RecalcLocationType,
+                ownerGender: (application.ownerGender || 'male') as 'male' | 'female' | 'other',
+                isPangiSubDivision: application.isPangiSubDivision ?? false,
+              }),
+              createdBy: userId,
+            });
+            ownerLog.info({ applicationId: id, creditAmount: feeRecalcResult.creditAmount },
+              "[correction] Credit ledger entry created for overpayment");
+          } catch (creditError) {
+            ownerLog.error({ err: creditError, applicationId: id },
+              "[correction] Failed to create credit ledger entry - continuing with correction");
+          }
+
+          // Update fee fields for the downgraded values
+          normalizedUpdate.totalFee = feeRecalcResult.newTotalFee.toString();
+          normalizedUpdate.baseFee = feeRecalcResult.newFeeBreakdown.baseFee.toString();
+          normalizedUpdate.totalBeforeDiscounts = feeRecalcResult.newFeeBreakdown.totalBeforeDiscounts.toString();
+          normalizedUpdate.validityDiscount = feeRecalcResult.newFeeBreakdown.validityDiscount.toString();
+          normalizedUpdate.femaleOwnerDiscount = feeRecalcResult.newFeeBreakdown.femaleOwnerDiscount.toString();
+          normalizedUpdate.pangiDiscount = feeRecalcResult.newFeeBreakdown.pangiDiscount.toString();
+          normalizedUpdate.totalDiscount = feeRecalcResult.newFeeBreakdown.totalDiscount.toString();
+        }
+      }
+
       const updatedApplication = await storage.updateApplication(id, {
         ...normalizedUpdate,
-        status: targetStatus,
+        status: supplementaryPaymentNeeded ? 'payment_pending' : targetStatus,
         submittedAt: new Date(),
         clarificationRequested: null,
         dtdoRemarks: null,
         districtNotes: null,
         correctionSubmissionCount: nextCorrectionCount,
+        pendingCorrectionType: null, // Clear the correction tag after processing
       } as Partial<HomestayApplication>);
+
+      const correctionFeedback = feeRecalcResult
+        ? `${CORRECTION_CONSENT_TEXT} (cycle ${nextCorrectionCount}) — ${describeFeeChange(feeRecalcResult, {
+          oldCategory: (application.previousCategory || application.category) as RecalcCategoryType,
+          newCategory: (normalizedUpdate.category as string || application.category) as RecalcCategoryType,
+          oldValidityYears: (application.previousValidityYears || application.certificateValidityYears || 1) as 1 | 3,
+          newValidityYears: (normalizedUpdate.certificateValidityYears as number || application.certificateValidityYears || 1) as 1 | 3,
+          oldTotalFee: Number(application.previousTotalFee || application.totalFee || 0),
+          locationType: (application.locationType || 'gp') as RecalcLocationType,
+          ownerGender: (application.ownerGender || 'male') as 'male' | 'female' | 'other',
+          isPangiSubDivision: application.isPangiSubDivision ?? false,
+        })}`
+        : `${CORRECTION_CONSENT_TEXT} (cycle ${nextCorrectionCount})`;
 
       await logApplicationAction({
         applicationId: id,
         actorId: userId,
         action: "correction_resubmitted",
         previousStatus: application.status,
-        newStatus: targetStatus,
-        feedback: `${CORRECTION_CONSENT_TEXT} (cycle ${nextCorrectionCount})`,
+        newStatus: supplementaryPaymentNeeded ? 'payment_pending' : targetStatus,
+        feedback: correctionFeedback,
       });
 
       if (normalizedDocuments) {

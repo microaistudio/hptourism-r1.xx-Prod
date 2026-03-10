@@ -2,6 +2,7 @@ import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import { config } from "@shared/config";
+import { startReconciliationCron, stopReconciliationCron } from "./himkosh/reconciliation";
 import { httpLogger, logger } from "./logger";
 import { globalRateLimiter } from "./security/rateLimit";
 import helmet from "helmet";
@@ -129,8 +130,17 @@ app.use(globalRateLimiter);
 
 app.use(httpLogger);
 
+console.log("======================================");
+console.log(">>> V10 LOADED: SAFE CLAMP (no string clamping) <<<");
+console.log("======================================");
+
 (async () => {
   const server = await registerRoutes(app);
+
+  // Start payment reconciliation cron (Layer 1)
+  startReconciliationCron().catch(err =>
+    logger.error({ err }, '[server] Failed to start reconciliation cron'),
+  );
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
@@ -212,6 +222,9 @@ app.use(httpLogger);
     if (shuttingDown) return; // prevent double-shutdown
     shuttingDown = true;
     logger.info({ signal }, "[server] received shutdown signal, closing gracefully...");
+
+    // Stop reconciliation cron
+    stopReconciliationCron();
 
     // Stop accepting new connections
     server.close((err) => {

@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -108,8 +109,21 @@ interface ExtendedProductionStats extends ProductionStats {
 
 export default function AnalyticsPage() {
   const [, setLocation] = useLocation();
+
+  // Read the form threshold from localStorage to keep it synced with Reports & Insights
+  const [formThreshold, setFormThreshold] = useState<string>(() => {
+    return localStorage.getItem("formThreshold") || "240";
+  });
+
   const { data, isLoading, error } = useQuery<AnalyticsData>({
-    queryKey: ["/api/analytics/dashboard"],
+    queryKey: ["/api/analytics/dashboard", formThreshold],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (formThreshold) params.set("formThreshold", formThreshold);
+      const res = await fetch(`/api/analytics/dashboard?${params.toString()}`);
+      if (!res.ok) throw new Error("Failed to fetch analytics");
+      return res.json();
+    },
     retry: false,
   });
 
@@ -533,7 +547,7 @@ export default function AnalyticsPage() {
                       return `${m}m ${sec}s`;
                     })()}
                   </div>
-                  <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Avg Form Fill Time</p>
+                  <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Median Form Fill Time</p>
                 </div>
               </CardContent>
             </Card>

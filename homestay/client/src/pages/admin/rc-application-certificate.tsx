@@ -72,7 +72,7 @@ export default function AdminRcApplicationCertificate() {
     }
     setIsGenerating(true);
     try {
-      generateCertificatePDF(application, certificateFormat);
+      await generateCertificatePDF(application, certificateFormat);
       if (!application.certificateNumber) {
         toast({
           title: "Blank certificate downloaded",

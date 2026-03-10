@@ -1,13 +1,13 @@
 {
   "name": "hptourism-homestay",
-  "version": "1.1.6",
+  "version": "1.3.0",
   "private": true,
   "type": "module",
   "description": "HP Tourism Homestay Portal - v1.1.6 - Drizzle Timestamp Fix",
   "license": "MIT",
   "scripts": {
     "dev": "PORT=${PORT:-5057} NODE_ENV=development tsx server/index.ts",
-    "build": "vite build && esbuild server/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist && esbuild server/seed.ts --platform=node --packages=external --bundle --format=esm --outfile=dist/seed.js && esbuild scripts/patch-baseline.ts --platform=node --packages=external --bundle --format=esm --outfile=dist/patch-baseline.js && esbuild scripts/check-schema.ts --platform=node --packages=external --bundle --format=esm --outfile=dist/check-schema.js && esbuild scripts/manual-resolve-payment.ts --platform=node --packages=external --bundle --format=esm --outfile=dist/manual-resolve-payment.js && cp server/himkosh/echallan.key dist/echallan.key 2>/dev/null || :",
+    "build": "vite build && esbuild server/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist && esbuild server/seed.ts --platform=node --packages=external --bundle --format=esm --outfile=dist/seed.js && esbuild scripts/patch-baseline.ts --platform=node --packages=external --bundle --format=esm --outfile=dist/patch-baseline.js && esbuild scripts/check-schema.ts --platform=node --packages=external --bundle --format=esm --outfile=dist/check-schema.js && esbuild scripts/manual-resolve-payment.ts --platform=node --packages=external --bundle --format=esm --outfile=dist/manual-resolve-payment.js && esbuild scripts/migrate-v1.3.0.ts --platform=node --packages=external --bundle --format=esm --outfile=dist/migrate-v1.3.0.js && cp server/himkosh/echallan.key dist/echallan.key 2>/dev/null || :",
     "start": "NODE_ENV=production node dist/index.js",
     "pm2:start": "pm2 start ecosystem.config.cjs",
     "pm2:stop": "pm2 stop hptourism-rc7 || true",

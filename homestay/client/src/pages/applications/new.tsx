@@ -1087,16 +1087,26 @@ export default function NewApplication() {
   }, [isCorrectionMode, activeCorrectionApplication, navigate, toast]);
 
   useEffect(() => {
-    // Corrections mode: always go to documents step when data loads
+    // Corrections mode: navigate to the appropriate step based on correction type
     if (isCorrectionMode && activeCorrectionApplication && !hasAutoNavigatedToDocuments.current) {
       // Only navigate if status is valid for corrections
       const status = activeCorrectionApplication.status ?? '';
       if (!CORRECTION_REQUIRED_STATUSES.includes(status)) {
         return;
       }
+
+      const correctionType = activeCorrectionApplication.pendingCorrectionType;
+      let targetStep = 5; // Default to Documents for general corrections
+
+      if (correctionType === 'location_type_correction') {
+        targetStep = 1; // Property Details (where GP/MC is)
+      } else if (correctionType === 'category_correction' || correctionType === 'payment_term_correction') {
+        targetStep = 3; // Rooms & Category
+      }
+
       hasAutoNavigatedToDocuments.current = true;
-      setStep(5);
-      setMaxStepReached(5);
+      setStep(targetStep);
+      setMaxStepReached(Math.max(5, targetStep)); // Allow them to reach final step
       return;
     }
 
@@ -2484,12 +2494,16 @@ export default function NewApplication() {
         currentPage: step, // Save the current page/step for resume functionality
         documents: documentsPayload,
         // Analytics: Save timer to draft
-        formCompletionTimeSeconds:
-          timerRef.current ||
-          parseInt(
-            localStorage.getItem(`hptourism_timer_${draftId || sessionInstanceId}`) || "0",
-            10,
-          ),
+        formCompletionTimeSeconds: (() => {
+          const raw =
+            timerRef.current ||
+            parseInt(
+              localStorage.getItem(`hptourism_timer_${draftId || sessionInstanceId}`) || "0",
+              10,
+            );
+          // Safety: if value > 86400 (24h) it's likely a timestamp, not seconds
+          return raw > 86400 ? 0 : raw;
+        })(),
       };
 
       if (draftId) {
@@ -2775,12 +2789,16 @@ export default function NewApplication() {
         submittedAt: new Date().toISOString(),
         documents: documentsPayload,
         // Analytics: Time spent filling the form
-        formCompletionTimeSeconds:
-          timerRef.current ||
-          parseInt(
-            localStorage.getItem(`hptourism_timer_${draftId || sessionInstanceId}`) || "0",
-            10,
-          ),
+        formCompletionTimeSeconds: (() => {
+          const raw =
+            timerRef.current ||
+            parseInt(
+              localStorage.getItem(`hptourism_timer_${draftId || sessionInstanceId}`) || "0",
+              10,
+            );
+          // Safety: if value > 86400 (24h) it's likely a timestamp, not seconds
+          return raw > 86400 ? 0 : raw;
+        })(),
       };
 
       const response = await apiRequest("POST", "/api/applications", payload);
@@ -2790,6 +2808,21 @@ export default function NewApplication() {
       queryClient.invalidateQueries({ queryKey: ["/api/applications"] });
       // Clear timer from localStorage after successful submission
       clearApplicationTimer(draftId || sessionInstanceId);
+
+      // v1.3.0: If correction resubmission resulted in payment_pending (supplementary payment),
+      // redirect directly to the payment page so the user doesn't need to navigate there manually
+      const resultStatus = data?.application?.status || data?.status;
+      const resultId = data?.application?.id || correctionId;
+
+      if (isCorrectionMode && resultStatus === 'payment_pending' && resultId) {
+        toast({
+          title: "Corrections accepted — supplementary payment required",
+          description: "Your category/term was updated. Please complete the supplementary payment to proceed.",
+        });
+        setLocation(`/applications/${resultId}/payment-himkosh`);
+        return;
+      }
+
       toast({
         title: isCorrectionMode ? "Application resubmitted successfully!" : "Application submitted successfully!",
         description: isCorrectionMode

@@ -86,7 +86,7 @@ export default function DADashboard() {
   const [activeStage, setActiveStage] = useState("new-queue");
   const [activePill, setActivePill] = useState("new-queue-new");
   const [sortOrder, setSortOrder] = useState<SortOrder>("newest");
-  const [completedRange, setCompletedRange] = useState<"month" | "30d">("month");
+  const [completedRange, setCompletedRange] = useState<"all" | "month" | "30d">("all");
   const [amendmentSubType, setAmendmentSubType] = useState<"all" | "add_room" | "delete_room" | "upgrade_category">("all");
   const queryClient = useQueryClient();
   const [, setLocation] = useLocation();
@@ -397,6 +397,7 @@ export default function DADashboard() {
 
   const completedRangeFilter = useCallback(
     (date?: string | Date | null) => {
+      if (completedRange === "all") return true;
       if (!date) return false;
       const dt = date instanceof Date ? date : new Date(date);
       if (Number.isNaN(dt.getTime())) return false;
@@ -600,7 +601,7 @@ export default function DADashboard() {
         key: "completed",
         title: "Completed",
         description:
-          completedRange === "month" ? "Decisions recorded this month." : "Decisions in the last 30 days.",
+          completedRange === "all" ? "All decisions recorded." : completedRange === "month" ? "Decisions recorded this month." : "Decisions in the last 30 days.",
         icon: CheckCircle,
         summary: stageSummaries.completed,
         pills: [
@@ -768,14 +769,15 @@ export default function DADashboard() {
                 <div onClick={(e) => e.stopPropagation()}>
                   <Select
                     value={completedRange}
-                    onValueChange={(v: "month" | "30d") => setCompletedRange(v)}
+                    onValueChange={(v: "all" | "month" | "30d") => setCompletedRange(v)}
                   >
                     <SelectTrigger className="h-5 text-[10px] w-fit gap-1 bg-transparent border-0 p-0 text-muted-foreground hover:text-foreground focus:ring-0">
                       <span className="truncate">
-                        {completedRange === "month" ? "Decisions this month" : "Decisions last 30 days"}
+                        {completedRange === "all" ? "All decisions" : completedRange === "month" ? "Decisions this month" : "Decisions last 30 days"}
                       </span>
                     </SelectTrigger>
                     <SelectContent>
+                      <SelectItem value="all">All time</SelectItem>
                       <SelectItem value="month">This month</SelectItem>
                       <SelectItem value="30d">Last 30 days</SelectItem>
                     </SelectContent>

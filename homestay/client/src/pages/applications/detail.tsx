@@ -339,6 +339,34 @@ export default function ApplicationDetail() {
     }
   }, [app?.id, app?.status, setLocation, shouldAutoOpenCorrections]);
 
+  // ─── Layer 2: On-Page-Load Reconciliation ───
+  // Fire-and-forget background check for stuck payments
+  useEffect(() => {
+    // Only check if it's potentially stuck waiting for payment
+    if (app?.id && (app?.status === 'payment_pending' || app?.paymentStatus === 'pending' || app?.status === 'inspection_completed')) {
+      const timer = setTimeout(() => {
+        apiRequest("POST", `/api/himkosh/reconcile/${app.id}`).then(async (res) => {
+          if (res.ok) {
+            const data = await res.json();
+            if (data && data.action === 'verified') {
+              // Let the user know we found their payment
+              toast({
+                title: "Payment Verified",
+                description: "We've automatically synced and verified your payment from the HimKosh treasury.",
+              });
+              // Refresh data to show UI changes
+              queryClient.invalidateQueries({ queryKey: ["/api/applications", app.id] });
+              queryClient.invalidateQueries({ queryKey: ["/api/applications"] });
+            }
+          }
+        }).catch(() => {
+          // Ignore errors silently — firewall will block this on PROD until fixed
+        });
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [app?.id, app?.status, app?.paymentStatus, toast]);
+
   if (isLoading) {
     return (
       <div className="bg-background flex items-center justify-center">
@@ -376,7 +404,7 @@ export default function ApplicationDetail() {
     }
     setIsGeneratingCertificate(true);
     try {
-      generateCertificatePDF(app, certificateFormat);
+      await generateCertificatePDF(app, certificateFormat);
     } catch (error) {
       toast({
         title: "Download failed",
@@ -2171,6 +2199,17 @@ export default function ApplicationDetail() {
                     <span>Total Payable</span>
                     <span className="text-primary" data-testid="text-total">₹{Number(app.totalFee ?? app.baseFee).toFixed(2)}</span>
                   </div>
+                  {!isPropertyOwner && (app as any).totalCredit > 0 && (
+                    <div className="pt-2 mt-2 border-t border-dashed border-emerald-200 flex flex-col gap-1">
+                      <div className="flex justify-between font-semibold text-emerald-700">
+                        <span>Overpayment Credit</span>
+                        <span data-testid="text-credit">₹{Number((app as any).totalCredit).toFixed(2)}</span>
+                      </div>
+                      <span className="text-xs text-emerald-600 font-normal">
+                        Generated from previous correction. Pending policy definition.
+                      </span>
+                    </div>
+                  )}
                   <p className="text-xs text-muted-foreground">
                     HP Tourism Policy 2025 collects a single consolidated fee (no per-room add-ons or GST line items).
                   </p>

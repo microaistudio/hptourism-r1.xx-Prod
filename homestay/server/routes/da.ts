@@ -5,7 +5,7 @@ import { logger } from "../logger";
 import { logApplicationAction } from "../audit";
 import { queueNotification } from "../services/notifications";
 import { requireRole } from "./core/middleware";
-import { buildDistrictWhereClause } from "./helpers/district";
+import { buildDistrictWhereClause, buildSplitDistrictWhereClause } from "./helpers/district";
 import { getLegacyForwardEnabled } from "./helpers/legacy";
 import { fetchApplicationWithOwner } from "./helpers/application";
 import {
@@ -23,7 +23,7 @@ import {
     DEFAULT_MAX_REVERT_COUNT,
 } from "@shared/appSettings";
 import { isLegacyApplication as isLegacyApplicationRecord } from "@shared/legacy";
-import { desc, eq, and, inArray, or, ne, ilike, isNull } from "drizzle-orm";
+import { desc, eq, and, inArray, or, ne, not, ilike, isNull } from "drizzle-orm";
 
 const routeLog = logger.child({ module: "routes/da" });
 
@@ -38,51 +38,8 @@ export function registerDaRoutes(router: Router) {
                 return res.status(400).json({ message: "DA must be assigned to a district" });
             }
 
-            // Custom Routing Logic for Group B (Merged) and Group C (Split) Pipelines
-            let districtCondition;
-            const districtLower = user.district.toLowerCase();
-
-            if (districtLower.includes('pangi')) {
-                // Group C: Pangi Pipeline (Chamba district, Pangi tehsil)
-                districtCondition = and(
-                    ilike(homestayApplications.district, '%chamba%'),
-                    ilike(homestayApplications.tehsil, '%pangi%')
-                );
-            } else if (districtLower.includes('kaza')) {
-                // Group C: Kaza Pipeline (Lahaul-Spiti district, Spiti tehsil)
-                // Note: We check 'kaza' specifically. 'spiti' matches 'Lahaul and Spiti' district name.
-                districtCondition = and(
-                    ilike(homestayApplications.district, '%lahaul%'),
-                    ilike(homestayApplications.tehsil, '%spiti%')
-                );
-            } else if (districtLower.includes('lahaul')) {
-                // Group C: Lahaul Main Pipeline (Lahaul-Spiti district EXCLUDING Spiti)
-                districtCondition = and(
-                    ilike(homestayApplications.district, '%lahaul%'),
-                    or(not(ilike(homestayApplications.tehsil, '%spiti%')), isNull(homestayApplications.tehsil)) // Exclude ANY match for Spiti
-                );
-            } else if (districtLower.includes('chamba')) {
-                // Group C: Chamba Main Pipeline (Chamba district EXCLUDING Pangi)
-                districtCondition = and(
-                    ilike(homestayApplications.district, '%chamba%'),
-                    or(not(ilike(homestayApplications.tehsil, '%pangi%')), isNull(homestayApplications.tehsil)) // Exclude ANY match for Pangi
-                );
-            } else if (districtLower.includes('hamirpur')) {
-                // Group B: Hamirpur Pipeline (Hamirpur + Una)
-                districtCondition = or(
-                    ilike(homestayApplications.district, '%hamirpur%'),
-                    ilike(homestayApplications.district, '%una%')
-                );
-            } else if (districtLower.includes('bilaspur') || districtLower.includes('mandi')) {
-                // Group B: Bilaspur Pipeline (Bilaspur + Mandi)
-                districtCondition = or(
-                    ilike(homestayApplications.district, '%bilaspur%'),
-                    ilike(homestayApplications.district, '%mandi%')
-                );
-            } else {
-                // Group A: Standard Pipelines (Single District)
-                districtCondition = buildDistrictWhereClause(homestayApplications.district, user.district);
-            }
+            // Custom Routing Logic for Group B (Merged) and Group C (Split) Pipelines handled by helper
+            const districtCondition = buildSplitDistrictWhereClause(user.district);
 
             // Get all draft applications from this DA's district
             const incompleteApplications = await db
@@ -129,51 +86,8 @@ export function registerDaRoutes(router: Router) {
                 return res.status(400).json({ message: "DA must be assigned to a district" });
             }
 
-            // Custom Routing Logic for Group B (Merged) and Group C (Split) Pipelines
-            let districtCondition;
-            const districtLower = user.district.toLowerCase();
-
-            if (districtLower.includes('pangi')) {
-                // Group C: Pangi Pipeline (Chamba district, Pangi tehsil)
-                districtCondition = and(
-                    ilike(homestayApplications.district, '%chamba%'),
-                    ilike(homestayApplications.tehsil, '%pangi%')
-                );
-            } else if (districtLower.includes('kaza')) {
-                // Group C: Kaza Pipeline (Lahaul-Spiti district, Spiti tehsil)
-                // Note: We check 'kaza' specifically. 'spiti' matches 'Lahaul and Spiti' district name.
-                districtCondition = and(
-                    ilike(homestayApplications.district, '%lahaul%'),
-                    ilike(homestayApplications.tehsil, '%spiti%')
-                );
-            } else if (districtLower.includes('lahaul')) {
-                // Group C: Lahaul Main Pipeline (Lahaul-Spiti district EXCLUDING Spiti)
-                districtCondition = and(
-                    ilike(homestayApplications.district, '%lahaul%'),
-                    or(not(ilike(homestayApplications.tehsil, '%spiti%')), isNull(homestayApplications.tehsil)) // Exclude ANY match for Spiti
-                );
-            } else if (districtLower.includes('chamba')) {
-                // Group C: Chamba Main Pipeline (Chamba district EXCLUDING Pangi)
-                districtCondition = and(
-                    ilike(homestayApplications.district, '%chamba%'),
-                    or(not(ilike(homestayApplications.tehsil, '%pangi%')), isNull(homestayApplications.tehsil))
-                );
-            } else if (districtLower.includes('hamirpur')) {
-                // Group B: Hamirpur Pipeline (Hamirpur + Una)
-                districtCondition = or(
-                    ilike(homestayApplications.district, '%hamirpur%'),
-                    ilike(homestayApplications.district, '%una%')
-                );
-            } else if (districtLower.includes('bilaspur') || districtLower.includes('mandi')) {
-                // Group B: Bilaspur Pipeline (Bilaspur + Mandi)
-                districtCondition = or(
-                    ilike(homestayApplications.district, '%bilaspur%'),
-                    ilike(homestayApplications.district, '%mandi%')
-                );
-            } else {
-                // Group A: Standard Pipelines (Single District)
-                districtCondition = buildDistrictWhereClause(homestayApplications.district, user.district);
-            }
+            // Custom Routing Logic handled by helper
+            const districtCondition = buildSplitDistrictWhereClause(user.district);
 
             // Get all applications from this DA's district ordered by most recent
             const allApplications = await db

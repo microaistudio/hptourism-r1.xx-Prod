@@ -190,15 +190,24 @@ export default function HimKoshPaymentPage() {
     !!latestTransaction && !FINAL_TRANSACTION_STATES.has(transactionStatus ?? "");
   // For draft applications, we only consider it "succeeded" if the app status moved out of draft.
   // Otherwise, even if we have a success txn, we might need to retry (e.g. callback failed).
+  // v1.3.0: Supplementary payment detection
+  // If application has previousTotalFee set, this is a correction-driven supplementary payment
+  const totalFee = Number.parseFloat(application?.totalFee ?? "0") || 0;
+  const previousTotalFee = Number.parseFloat((application as any)?.previousTotalFee ?? '0') || 0;
+  const isSupplementaryPayment = previousTotalFee > 0 && totalFee > previousTotalFee;
+  const supplementaryAmount = isSupplementaryPayment ? totalFee - previousTotalFee : 0;
+
+  // For supplementary payments, treat prior payment as completed for the OLD amount
+  // but allow a NEW payment for the delta
   const paymentSucceeded =
-    (transactionStatus === "success" || transactionStatus === "verified") &&
-    applicationStatus !== "draft";
-  const paymentFailed = transactionStatus === "failed";
+    (transactionStatus === 'success' || transactionStatus === 'verified') &&
+    applicationStatus !== 'draft' &&
+    !isSupplementaryPayment; // Don't block if supplementary payment is needed
+  const paymentFailed = transactionStatus === 'failed';
 
   const showTestMode = !!paymentData?.isTestMode;
 
-  const totalFee = Number.parseFloat(application?.totalFee ?? "0") || 0;
-  const referenceAmount = paymentData?.actualAmount ?? totalFee;
+  const referenceAmount = paymentData?.actualAmount ?? (isSupplementaryPayment ? supplementaryAmount : totalFee);
   const gatewayAmount = paymentData?.totalAmount ?? referenceAmount;
 
   const statusMeta = useMemo(
@@ -536,6 +545,18 @@ export default function HimKoshPaymentPage() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-3">
+                {/* v1.3.0: Supplementary payment banner */}
+                {isSupplementaryPayment && (
+                  <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg mb-2">
+                    <div className="text-sm font-medium text-amber-800 flex items-center gap-2">
+                      <AlertTriangle className="h-4 w-4" />
+                      Supplementary Payment Required
+                    </div>
+                    <p className="text-xs text-amber-700 mt-1">
+                      Your application category/term was corrected. The fee difference below needs to be paid.
+                    </p>
+                  </div>
+                )}
                 <div className="flex justify-between items-center">
                   <span className="text-sm text-muted-foreground">Category</span>
                   <Badge variant="outline" className="uppercase">
@@ -554,57 +575,79 @@ export default function HimKoshPaymentPage() {
                   </Badge>
                 </div>
                 <Separator />
-                <div className="flex justify-between items-center">
-                  <span className="text-sm">Base Fee (Annual)</span>
-                  <span>₹{Number.parseFloat(application.baseFee || "0").toLocaleString("en-IN")}</span>
-                </div>
-                {application.certificateValidityYears && application.certificateValidityYears > 1 && (
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm">
-                      Total for {application.certificateValidityYears} Years
-                    </span>
-                    <span>
-                      ₹{Number.parseFloat(application.totalBeforeDiscounts || "0").toLocaleString("en-IN")}
-                    </span>
-                  </div>
-                )}
-                {Number.parseFloat(application.totalDiscount || "0") > 0 && (
+                {isSupplementaryPayment ? (
+                  /* Supplementary payment: show old fee, new fee, and delta */
                   <>
-                    <Separator />
-                    <div className="text-xs font-medium text-muted-foreground">
-                      Discounts Applied:
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-muted-foreground">Previous Fee (Already Paid)</span>
+                      <span className="text-muted-foreground">₹{previousTotalFee.toLocaleString("en-IN")}</span>
                     </div>
-                    {Number.parseFloat(application.validityDiscount || "0") > 0 && (
-                      <div className="flex justify-between items-center text-green-600">
-                        <span className="text-sm">3-Year Lump Sum (10%)</span>
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm">New Total Fee</span>
+                      <span>₹{totalFee.toLocaleString("en-IN")}</span>
+                    </div>
+                    <Separator />
+                    <div className="flex justify-between items-center text-base font-semibold text-amber-700">
+                      <span>Supplementary Payment Due</span>
+                      <span>₹{supplementaryAmount.toLocaleString("en-IN")}</span>
+                    </div>
+                  </>
+                ) : (
+                  /* Normal payment: show full breakdown */
+                  <>
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm">Base Fee (Annual)</span>
+                      <span>₹{Number.parseFloat(application.baseFee || "0").toLocaleString("en-IN")}</span>
+                    </div>
+                    {application.certificateValidityYears && application.certificateValidityYears > 1 && (
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm">
+                          Total for {application.certificateValidityYears} Years
+                        </span>
                         <span>
-                          -₹{Number.parseFloat(application.validityDiscount || "0").toLocaleString("en-IN")}
+                          ₹{Number.parseFloat(application.totalBeforeDiscounts || "0").toLocaleString("en-IN")}
                         </span>
                       </div>
                     )}
-                    {Number.parseFloat(application.femaleOwnerDiscount || "0") > 0 && (
-                      <div className="flex justify-between items-center text-green-600">
-                        <span className="text-sm">Women Entrepreneur (5%)</span>
-                        <span>
-                          -₹{Number.parseFloat(application.femaleOwnerDiscount || "0").toLocaleString("en-IN")}
-                        </span>
-                      </div>
+                    {Number.parseFloat(application.totalDiscount || "0") > 0 && (
+                      <>
+                        <Separator />
+                        <div className="text-xs font-medium text-muted-foreground">
+                          Discounts Applied:
+                        </div>
+                        {Number.parseFloat(application.validityDiscount || "0") > 0 && (
+                          <div className="flex justify-between items-center text-green-600">
+                            <span className="text-sm">3-Year Lump Sum (10%)</span>
+                            <span>
+                              -₹{Number.parseFloat(application.validityDiscount || "0").toLocaleString("en-IN")}
+                            </span>
+                          </div>
+                        )}
+                        {Number.parseFloat(application.femaleOwnerDiscount || "0") > 0 && (
+                          <div className="flex justify-between items-center text-green-600">
+                            <span className="text-sm">Women Entrepreneur (5%)</span>
+                            <span>
+                              -₹{Number.parseFloat(application.femaleOwnerDiscount || "0").toLocaleString("en-IN")}
+                            </span>
+                          </div>
+                        )}
+                        {Number.parseFloat(application.pangiDiscount || "0") > 0 && (
+                          <div className="flex justify-between items-center text-green-600">
+                            <span className="text-sm">Pangi Sub-Division (50%)</span>
+                            <span>
+                              -₹{Number.parseFloat(application.pangiDiscount || "0").toLocaleString("en-IN")}
+                            </span>
+                          </div>
+                        )}
+                      </>
                     )}
-                    {Number.parseFloat(application.pangiDiscount || "0") > 0 && (
-                      <div className="flex justify-between items-center text-green-600">
-                        <span className="text-sm">Pangi Sub-Division (50%)</span>
-                        <span>
-                          -₹{Number.parseFloat(application.pangiDiscount || "0").toLocaleString("en-IN")}
-                        </span>
-                      </div>
-                    )}
+                    <Separator />
+                    <div className="flex justify-between items-center text-base font-semibold">
+                      <span>Total Amount</span>
+                      <span>₹{totalFee.toLocaleString("en-IN")}</span>
+                    </div>
                   </>
                 )}
-                <Separator />
-                <div className="flex justify-between items-center text-base font-semibold">
-                  <span>Total Amount</span>
-                  <span>₹{totalFee.toLocaleString("en-IN")}</span>
-                </div>
               </div>
             </CardContent>
           </Card>

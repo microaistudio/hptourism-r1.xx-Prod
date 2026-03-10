@@ -1,15 +1,67 @@
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { AlertTriangle, Lock, ArrowRight, ShieldCheck } from "lucide-react";
-import { useState } from "react";
+import { AlertTriangle, Lock, ArrowRight, Clock, Timer } from "lucide-react";
+import { useState, useEffect } from "react";
 import { MaintenanceModeSetting, getMaintenanceMessage } from "@shared/appSettings";
+import { formatDateTimeIST } from "@/lib/dateUtils";
 
-export default function MaintenancePage({ config }: { config: MaintenanceModeSetting }) {
+// Accept extended config from public settings (may include timing fields)
+type MaintenancePageConfig = MaintenanceModeSetting & {
+    message?: string;
+    startedAt?: string | null;
+    estimatedRestoreAt?: string | null;
+};
+
+function formatElapsedTime(startedAt: string | null | undefined): string {
+    if (!startedAt) return "";
+    const start = new Date(startedAt).getTime();
+    if (isNaN(start)) return "";
+    const now = Date.now();
+    const diffMs = now - start;
+    if (diffMs < 0) return "";
+
+    const totalSeconds = Math.floor(diffMs / 1000);
+    const days = Math.floor(totalSeconds / 86400);
+    const hours = Math.floor((totalSeconds % 86400) / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+
+    const parts: string[] = [];
+    if (days > 0) parts.push(`${days} day${days > 1 ? "s" : ""}`);
+    if (hours > 0) parts.push(`${hours} hour${hours > 1 ? "s" : ""}`);
+    if (minutes > 0) parts.push(`${minutes} minute${minutes > 1 ? "s" : ""}`);
+    if (parts.length === 0) parts.push("less than a minute");
+    return parts.join(", ");
+}
+
+function LiveDowntime({ startedAt }: { startedAt?: string | null }) {
+    const [elapsed, setElapsed] = useState(formatElapsedTime(startedAt));
+
+    useEffect(() => {
+        if (!startedAt) return;
+        const interval = setInterval(() => {
+            setElapsed(formatElapsedTime(startedAt));
+        }, 30000); // Update every 30 seconds (not too aggressive for public)
+        return () => clearInterval(interval);
+    }, [startedAt]);
+
+    if (!startedAt || !elapsed) return null;
+
+    return (
+        <div className="flex items-center justify-center gap-2 text-sm text-slate-500">
+            <Timer className="h-4 w-4" />
+            <span>Down for: {elapsed}</span>
+        </div>
+    );
+}
+
+export default function MaintenancePage({ config }: { config: MaintenancePageConfig }) {
     const [bypassKey, setBypassKey] = useState("");
     const [showLogin, setShowLogin] = useState(false);
 
-    const message = getMaintenanceMessage(config);
+    // Use the pre-resolved message from public settings, or fall back to computing it
+    const message = config.message || getMaintenanceMessage(config);
+    const hasTimingInfo = config.startedAt || config.estimatedRestoreAt;
 
     const handleBypass = (e: React.FormEvent) => {
         e.preventDefault();
@@ -39,7 +91,22 @@ export default function MaintenancePage({ config }: { config: MaintenanceModeSet
                         </p>
                     </div>
                 </CardHeader>
-                <CardContent className="space-y-6">
+                <CardContent className="space-y-4">
+                    {/* Timing Information (only shown if admin enabled showTimingToPublic) */}
+                    {hasTimingInfo && (
+                        <div className="space-y-3 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                            {config.estimatedRestoreAt && (
+                                <div className="flex items-center justify-center gap-2 text-sm text-blue-700 font-medium">
+                                    <Clock className="h-4 w-4" />
+                                    <span>
+                                        Expected back by: {formatDateTimeIST(config.estimatedRestoreAt)}
+                                    </span>
+                                </div>
+                            )}
+                            <LiveDowntime startedAt={config.startedAt} />
+                        </div>
+                    )}
+
                     <div className="bg-white p-4 rounded-lg border border-slate-200 text-sm text-center text-slate-600">
                         Department of Tourism & Civil Aviation<br />
                         Government of Himachal Pradesh
@@ -89,4 +156,3 @@ export default function MaintenancePage({ config }: { config: MaintenanceModeSet
         </div>
     );
 }
-

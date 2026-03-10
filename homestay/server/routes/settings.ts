@@ -127,23 +127,37 @@ export function createSettingsRouter() {
     // Update Maintenance Mode (Admin or Super Admin)
     router.post("/api/settings/maintenance-mode", requireRole("admin", "super_admin"), async (req, res) => {
         try {
-            const { enabled, accessKey, messageType, customMessage } = req.body;
-            const validConfig = normalizeMaintenanceModeSetting({ enabled, accessKey, messageType, customMessage });
+            const { enabled, accessKey, messageType, customMessage, estimatedRestoreAt, showEtaToPublic, showDowntimeToPublic } = req.body;
+            const userId = req.user?.id || null;
+
+            // Auto-set startedAt when enabling, clear when disabling
+            const validConfig = normalizeMaintenanceModeSetting({
+                enabled,
+                accessKey,
+                messageType,
+                customMessage,
+                startedAt: enabled ? (req.body.startedAt || new Date().toISOString()) : null,
+                startedBy: enabled ? (req.body.startedBy || userId) : null,
+                estimatedRestoreAt: enabled ? (estimatedRestoreAt || null) : null,
+                showEtaToPublic: enabled ? (showEtaToPublic ?? false) : false,
+                showDowntimeToPublic: enabled ? (showDowntimeToPublic ?? false) : false,
+            });
 
             await db.insert(systemSettings).values({
                 settingKey: MAINTENANCE_MODE_SETTING_KEY,
                 settingValue: validConfig,
                 description: "Global Maintenance Mode Configuration",
-                updatedBy: req.user?.id
+                updatedBy: userId
             }).onConflictDoUpdate({
                 target: systemSettings.settingKey,
                 set: {
                     settingValue: validConfig,
-                    updatedBy: req.user?.id,
+                    updatedBy: userId,
                     updatedAt: new Date()
                 }
             });
 
+            console.log(`[CRITICAL] Maintenance Mode updated: enabled=${enabled} by user=${userId}`);
             res.json({ success: true, config: validConfig });
         } catch (error) {
             console.error("Failed to update maintenance mode setting:", error);
@@ -211,7 +225,7 @@ export function createSettingsRouter() {
     // Update Payment Pipeline Pause (Super Admin Only - critical operation)
     router.post("/api/settings/payment-pipeline-pause", requireRole("super_admin"), async (req, res) => {
         try {
-            const { enabled, messageType, customMessage } = req.body;
+            const { enabled, messageType, customMessage, estimatedRestoreAt, showEtaToPublic, showDowntimeToPublic } = req.body;
             const userId = req.user?.id || null;
 
             // Build the config with audit info
@@ -221,6 +235,9 @@ export function createSettingsRouter() {
                 customMessage,
                 pausedAt: enabled ? new Date().toISOString() : null,
                 pausedBy: enabled ? userId : null,
+                estimatedRestoreAt: enabled ? (estimatedRestoreAt || null) : null,
+                showEtaToPublic: enabled ? (showEtaToPublic ?? false) : false,
+                showDowntimeToPublic: enabled ? (showDowntimeToPublic ?? false) : false,
             });
 
             await db.insert(systemSettings).values({

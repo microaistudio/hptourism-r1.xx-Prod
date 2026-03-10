@@ -50,7 +50,7 @@ export default function ExistingRCDashboard() {
     // Summary counts
     const total = legacyApps.length;
     const pendingReview = legacyApps.filter((a) =>
-        ["legacy_rc_review", "under_scrutiny", "submitted"].includes(a.status ?? "")
+        ["legacy_rc_draft", "legacy_rc_review", "under_scrutiny", "submitted"].includes(a.status ?? "")
     ).length;
     const approved = legacyApps.filter((a) => a.status === "approved").length;
     const forwarded = legacyApps.filter((a) =>
@@ -89,7 +89,7 @@ export default function ExistingRCDashboard() {
                 <Card className="border-slate-200 shadow-sm">
                     <CardHeader className="pb-2">
                         <CardTitle className="text-sm font-medium text-muted-foreground tracking-wide uppercase">
-                            Pending Review
+                            Pending / Draft
                         </CardTitle>
                     </CardHeader>
                     <CardContent>

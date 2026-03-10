@@ -2,8 +2,7 @@ import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import session from "express-session";
 import connectPgSimple from "connect-pg-simple";
-import bcrypt from "bcrypt";
-import { eq, or, ilike, inArray } from "drizzle-orm";
+
 import { pool, db } from "./db";
 import { storage } from "./storage";
 import { logApplicationAction } from "./audit";
@@ -88,7 +87,7 @@ import bcrypt from "bcrypt";
 import { eq, desc, asc, ne, and, or, sql, gte, lte, like, ilike, inArray, type AnyColumn } from "drizzle-orm";
 import { createSettingsRouter } from "./routes/settings";
 import { createPublicRouter } from "./routes/public";
-import { createAdminStatsRouter } from "./routes/admin-stats";
+
 import { startScraperScheduler } from "./scraper";
 import { ObjectStorageService, OBJECT_STORAGE_MODE, LOCAL_OBJECT_DIR, LOCAL_MAX_UPLOAD_BYTES } from "./objectStorage";
 import {
@@ -98,7 +97,7 @@ import {
   markStorageObjectAccessed,
 } from "./storageManifest";
 import { differenceInCalendarDays, format, subDays } from "date-fns";
-import { normalizeDistrictForMatch, districtsMatch, buildDistrictWhereClause } from "./routes/helpers/district";
+import { normalizeDistrictForMatch, districtsMatch, buildDistrictWhereClause, isCoveredBySplitDistrict, buildSplitDistrictWhereClause } from "./routes/helpers/district";
 import {
   DEFAULT_EMAIL_BODY,
   DEFAULT_EMAIL_SUBJECT,
@@ -875,7 +874,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           });
         }
 
-        if (actor?.district && !districtsMatch(actor.district, application.district)) {
+        if (actor?.district && !isCoveredBySplitDistrict(actor.district, application.district, application.tehsil)) {
           return res
             .status(403)
             .json({ message: "You can only process applications from your district." });
@@ -1054,7 +1053,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Allow updating only specific fields for corrections
       const allowedFields = [
         'ownerName', 'ownerGender', 'guardianName', 'ownerAadhaar',
-        'propertyName', 'address', 'pincode', 'latitude', 'longitude',
+        'propertyName', 'address', 'tehsil', 'gramPanchayat', 'urbanBody', 'pincode',
+        'alternatePhone', 'latitude', 'longitude',
         'singleBedRooms', 'doubleBedRooms', 'familySuites',
         'singleBedRoomRate', 'doubleBedRoomRate', 'familySuiteRate',
         'nearestHospital', 'distanceAirport', 'distanceRailway', 'distanceCityCenter', 'distanceBusStand'
@@ -1238,7 +1238,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const isAssigned = order[0].assignedTo === userId;
-      const isSameDistrict = user.district && districtsMatch(user.district, application.district);
+      const isSameDistrict = user.district && isCoveredBySplitDistrict(user.district, application.district, application.tehsil);
 
       if (!isAssigned && !isSameDistrict) {
         return res.status(403).json({ message: "You can only access inspections assigned to you or within your district" });
@@ -1667,11 +1667,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         currentUser.district.length > 0;
 
       const scopedApplications = shouldScopeByDistrict
-        ? allApplications.filter((app) => app.district === currentUser!.district)
+        ? allApplications.filter((app) => isCoveredBySplitDistrict(currentUser!.district ?? "", app.district, app.tehsil))
         : allApplications;
 
       const scopedOwners = shouldScopeByDistrict
-        ? allUsers.filter((user) => user.role === "property_owner" && user.district === currentUser!.district)
+        ? allUsers.filter((user) => user.role === "property_owner" && isCoveredBySplitDistrict(currentUser!.district ?? "", user.district))
         : allUsers.filter((user) => user.role === "property_owner");
 
       // Separate Existing RC (legacy onboarded) from regular pipeline apps
@@ -1726,22 +1726,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
         ? Math.round(processingTimes.reduce((sum, time) => sum + time, 0) / processingTimes.length)
         : 0;
 
-      // Calculate Median Form Completion Time (in seconds) based on scoped applications
-      // Apply 240-minute (14400 sec) threshold to exclude outliers (e.g., forms left open overnight)
-      const FORM_TIME_THRESHOLD_SECONDS = 240 * 60; // 240 minutes = 14400 seconds
-      const completionTimes = scopedApplications
-        .map(app => app.formCompletionTimeSeconds)
-        .filter((t): t is number => typeof t === 'number' && t > 0 && t <= FORM_TIME_THRESHOLD_SECONDS)
-        .sort((a, b) => a - b);
+      // Calculate Median Form Completion Time (in seconds) using SQL percentile_cont
+      // Apply configured threshold to exclude outliers (e.g., forms left open overnight)
+      // This matches the Reports & Insights page calculation exactly
+      const formThresholdMinutes = parseInt(req.query.formThreshold as string) || 240;
+      const FORM_TIME_THRESHOLD_SECONDS = formThresholdMinutes * 60;
+      const formTimeFilter = sql`${homestayApplications.formCompletionTimeSeconds} IS NOT NULL 
+          AND ${homestayApplications.formCompletionTimeSeconds} > 0
+          AND ${homestayApplications.formCompletionTimeSeconds} <= ${FORM_TIME_THRESHOLD_SECONDS}`;
 
-      // Use median for a more representative "typical" fill time
-      const avgFormTimeSeconds = completionTimes.length > 0
-        ? Math.round(
-          completionTimes.length % 2 === 0
-            ? (completionTimes[completionTimes.length / 2 - 1] + completionTimes[completionTimes.length / 2]) / 2
-            : completionTimes[Math.floor(completionTimes.length / 2)]
-        )
-        : 0;
+      // Build district condition matching the scoping above
+      const formTimeConditions = [];
+      if (shouldScopeByDistrict && currentUser?.district) {
+        formTimeConditions.push(buildSplitDistrictWhereClause(currentUser.district));
+      }
+
+      const formTimeWhere = formTimeConditions.length > 0 ? and(...formTimeConditions) : undefined;
+
+      const [formTimeResult] = await db
+        .select({
+          medianSeconds: sql<number>`percentile_cont(0.5) WITHIN GROUP (ORDER BY ${homestayApplications.formCompletionTimeSeconds}) FILTER (WHERE ${formTimeFilter})`,
+        })
+        .from(homestayApplications)
+        .where(formTimeWhere);
+
+      const avgFormTimeSeconds = Math.round(Number(formTimeResult?.medianSeconds || 0));
 
       const recentApplications = [...scopedApplications]
         .sort((a, b) => {
@@ -1766,7 +1775,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         recentApplications,
       });
     } catch (error) {
-      routeLog.error('Analytics error:', error);
+      console.error('DEBUG_ANALYTICS_ERROR:', error);
+      routeLog.error({ err: error }, 'Analytics error');
       res.status(500).json({ message: "Failed to fetch analytics data" });
     }
   });

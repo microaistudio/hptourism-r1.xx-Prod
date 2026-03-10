@@ -120,8 +120,8 @@ const LOGO_SPECS = {
   },
 } as const;
 
-export function generateCertificatePDF(
-  application: HomestayApplication,
+export async function generateCertificatePDF(
+  application: HomestayApplication & { dtdoSignatureUrl?: string | null },
   format: CertificateFormat = "policy_heritage",
   options?: CertificateOptions,
 ) {
@@ -132,7 +132,28 @@ export function generateCertificatePDF(
     format: "a4",
   });
 
-  renderPolicyCertificate(doc, application, layout, options);
+  let signatureBase64: string | null = null;
+  // Make sure we have a valid URL before fetching
+  if (application.dtdoSignatureUrl && application.dtdoSignatureUrl.length > 5) {
+    try {
+      // In a real browser environment, fetch relative URLs or absolute URLs
+      const response = await fetch(application.dtdoSignatureUrl);
+      if (response.ok) {
+        const rawBlob = await response.blob();
+        const blob = new Blob([rawBlob], { type: "image/png" });
+        signatureBase64 = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(blob);
+        });
+      }
+    } catch (error) {
+      console.warn("Failed to load DTDO signature image:", error);
+    }
+  }
+
+  renderPolicyCertificate(doc, application, layout, options, signatureBase64);
 
   const certificateId = sanitizeFileSegment(application.certificateNumber || "N_A");
   const filename = `HP_Homestay_Certificate_${certificateId}_${format}.pdf`;
@@ -164,6 +185,7 @@ function renderPolicyCertificate(
   application: HomestayApplication,
   layout: PolicyLayout,
   options?: CertificateOptions,
+  signatureBase64?: string | null,
 ) {
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
@@ -309,9 +331,22 @@ function renderPolicyCertificate(
     signatureY -= adjustment;
   }
 
-  doc.setDrawColor(140, 101, 52);
-  doc.setLineWidth(0.4);
-  doc.line(pageWidth - layout.marginX - 50, signatureY - 2, pageWidth - layout.marginX, signatureY - 2);
+  if (signatureBase64) {
+    const sigWidth = 35;
+    const sigHeight = 15;
+    try {
+      doc.addImage(signatureBase64, "PNG", pageWidth - layout.marginX - 42, signatureY - sigHeight + 1, sigWidth, sigHeight);
+    } catch (e) {
+      console.warn("Could not add signature image to PDF", e);
+      doc.setDrawColor(140, 101, 52);
+      doc.setLineWidth(0.4);
+      doc.line(pageWidth - layout.marginX - 50, signatureY - 2, pageWidth - layout.marginX, signatureY - 2);
+    }
+  } else {
+    doc.setDrawColor(140, 101, 52);
+    doc.setLineWidth(0.4);
+    doc.line(pageWidth - layout.marginX - 50, signatureY - 2, pageWidth - layout.marginX, signatureY - 2);
+  }
 
   doc.setFont("times", "italic");
   doc.setFontSize(10.5);

@@ -44,6 +44,7 @@ import LegacyOwnerSupport from "@/pages/legacy/owner-support";
 import TestRunner from "@/pages/admin/test-runner";
 import SuperAdminConsole from "@/pages/admin/super-admin-console";
 import SuperAdminDashboard from "@/pages/admin/super-admin-dashboard";
+import ReconciliationEngine from "@/pages/admin/reconciliation-engine";
 
 import AdminBackup from "@/pages/admin/backup";
 import AdminExportImport from "@/pages/admin/export-import";
@@ -53,6 +54,7 @@ import SystemControlsPage from "@/pages/admin/system-controls";
 import PaymentTestKotak from "@/pages/admin/payment-test-kotak";
 import SeedToolsPage from "@/pages/admin/seed-tools";
 import PaymentReportsPage from "@/pages/admin/payment-reports";
+import TreasuryForecast from "@/pages/admin/treasury-forecast";
 import ExistingRCDashboard from "@/pages/admin/existing-rc";
 import DADashboard from "@/pages/da/dashboard"; // ⚠️ LEGACY - Old stage-based layout
 import DAQueue from "@/pages/da/queue"; // ✅ NEW - Unified queue layout
@@ -279,7 +281,16 @@ function Router() {
         {() => <ProtectedRoute component={AdminAuditLog} allowedRoles={['admin', 'super_admin', 'system_admin']} />}
       </Route>
       <Route path="/admin/payment-reports">
-        {() => <ProtectedRoute component={PaymentReportsPage} allowedRoles={['district_tourism_officer', 'district_officer', 'state_officer', 'admin', 'super_admin', 'system_admin']} />}
+        {() => <ProtectedRoute component={PaymentReportsPage} allowedRoles={['admin', 'super_admin', 'system_admin', 'state_officer', 'district_tourism_officer', 'district_officer', 'payment_officer']} />}
+      </Route>
+
+      <Route path="/admin/treasury-forecast">
+        {() => <ProtectedRoute component={TreasuryForecast} allowedRoles={['state_officer', 'super_admin', 'admin', 'system_admin']} />}
+      </Route>
+
+      {/* Admin Tools Routes */}
+      <Route path="/admin/reconciliation">
+        {() => <ProtectedRoute component={ReconciliationEngine} allowedRoles={['admin', 'super_admin', 'system_admin', 'payment_officer']} />}
       </Route>
       <Route path="/admin/rc-applications">
         {() => <ProtectedRoute component={AdminRcApplications} allowedRoles={['admin_rc', 'admin', 'super_admin', 'system_admin']} />}

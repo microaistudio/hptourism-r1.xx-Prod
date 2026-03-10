@@ -135,12 +135,12 @@ export default function DALegacyDashboard() {
   const approvedThisMonth = useMemo(
     () =>
       sortedLegacy.filter(
-        (app) => app.status === "approved" && isInCurrentMonth(app.approvedAt ?? app.updatedAt ?? app.createdAt),
+        (app) => (app.status === "approved" || app.status === "superseded")
       ),
     [sortedLegacy],
   );
   const rejectedThisMonth = useMemo(
-    () => sortedLegacy.filter((app) => app.status === "rejected" && isInCurrentMonth(app.updatedAt ?? app.createdAt)),
+    () => sortedLegacy.filter((app) => app.status === "rejected"),
     [sortedLegacy],
   );
 
@@ -237,8 +237,8 @@ export default function DALegacyDashboard() {
 
     base.push({
       key: "legacy-closures",
-      title: "Closed this month",
-      description: "Existing RC registrations verified in the current month.",
+      title: "Closed Cases",
+      description: "Existing RC registrations verified or rejected.",
       icon: CheckCircle,
       pills: [
         {

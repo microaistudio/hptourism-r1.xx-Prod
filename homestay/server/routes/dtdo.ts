@@ -1,5 +1,5 @@
 import express from "express";
-import { desc, and, inArray, eq, or, ilike, isNull, ne } from "drizzle-orm";
+import { desc, and, inArray, eq, or, ilike, isNull, isNotNull, ne } from "drizzle-orm";
 import { requireAuth, requireRole } from "./core/middleware";
 import { storage } from "../storage";
 import { logger } from "../logger";
@@ -219,8 +219,37 @@ export function createDtdoRouter() {
                 )
                 .orderBy(desc(applicationActions.createdAt));
 
+            // Fetch DTDO signature URL for certificate rendering
+            let dtdoSignatureUrl: string | null = null;
+            if (application.dtdoId) {
+                const dtdoUser = await storage.getUser(application.dtdoId);
+                if (dtdoUser?.signatureUrl) {
+                    dtdoSignatureUrl = dtdoUser.signatureUrl;
+                }
+            }
+
+            // Fallback for legacy/existing applications where dtdoId was never set:
+            // Look up the active DTDO assigned to this application's district
+            if (!dtdoSignatureUrl && application.district) {
+                const [districtDtdo] = await db
+                    .select({ signatureUrl: users.signatureUrl })
+                    .from(users)
+                    .where(
+                        and(
+                            eq(users.role, 'district_tourism_officer'),
+                            eq(users.isActive, true),
+                            ilike(users.district, `%${application.district.split(' ')[0]}%`),
+                            isNotNull(users.signatureUrl)
+                        )
+                    )
+                    .limit(1);
+                if (districtDtdo?.signatureUrl) {
+                    dtdoSignatureUrl = districtDtdo.signatureUrl;
+                }
+            }
+
             res.json({
-                application,
+                application: { ...application, dtdoSignatureUrl },
                 owner: owner ? {
                     fullName: owner.fullName,
                     mobile: owner.mobile,
@@ -279,7 +308,8 @@ export function createDtdoRouter() {
                 const issueDate = new Date();
 
                 let expiryDate = new Date(issueDate);
-                expiryDate.setFullYear(expiryDate.getFullYear() + 1);
+                const validityYears = application.certificateValidityYears || 1;
+                expiryDate.setFullYear(expiryDate.getFullYear() + validityYears);
 
                 // If inherits expiry (usual for service requests)
                 if (application.inheritedCertificateValidUpto) {
@@ -470,13 +500,20 @@ export function createDtdoRouter() {
     });
 
     // DTDO revert application to applicant
+    // v1.3.0: Now supports correctionType tags for category/term corrections
     router.post("/applications/:id/revert", requireRole('district_tourism_officer', 'district_officer'), async (req, res) => {
         try {
-            const { remarks } = req.body;
+            const { remarks, correctionType } = req.body;
 
             if (!remarks || remarks.trim().length === 0) {
                 return res.status(400).json({ message: "Please specify what corrections are needed" });
             }
+
+            // Validate correctionType if provided
+            const validCorrectionTypes = ['general', 'category_correction', 'payment_term_correction', 'location_type_correction'];
+            const resolvedCorrectionType = correctionType && validCorrectionTypes.includes(correctionType)
+                ? correctionType
+                : 'general';
 
             const userId = req.session.userId!;
             const user = await storage.getUser(userId);
@@ -505,51 +542,104 @@ export function createDtdoRouter() {
 
             const maxReverts = maxRevertSetting ? Number(maxRevertSetting.settingValue) : DEFAULT_MAX_REVERT_COUNT;
 
-            // AUTO-REJECT: If application was already sent back enough times, reject it automatically
-            if (currentRevertCount >= maxReverts) {
-                routeLog.info({ applicationId: req.params.id, revertCount: currentRevertCount, maxReverts },
-                    "Auto-rejecting application on DTDO revert attempt exceeding limit");
+            // v1.3.0: Tagged correction reverts (category/term) bypass auto-rejection
+            // and reset the revert counter — these are DTDO-initiated operational corrections
+            const isCorrectionRevert = resolvedCorrectionType === 'category_correction' || resolvedCorrectionType === 'payment_term_correction' || resolvedCorrectionType === 'location_type_correction';
 
-                await storage.updateApplication(req.params.id, {
-                    status: 'rejected',
-                    rejectionReason: `APPLICATION AUTO-REJECTED: Application was sent back ${maxReverts + 1} times. Original reason: ${trimmedRemarks}`,
-                    dtdoRemarks: trimmedRemarks,
-                    dtdoId: userId,
-                    dtdoReviewDate: new Date(),
-                    revertCount: currentRevertCount + 1,
-                } as Partial<HomestayApplication>);
+            // For general reverts: if revert limit reached, ask DTDO to confirm (not silent auto-reject)
+            // Accept `forceReject` or `resetAndRevert` from the frontend confirmation dialog
+            if (!isCorrectionRevert && currentRevertCount >= maxReverts) {
+                const { forceReject, resetAndRevert } = req.body;
 
-                await logApplicationAction({
-                    applicationId: req.params.id,
-                    actorId: userId,
-                    action: "auto_rejected",
-                    previousStatus: application.status,
-                    newStatus: "rejected",
-                    feedback: `Auto-rejected on 2nd revert. Reason: ${trimmedRemarks}`,
-                });
+                // Neither confirmed — return a warning for the frontend to show a dialog
+                if (!forceReject && !resetAndRevert) {
+                    return res.status(409).json({
+                        requiresConfirmation: true,
+                        message: `This application has already been sent back ${currentRevertCount} time(s) (limit: ${maxReverts}). What would you like to do?`,
+                        revertCount: currentRevertCount,
+                        maxReverts,
+                    });
+                }
 
-                const owner = await storage.getUser(application.userId);
-                queueNotification("application_rejected", {
-                    application: { ...application, status: "rejected" } as HomestayApplication,
-                    owner: owner ?? null,
-                    extras: { REMARKS: `Application was automatically rejected after multiple correction attempts. Reason: ${trimmedRemarks}` },
-                });
+                // DTDO chose to force reject
+                if (forceReject) {
+                    routeLog.info({ applicationId: req.params.id, revertCount: currentRevertCount, maxReverts },
+                        "DTDO confirmed rejection after revert limit exceeded");
 
-                return res.json({
-                    message: "Application has been automatically REJECTED due to multiple send-backs",
-                    autoRejected: true,
-                    newStatus: "rejected"
-                });
+                    await storage.updateApplication(req.params.id, {
+                        status: 'rejected',
+                        rejectionReason: `Rejected by DTDO (revert limit ${maxReverts} exceeded). Reason: ${trimmedRemarks}`,
+                        dtdoRemarks: trimmedRemarks,
+                        dtdoId: userId,
+                        dtdoReviewDate: new Date(),
+                        revertCount: currentRevertCount + 1,
+                        pendingCorrectionType: null,
+                    } as Partial<HomestayApplication>);
+
+                    await logApplicationAction({
+                        applicationId: req.params.id,
+                        actorId: userId,
+                        action: "dtdo_rejected",
+                        previousStatus: application.status,
+                        newStatus: "rejected",
+                        feedback: `Rejected after revert limit. Reason: ${trimmedRemarks}`,
+                        correctionType: resolvedCorrectionType,
+                    });
+
+                    const owner = await storage.getUser(application.userId);
+                    queueNotification("application_rejected", {
+                        application: { ...application, status: "rejected" } as HomestayApplication,
+                        owner: owner ?? null,
+                        extras: { REMARKS: `Application rejected: ${trimmedRemarks}` },
+                    });
+
+                    return res.json({
+                        message: "Application has been rejected",
+                        autoRejected: false,
+                        newStatus: "rejected",
+                    });
+                }
+
+                // DTDO chose to reset count and proceed with revert
+                // resetAndRevert — fall through to the normal revert logic below
+                // with counter reset handled in the update
+                routeLog.info({ applicationId: req.params.id, revertCount: currentRevertCount },
+                    "DTDO chose to reset revert count and proceed with revert");
             }
 
-            // Update application status to reverted_by_dtdo and increment revertCount
+            // Determine revert count for the update:
+            // - Tagged corrections: reset to 0 (DTDO-initiated, not applicant's fault)
+            // - General with resetAndRevert: reset to 0
+            // - Normal: increment by 1
+            const { resetAndRevert } = req.body;
+            const newRevertCount = isCorrectionRevert || resetAndRevert ? 0 : currentRevertCount + 1;
+
+            // v1.3.0: Snapshot current values when tagged correction is requested
+            // This allows the fee recalculation engine to compute deltas when the applicant resubmits
+            const correctionSnapshot: Record<string, unknown> = {};
+            if (isCorrectionRevert) {
+                correctionSnapshot.previousCategory = application.category;
+                correctionSnapshot.previousValidityYears = application.certificateValidityYears ?? 1;
+                correctionSnapshot.previousTotalFee = application.totalFee ?? '0';
+                routeLog.info({
+                    applicationId: req.params.id,
+                    correctionType: resolvedCorrectionType,
+                    previousCategory: application.category,
+                    previousValidityYears: application.certificateValidityYears,
+                    previousTotalFee: application.totalFee,
+                }, "Snapshotting current values for tagged correction (revert count reset to 0)");
+            }
+
+            // Update application status to reverted_by_dtdo
             const revertedApplication = await storage.updateApplication(req.params.id, {
                 status: 'reverted_by_dtdo',
                 dtdoRemarks: trimmedRemarks,
                 dtdoId: userId,
                 dtdoReviewDate: new Date(),
                 clarificationRequested: trimmedRemarks,
-                revertCount: currentRevertCount + 1,
+                revertCount: newRevertCount,
+                pendingCorrectionType: resolvedCorrectionType,
+                ...correctionSnapshot,
             });
             await logApplicationAction({
                 applicationId: req.params.id,
@@ -558,6 +648,7 @@ export function createDtdoRouter() {
                 previousStatus: application.status,
                 newStatus: "reverted_by_dtdo",
                 feedback: trimmedRemarks,
+                correctionType: resolvedCorrectionType,
             });
 
             const owner = await storage.getUser(application.userId);
@@ -567,9 +658,18 @@ export function createDtdoRouter() {
                 extras: { REMARKS: trimmedRemarks },
             });
 
+            // Build human-readable correction type label for the response
+            const correctionTypeLabels: Record<string, string> = {
+                general: 'General Correction',
+                category_correction: 'Category Correction',
+                payment_term_correction: 'Payment Term Correction',
+            };
+
             res.json({
                 message: "Application reverted to applicant successfully",
                 newRevertCount: currentRevertCount + 1,
+                correctionType: resolvedCorrectionType,
+                correctionTypeLabel: correctionTypeLabels[resolvedCorrectionType] || 'General Correction',
                 warning: "This application can only be sent back once more before automatic rejection."
             });
         } catch (error) {
@@ -901,7 +1001,7 @@ export function createDtdoRouter() {
             }
 
             // Verify application is from DTDO's district
-            if (user?.district && !districtsMatch(user.district, application.district)) {
+            if (user?.district && !isCoveredBySplitDistrict(user.district, application.district, application.tehsil)) {
                 return res.status(403).json({ message: "You can only process applications from your district" });
             }
 
@@ -922,7 +1022,8 @@ export function createDtdoRouter() {
                 const certificateNumber = `HP-HST-${year}-${randomSuffix}`;
                 const issueDate = new Date();
                 const expiryDate = new Date(issueDate);
-                expiryDate.setFullYear(expiryDate.getFullYear() + 1);
+                const validityYears = application.certificateValidityYears || 1;
+                expiryDate.setFullYear(expiryDate.getFullYear() + validityYears);
 
                 const approvedApplication = await storage.updateApplication(applicationId, {
                     status: 'approved',
@@ -1060,7 +1161,7 @@ export function createDtdoRouter() {
             }
 
             // Verify application is from DTDO's district
-            if (user?.district && !districtsMatch(user.district, application.district)) {
+            if (user?.district && !isCoveredBySplitDistrict(user.district, application.district, application.tehsil)) {
                 return res.status(403).json({ message: "You can only process applications from your district" });
             }
 
@@ -1114,7 +1215,7 @@ export function createDtdoRouter() {
             }
 
             // Verify application is from DTDO's district
-            if (user?.district && !districtsMatch(user.district, application.district)) {
+            if (user?.district && !isCoveredBySplitDistrict(user.district, application.district, application.tehsil)) {
                 return res.status(403).json({ message: "You can only process applications from your district" });
             }
 
@@ -1170,7 +1271,7 @@ export function createDtdoRouter() {
             }
 
             // Verify application is from DTDO's district
-            if (user?.district && !districtsMatch(user.district, application.district)) {
+            if (user?.district && !isCoveredBySplitDistrict(user.district, application.district, application.tehsil)) {
                 return res.status(403).json({ message: "You can only process applications from your district" });
             }
 
@@ -1253,8 +1354,9 @@ export function createDtdoRouter() {
                 return res.status(403).json({ message: "DTDO must be assigned to a district" });
             }
 
-            if (!districtsMatch(user.district, application.district)) {
-                return res.status(403).json({ message: "Access denied: Application belongs to another district" });
+            // Check if the application district belongs to the DTDO
+            if (!isCoveredBySplitDistrict(user.district, application.district, application.tehsil)) {
+                return res.status(403).json({ message: "Application is not in your district" });
             }
 
             const previousRevertCount = application.revertCount;
@@ -1299,7 +1401,7 @@ export function createDtdoRouter() {
             }
 
             // Verify application is from DTDO's district
-            if (user?.district && !districtsMatch(user.district, application.district)) {
+            if (user?.district && !isCoveredBySplitDistrict(user.district, application.district, application.tehsil)) {
                 return res.status(403).json({ message: "You can only process applications from your district" });
             }
 
@@ -1369,7 +1471,8 @@ export function createDtdoRouter() {
             const certificateNumber = `HP-HST-${year}-${randomSuffix}`;
             const issueDate = new Date();
             const expiryDate = new Date(issueDate);
-            expiryDate.setFullYear(expiryDate.getFullYear() + 1);
+            const validityYears = parentApp?.certificateValidityYears || 1;
+            expiryDate.setFullYear(expiryDate.getFullYear() + validityYears);
 
             const approvedApplication = await storage.updateApplication(req.params.id, {
                 status: 'approved',
@@ -1488,10 +1591,10 @@ export function createDtdoRouter() {
                 return res.status(404).json({ message: "Application not found" });
             }
 
-            // Verify application is from DTDO's district
-            if (user.district && !districtsMatch(user.district, application.district)) {
+            // Verify application belongs to DTDO's assigned district
+            if (user?.district && !isCoveredBySplitDistrict(user.district, application.district, application.tehsil)) {
                 return res.status(403).json({
-                    message: "You can only correct applications from your district",
+                    message: "You can only confirm inspection availability for applications in your district.",
                     code: "DISTRICT_MISMATCH"
                 });
             }

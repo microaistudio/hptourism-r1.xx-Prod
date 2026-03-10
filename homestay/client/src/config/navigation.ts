@@ -24,6 +24,7 @@ import {
   TestTube,
   Server,
   LineChart,
+  IndianRupee,
 } from "lucide-react";
 import { LucideIcon } from "lucide-react";
 
@@ -134,6 +135,11 @@ export const officerNavigation: NavSection[] = [
         title: "Reports & Insights",
         url: "/admin/payment-reports",
         icon: LineChart,
+      },
+      {
+        title: "Treasury Forecast",
+        url: "/admin/treasury-forecast",
+        icon: IndianRupee,
       },
       {
         title: "Existing RC",
@@ -257,6 +263,11 @@ export const superAdminNavigation: NavSection[] = [
         title: "Reports & Insights",
         url: "/admin/payment-reports",
         icon: LineChart,
+      },
+      {
+        title: "Treasury Forecast",
+        url: "/admin/treasury-forecast",
+        icon: IndianRupee,
       },
       {
         title: "Existing RC",
@@ -432,6 +443,32 @@ export const dtdoNavigation: NavSection[] = [
   },
 ];
 
+// Payment Officer Navigation Menu - Focused on payment reconciliation only
+export const paymentOfficerNavigation: NavSection[] = [
+  {
+    title: "Payment Operations",
+    items: [
+      {
+        title: "Payment Ops Center",
+        url: "/admin/payment-reports",
+        icon: CreditCard,
+        badge: "ops",
+        badgeVariant: "warning",
+      },
+      {
+        title: "Reports & Insights",
+        url: "/admin/payment-reports",
+        icon: LineChart,
+      },
+      {
+        title: "Reconciliation Engine",
+        url: "/admin/reconciliation",
+        icon: RefreshCw,
+      }
+    ],
+  },
+];
+
 // Get navigation based on user role
 export function getNavigationForRole(role: string): NavSection[] {
   if (role === 'super_admin') {
@@ -451,6 +488,12 @@ export function getNavigationForRole(role: string): NavSection[] {
   }
   if (role === 'state_officer') {
     return officerNavigation;
+  }
+  if (role === 'payment_officer') {
+    return paymentOfficerNavigation;
+  }
+  if (role === 'inspector') {
+    return daNavigation; // Placeholder — will get dedicated nav later
   }
   return ownerNavigation;
 }
@@ -474,6 +517,12 @@ export function getDefaultRouteForRole(role: string): string {
   }
   if (role === 'state_officer') {
     return '/workflow-monitoring';
+  }
+  if (role === 'payment_officer') {
+    return '/admin/payment-reports';
+  }
+  if (role === 'inspector') {
+    return '/da/dashboard';  // Placeholder — will get dedicated route later
   }
   // All other roles now land on /dashboard with role-specific content
   return '/dashboard';

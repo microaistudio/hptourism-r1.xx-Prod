@@ -17,7 +17,7 @@ async function verifyDevLogic() {
         console.log("❌ No apps found in DEV1 database for Lahaul. Creating mock data in memory for test...");
         apps.push({ id: 'mock-spiti-1', district: 'Lahaul and Spiti', tehsil: 'Spiti' });
         apps.push({ id: 'mock-lahaul-1', district: 'Lahaul and Spiti', tehsil: 'Lahaul' });
-        apps.push({ id: 'mock-null-1', district: 'Lahaul and Spiti', tehsil: null });
+        apps.push({ id: 'mock-null-1', district: 'Lahaul and Spiti', tehsil: '' });
     }
 
     // --- SCENARIO A: DA "Lahaul & Spiti" (Main) ---

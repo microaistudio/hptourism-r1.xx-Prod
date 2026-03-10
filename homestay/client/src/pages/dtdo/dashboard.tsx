@@ -110,7 +110,7 @@ export default function DTDODashboard() {
   const [activePill, setActivePill] = useState("new-queue-forwarded");
   const [sortOrder, setSortOrder] = useState<SortOrder>("newest");
   const [filterDistrict, setFilterDistrict] = useState<string>("all");
-  const [completedRange, setCompletedRange] = useState<"month" | "30d">("month");
+  const [completedRange, setCompletedRange] = useState<"all" | "month" | "30d">("all");
   const actionablePills = useMemo(
     () =>
       new Set([
@@ -132,8 +132,12 @@ export default function DTDODashboard() {
     queryKey: ["/api/dtdo/applications"],
   });
 
-  // Filter out Legacy applications entirely - they belong in /dtdo/legacy
-  const allApplications = (applications ?? []).filter(app => !isLegacy(app));
+  // Filter out Legacy/Existing RC applications from the main dashboard.
+  // They belong exclusively in the dedicated "Existing RC Queue" sidebar section.
+  const LEGACY_ONLY_STATUSES = new Set(["legacy_rc_review", "legacy_rc_draft"]);
+  const allApplications = (applications ?? []).filter(app =>
+    !LEGACY_ONLY_STATUSES.has(app.status ?? "") && !isLegacy(app)
+  );
 
   // Legacy view logic removed in favor of dedicated dashboard
   const viewApplications = allApplications;
@@ -213,19 +217,23 @@ export default function DTDODashboard() {
     () => viewApplications.filter((app) => app.status === "dtdo_review" && isResubmitted(app)),
     [viewApplications],
   );
+  const allApproved = useMemo(
+    () => viewApplications.filter((app) => app.status === "approved"),
+    [viewApplications],
+  );
   const approvedThisMonth = useMemo(
     () =>
-      viewApplications.filter(
-        (app) => app.status === "approved" && isThisMonthSafe(app.approvedAt ?? app.updatedAt ?? null),
+      allApproved.filter(
+        (app) => isThisMonthSafe(app.approvedAt ?? app.updatedAt ?? null),
       ),
-    [viewApplications],
+    [allApproved],
   );
   const approvedLast30Days = useMemo(
     () =>
-      viewApplications.filter(
-        (app) => app.status === "approved" && isInLast30Days(app.approvedAt ?? app.updatedAt ?? null),
+      allApproved.filter(
+        (app) => isInLast30Days(app.approvedAt ?? app.updatedAt ?? null),
       ),
-    [allApplications],
+    [allApproved],
   );
   const daNewQueue = useMemo(
     () => allApplications.filter((app) => app.status === "submitted"),
@@ -253,19 +261,23 @@ export default function DTDODashboard() {
     () => sortApplications(daServiceRequests),
     [daServiceRequests, sortApplications],
   );
+  const allRejected = useMemo(
+    () => allApplications.filter((app) => app.status === "rejected"),
+    [allApplications],
+  );
   const rejectedThisMonth = useMemo(
     () =>
-      allApplications.filter(
-        (app) => app.status === "rejected" && isThisMonthSafe(app.updatedAt ?? app.approvedAt ?? null),
+      allRejected.filter(
+        (app) => isThisMonthSafe(app.updatedAt ?? app.approvedAt ?? null),
       ),
-    [allApplications],
+    [allRejected],
   );
   const rejectedLast30Days = useMemo(
     () =>
-      allApplications.filter(
-        (app) => app.status === "rejected" && isInLast30Days(app.updatedAt ?? app.approvedAt ?? null),
+      allRejected.filter(
+        (app) => isInLast30Days(app.updatedAt ?? app.approvedAt ?? null),
       ),
-    [allApplications],
+    [allRejected],
   );
   const newRegistrations = useMemo(
     () =>
@@ -316,8 +328,8 @@ export default function DTDODashboard() {
     () => sortApplications(ownerResubmitted),
     [ownerResubmitted, sortApplications],
   );
-  const approvedWindow = completedRange === "month" ? approvedThisMonth : approvedLast30Days;
-  const rejectedWindow = completedRange === "month" ? rejectedThisMonth : rejectedLast30Days;
+  const approvedWindow = completedRange === "all" ? allApproved : completedRange === "month" ? approvedThisMonth : approvedLast30Days;
+  const rejectedWindow = completedRange === "all" ? allRejected : completedRange === "month" ? rejectedThisMonth : rejectedLast30Days;
   const sortedApprovedWindow = useMemo(
     () => sortApplications(approvedWindow),
     [approvedWindow, sortApplications],
@@ -456,7 +468,7 @@ export default function DTDODashboard() {
             value: "closures-approved",
             label: "Approved",
             count: sortedApprovedWindow.length,
-            description: completedRange === "month" ? "Certificates issued in the current month." : "Certificates issued in the last 30 days.",
+            description: completedRange === "all" ? "All certificates issued." : completedRange === "month" ? "Certificates issued in the current month." : "Certificates issued in the last 30 days.",
             applications: sortedApprovedWindow,
             actionLabel: "View certificate",
             emptyTitle: "No approvals yet",
@@ -466,7 +478,7 @@ export default function DTDODashboard() {
             value: "closures-rejected",
             label: "Rejected",
             count: sortedRejectedWindow.length,
-            description: completedRange === "month" ? "Applications declined this month." : "Applications declined in the last 30 days.",
+            description: completedRange === "all" ? "All declined applications." : completedRange === "month" ? "Applications declined this month." : "Applications declined in the last 30 days.",
             applications: sortedRejectedWindow,
             actionLabel: "Review decision",
             emptyTitle: "No rejections",
@@ -1129,14 +1141,15 @@ export default function DTDODashboard() {
                 <div onClick={(e) => e.stopPropagation()}>
                   <Select
                     value={completedRange}
-                    onValueChange={(v: "month" | "30d") => setCompletedRange(v)}
+                    onValueChange={(v: "all" | "month" | "30d") => setCompletedRange(v)}
                   >
                     <SelectTrigger className="h-5 text-[10px] w-fit gap-1 bg-transparent border-0 p-0 text-muted-foreground hover:text-foreground focus:ring-0">
                       <span className="truncate">
-                        {completedRange === "month" ? "Decisions this month" : "Decisions last 30 days"}
+                        {completedRange === "all" ? "All decisions" : completedRange === "month" ? "Decisions this month" : "Decisions last 30 days"}
                       </span>
                     </SelectTrigger>
                     <SelectContent>
+                      <SelectItem value="all">All time</SelectItem>
                       <SelectItem value="month">This month</SelectItem>
                       <SelectItem value="30d">Last 30 days</SelectItem>
                     </SelectContent>

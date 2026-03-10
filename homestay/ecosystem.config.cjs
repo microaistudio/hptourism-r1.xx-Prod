@@ -1,7 +1,18 @@
+// ============================================================================
+// HP Tourism Homestay Portal — PM2 Ecosystem Config
+//
+// DEV1 config aligned with PROD parameters:
+//   - Port: 5055 (same as PROD)
+//   - DB user: hptourism (same as PROD)
+//   - DB name: hptourism-dev (DEV data, PROD credentials)
+//   - PM2 name: hptourism-dev1 (different from PROD's hptourism-prod)
+//
+// PROD runs PM2 directly via CLI, NOT via this file.
+// This file is for DEV1 only and is excluded from PROD packs.
+// ============================================================================
+
 module.exports = {
   apps: [
-    // hptourism-rc7 removed to avoid conflict. Managed independently in its own folder.
-
     {
       name: "hptourism-dev1",
       script: "dist/index.js",
@@ -13,33 +24,20 @@ module.exports = {
         TZ: "Asia/Kolkata",
         PGTZ: "Asia/Kolkata",
         NODE_ENV: "production",
-        PORT: "5040",
-        // DATABASE_URL: process.env.DATABASE_URL, // Load from .env 
-        DATABASE_URL: process.env.DATABASE_URL || "postgresql://hptourism_user:hptourism_pass@localhost:5432/hptourism-dev",
-        SESSION_SECRET: process.env.SESSION_SECRET || "hp-tourism-rc8-session-secret-clean", // Distinct secret
-        OBJECT_STORAGE_MODE: process.env.OBJECT_STORAGE_MODE || "local",
-        LOCAL_OBJECT_DIR: process.env.LOCAL_OBJECT_DIR || `${__dirname}/local-object-storage`,
-        // ... (can inherit others or copy-paste). For simplicity, relying on .env loading if code does it, 
-        // OR explicit definition here. Since code converts env vars, accurate copy is best.
-        // Copying essential vars from above but tailored for RC8 if needed.
-        // Assuming strict clone, we use same DB URL as .env (which needs to be loaded via PM2 ecosystem usually by --env or dotenv)
-        // PM2 doesn't auto-load .env for ecosystem unless specified.
-        // Better approach: Use local .env file.
-        // But here we can just pass the vars.
+        PORT: "5055",
+        DATABASE_URL: "postgresql://hptourism:hptourism@localhost:5432/hptourism-dev",
+        SESSION_SECRET: "hp-tourism-dev1-session-secret-change-me-in-prod-please",
+        OBJECT_STORAGE_MODE: "local",
+        LOCAL_OBJECT_DIR: `${__dirname}/local-object-storage`,
 
-        // Kotak / HimKosh settings
-        CCAVENUE_MERCHANT_ID: process.env.CCAVENUE_MERCHANT_ID,
-        CCAVENUE_ACCESS_CODE: process.env.CCAVENUE_ACCESS_CODE,
-        CCAVENUE_WORKING_KEY: process.env.CCAVENUE_WORKING_KEY,
-        CCAVENUE_URL: process.env.CCAVENUE_URL,
-        CCAVENUE_ENV: process.env.CCAVENUE_ENV,
-        ENABLE_TEST_RUNNER: "true",
-        TZ: "Asia/Kolkata",
-        PGTZ: "Asia/Kolkata",
+        // Security flags — match PROD
+        ALLOW_PRODUCTION_RESET: "false",
+        ALLOW_RESET_OPERATIONS: "false",
+        ENABLE_TEST_RUNNER: "true",  // Only true on DEV for testing
       },
       autorestart: true,
       watch: false,
-      max_memory_restart: "512M",
+      max_memory_restart: "1G",
     }
   ],
 };

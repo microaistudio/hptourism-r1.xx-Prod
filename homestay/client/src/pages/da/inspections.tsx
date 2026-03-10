@@ -39,7 +39,7 @@ export default function DAInspections() {
   });
   const [activeFilter, setActiveFilter] = useState<'all' | 'pending' | 'reportSubmitted' | 'completed' | 'new'>('all');
   const [sortOrder, setSortOrder] = useState<"newest" | "oldest">("newest");
-  const [completedRange, setCompletedRange] = useState<"7d" | "30d" | "month">("30d");
+  const [completedRange, setCompletedRange] = useState<"all" | "7d" | "30d" | "month">("all");
 
   // All statuses that indicate the application workflow is complete
   const terminalStatuses = [
@@ -124,6 +124,7 @@ export default function DAInspections() {
       if (Number.isNaN(updatedAt.getTime())) return false;
       const daysDiff = Math.floor((now.getTime() - updatedAt.getTime()) / (1000 * 60 * 60 * 24));
       switch (completedRange) {
+        case 'all': return true;
         case '7d': return daysDiff <= 7;
         case '30d': return daysDiff <= 30;
         case 'month': return updatedAt.getMonth() === now.getMonth() && updatedAt.getFullYear() === now.getFullYear();
@@ -333,14 +334,15 @@ export default function DAInspections() {
             <div className="mt-1" onClick={(e) => e.stopPropagation()}>
               <Select
                 value={completedRange}
-                onValueChange={(v: "7d" | "30d" | "month") => setCompletedRange(v)}
+                onValueChange={(v: "all" | "7d" | "30d" | "month") => setCompletedRange(v)}
               >
                 <SelectTrigger className="h-6 text-[11px] w-fit gap-1 bg-transparent border-0 p-0 text-muted-foreground hover:text-foreground focus:ring-0">
                   <span className="truncate">
-                    {completedRange === "7d" ? "Last 7 days" : completedRange === "30d" ? "Last 30 days" : "This month"}
+                    {completedRange === "all" ? "All time" : completedRange === "7d" ? "Last 7 days" : completedRange === "30d" ? "Last 30 days" : "This month"}
                   </span>
                 </SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="all">All time</SelectItem>
                   <SelectItem value="7d">Last 7 days</SelectItem>
                   <SelectItem value="30d">Last 30 days</SelectItem>
                   <SelectItem value="month">This month</SelectItem>

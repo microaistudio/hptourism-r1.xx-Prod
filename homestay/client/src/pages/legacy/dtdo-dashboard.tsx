@@ -82,6 +82,11 @@ export default function DTDOLegacyDashboard() {
         [sortedLegacy],
     );
 
+    const underReview = useMemo(
+        () => sortedLegacy.filter((app) => app.status === "dtdo_review"),
+        [sortedLegacy],
+    );
+
     // Stage 1.5: Corrections (Returned to DA)
     const returnedToDA = useMemo(
         () => sortedLegacy.filter((app) => app.status === "reverted_by_dtdo"),
@@ -90,15 +95,12 @@ export default function DTDOLegacyDashboard() {
 
     // Stage 2: Completed (Approved/Rejected)
     const approvedThisMonth = useMemo(
-        () =>
-            sortedLegacy.filter(
-                (app) => app.status === "approved" && isInCurrentMonth(app.approvedAt ?? app.updatedAt ?? app.createdAt),
-            ),
+        () => sortedLegacy.filter((app) => app.status === "approved" || app.status === "superseded"),
         [sortedLegacy],
     );
 
     const rejectedThisMonth = useMemo(
-        () => sortedLegacy.filter((app) => app.status === "rejected" && isInCurrentMonth(app.updatedAt ?? app.createdAt)),
+        () => sortedLegacy.filter((app) => app.status === "rejected"),
         [sortedLegacy],
     );
 
@@ -119,6 +121,16 @@ export default function DTDOLegacyDashboard() {
                         actionLabel: "Start review",
                         emptyTitle: "No incoming applications",
                         emptyDescription: "Dealing Assistants haven't forwarded any existing RC cases recently.",
+                    },
+                    {
+                        value: "dtdo-review",
+                        label: "DTDO Review",
+                        count: underReview.length,
+                        description: "Applications opened for your review.",
+                        applications: underReview,
+                        actionLabel: "Continue review",
+                        emptyTitle: "Nothing under review",
+                        emptyDescription: "You do not have any applications actively under review right now.",
                     },
                 ],
             },
@@ -142,7 +154,7 @@ export default function DTDOLegacyDashboard() {
             },
             {
                 key: "completed",
-                title: "Decisions (This Month)",
+                title: "Decisions",
                 description: "History of approved and rejected applications.",
                 icon: CheckCircle,
                 pills: [
@@ -154,7 +166,7 @@ export default function DTDOLegacyDashboard() {
                         applications: approvedThisMonth,
                         actionLabel: "View details",
                         emptyTitle: "No approvals yet",
-                        emptyDescription: "Approved applications this month will appear here.",
+                        emptyDescription: "Approved applications will appear here.",
                     },
                     {
                         value: "rejected",
@@ -164,7 +176,7 @@ export default function DTDOLegacyDashboard() {
                         applications: rejectedThisMonth,
                         actionLabel: "View details",
                         emptyTitle: "No rejections",
-                        emptyDescription: "Rejected applications this month will appear here.",
+                        emptyDescription: "Rejected applications will appear here.",
                     },
                 ],
             },
@@ -173,6 +185,7 @@ export default function DTDOLegacyDashboard() {
         return base;
     }, [
         incomingQueue,
+        underReview,
         returnedToDA,
         approvedThisMonth,
         rejectedThisMonth,

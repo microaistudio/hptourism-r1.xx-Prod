@@ -1,4 +1,4 @@
-import { eq, ilike, or, and, ne, isNull, type AnyColumn } from "drizzle-orm";
+import { eq, ilike, or, and, ne, isNull, not, type AnyColumn } from "drizzle-orm";
 import { homestayApplications } from "@shared/schema";
 import { getDistrictsCoveredBy } from "@shared/districtRouting";
 

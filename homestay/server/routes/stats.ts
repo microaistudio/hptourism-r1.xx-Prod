@@ -15,7 +15,16 @@ router.get("/state", async (req, res) => {
         const [heroData] = await db
             .select({
                 totalApplications: sql<number>`count(*) filter (where ${homestayApplications.applicationNumber} NOT LIKE 'LG-HS-%')`,
-                totalRevenue: sql<number>`sum(CASE WHEN (${homestayApplications.status} = 'approved' OR ${homestayApplications.paymentStatus} = 'paid') AND ${homestayApplications.applicationNumber} NOT LIKE 'LG-HS-%' THEN ${homestayApplications.totalFee} ELSE 0 END)`,
+                totalRevenue: sql<number>`coalesce((
+                    SELECT sum(${himkoshTransactions.totalAmount})
+                    FROM ${himkoshTransactions}
+                    WHERE ${himkoshTransactions.transactionStatus} IN ('success', 'verified')
+                      AND (${himkoshTransactions.isRefunded} IS NULL OR ${himkoshTransactions.isRefunded} = false)
+                      AND ${himkoshTransactions.applicationId} IN (
+                          SELECT ${homestayApplications.id} FROM ${homestayApplications}
+                          WHERE ${homestayApplications.applicationNumber} NOT LIKE 'LG-HS-%'
+                      )
+                ), 0)`,
                 pendingScrutiny: sql<number>`count(*) filter (where ${homestayApplications.status} in ('submitted', 'under_scrutiny') AND ${homestayApplications.applicationNumber} NOT LIKE 'LG-HS-%')`,
                 pendingDistrict: sql<number>`count(*) filter (where ${homestayApplications.status} in ('forwarded_to_dtdo', 'dtdo_review') AND ${homestayApplications.applicationNumber} NOT LIKE 'LG-HS-%')`,
                 pendingInspection: sql<number>`count(*) filter (where ${homestayApplications.status} in ('inspection_scheduled', 'inspection_completed', 'inspection_under_review') AND ${homestayApplications.applicationNumber} NOT LIKE 'LG-HS-%')`,
@@ -110,9 +119,9 @@ router.get("/state", async (req, res) => {
         const [economicData] = await db
             .select({
                 totalBeds: sql<number>`sum(
-                    COALESCE(${homestayApplications.singleBedBeds}, 0) + 
-                    COALESCE(${homestayApplications.doubleBedBeds}, 0) + 
-                    COALESCE(${homestayApplications.familySuiteBeds}, 0)
+                    (COALESCE(${homestayApplications.singleBedRooms}, 0) * COALESCE(${homestayApplications.singleBedBeds}, 1)) + 
+                    (COALESCE(${homestayApplications.doubleBedRooms}, 0) * COALESCE(${homestayApplications.doubleBedBeds}, 2)) + 
+                    (COALESCE(${homestayApplications.familySuites}, 0) * COALESCE(${homestayApplications.familySuiteBeds}, 4))
                 )`,
                 // Generic Revenue Projection: Avg Rate * Rooms * 365 days * 40% Occupancy
                 projectedRevenue: sql<number>`sum(
@@ -360,6 +369,101 @@ router.get("/trends", async (req, res) => {
     } catch (error) {
         console.error("[Stats API] Error fetching trends:", error);
         res.status(500).json({ message: "Failed to fetch trends" });
+    }
+});
+
+// GET /api/stats/treasury-forecast
+// Returns financial metrics for Treasury Forecasting page
+router.get("/treasury-forecast", async (req, res) => {
+    try {
+        // 1. Renewal Forecasting (Expected Revenue next 12 months)
+        const upcomingRenewals = await db
+            .select({
+                expiryMonth: sql<string>`to_char(${homestayApplications.certificateExpiryDate}, 'YYYY-MM')`,
+                revenue: sql<number>`sum(${homestayApplications.baseFee})`, // assuming renewal cost is similar to base fee
+                count: sql<number>`count(*)`
+            })
+            .from(homestayApplications)
+            .where(
+                and(
+                    eq(homestayApplications.status, 'approved'),
+                    isNotNull(homestayApplications.certificateExpiryDate),
+                    sql`${homestayApplications.certificateExpiryDate} >= NOW()`,
+                    sql`${homestayApplications.certificateExpiryDate} <= NOW() + INTERVAL '1 year'`
+                )
+            )
+            .groupBy(sql`to_char(${homestayApplications.certificateExpiryDate}, 'YYYY-MM')`)
+            .orderBy(sql`to_char(${homestayApplications.certificateExpiryDate}, 'YYYY-MM') asc`);
+
+        // 2. Lost/Stuck Revenue (in pipeline)
+        const [pipelineRevenue] = await db
+            .select({
+                stuckRevenue: sql<number>`sum(${homestayApplications.totalFee})`,
+                count: sql<number>`count(*)`
+            })
+            .from(homestayApplications)
+            .where(inArray(homestayApplications.status, [
+                'document_verification', 'clarification_requested',
+                'site_inspection_scheduled', 'site_inspection_complete'
+            ]));
+
+        // 3. Discount Impact Tracking (How much subsidy given)
+        const [discountTotals] = await db
+            .select({
+                femaleOwnerSubsidy: sql<number>`sum(${homestayApplications.femaleOwnerDiscount})`,
+                pangiSubsidy: sql<number>`sum(${homestayApplications.pangiDiscount})`,
+                validitySubsidy: sql<number>`sum(${homestayApplications.validityDiscount})`,
+                totalSubsidized: sql<number>`sum(${homestayApplications.totalDiscount})`
+            })
+            .from(homestayApplications)
+            .where(
+                and(
+                    isNotNull(homestayApplications.totalDiscount),
+                    sql`${homestayApplications.totalDiscount} > 0`
+                )
+            );
+
+        // 4. Monthly Actuals (last 6 months real revenue for historical baseline)
+        const pastRevenue = await db
+            .select({
+                month: sql<string>`to_char(${himkoshTransactions.createdAt}, 'YYYY-MM')`,
+                amount: sql<number>`sum(${himkoshTransactions.totalAmount})`
+            })
+            .from(himkoshTransactions)
+            .where(
+                and(
+                    eq(himkoshTransactions.transactionStatus, 'success'),
+                    sql`${himkoshTransactions.createdAt} >= NOW() - INTERVAL '6 months'`
+                )
+            )
+            .groupBy(sql`to_char(${himkoshTransactions.createdAt}, 'YYYY-MM')`)
+            .orderBy(sql`to_char(${himkoshTransactions.createdAt}, 'YYYY-MM') asc`);
+
+        res.json({
+            renewals: upcomingRenewals.map(r => ({
+                month: r.expiryMonth,
+                projectedRevenue: Number(r.revenue || 0),
+                propertiesCount: Number(r.count || 0)
+            })),
+            pipeline: {
+                stuckRevenue: Number(pipelineRevenue?.stuckRevenue || 0),
+                applicationsCount: Number(pipelineRevenue?.count || 0)
+            },
+            subsidies: {
+                femaleOwner: Number(discountTotals?.femaleOwnerSubsidy || 0),
+                pangi: Number(discountTotals?.pangiSubsidy || 0),
+                validity: Number(discountTotals?.validitySubsidy || 0),
+                total: Number(discountTotals?.totalSubsidized || 0)
+            },
+            historical: pastRevenue.map(r => ({
+                month: r.month,
+                actualRevenue: Number(r.amount || 0)
+            }))
+        });
+
+    } catch (error) {
+        console.error("[Stats API] Error fetching treasury forecast:", error);
+        res.status(500).json({ message: "Failed to fetch treasury forecast" });
     }
 });
 

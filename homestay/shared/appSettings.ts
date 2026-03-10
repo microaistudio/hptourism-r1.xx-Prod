@@ -199,6 +199,11 @@ export type MaintenanceModeSetting = {
   accessKey: string;
   messageType: MaintenanceMessageType;
   customMessage: string;
+  startedAt: string | null;            // ISO timestamp when maintenance was enabled
+  startedBy: string | null;            // User ID who enabled maintenance
+  estimatedRestoreAt: string | null;   // ISO timestamp for expected restore time
+  showEtaToPublic: boolean;            // Whether to show ETA on public page
+  showDowntimeToPublic: boolean;       // Whether to show downtime counter on public page
 };
 
 export const MAINTENANCE_MESSAGE_PRESETS = [
@@ -214,7 +219,12 @@ export const DEFAULT_MAINTENANCE_MODE: MaintenanceModeSetting = {
   enabled: false,
   accessKey: "launch2026",
   messageType: "System Upgrade in Progress",
-  customMessage: ""
+  customMessage: "",
+  startedAt: null,
+  startedBy: null,
+  estimatedRestoreAt: null,
+  showEtaToPublic: false,
+  showDowntimeToPublic: false,
 };
 
 export const normalizeMaintenanceModeSetting = (value: unknown): MaintenanceModeSetting => {
@@ -241,6 +251,11 @@ export const normalizeMaintenanceModeSetting = (value: unknown): MaintenanceMode
       : defaults.accessKey,
     messageType,
     customMessage: typeof obj.customMessage === "string" ? obj.customMessage.trim() : defaults.customMessage,
+    startedAt: typeof obj.startedAt === "string" ? obj.startedAt : null,
+    startedBy: typeof obj.startedBy === "string" ? obj.startedBy : null,
+    estimatedRestoreAt: typeof obj.estimatedRestoreAt === "string" ? obj.estimatedRestoreAt : null,
+    showEtaToPublic: typeof obj.showEtaToPublic === "boolean" ? obj.showEtaToPublic : false,
+    showDowntimeToPublic: typeof obj.showDowntimeToPublic === "boolean" ? obj.showDowntimeToPublic : false,
   };
 };
 
@@ -272,8 +287,11 @@ export type PaymentPipelinePauseSetting = {
   enabled: boolean;
   messageType: PaymentPauseMessageType;
   customMessage: string;
-  pausedAt: string | null;  // ISO timestamp when paused
-  pausedBy: string | null;  // User ID who paused
+  pausedAt: string | null;              // ISO timestamp when paused
+  pausedBy: string | null;              // User ID who paused
+  estimatedRestoreAt: string | null;    // ISO timestamp for expected restore time
+  showEtaToPublic: boolean;             // Whether to show ETA on public page
+  showDowntimeToPublic: boolean;        // Whether to show downtime counter on public page
 };
 
 export const DEFAULT_PAYMENT_PIPELINE_PAUSE: PaymentPipelinePauseSetting = {
@@ -282,6 +300,9 @@ export const DEFAULT_PAYMENT_PIPELINE_PAUSE: PaymentPipelinePauseSetting = {
   customMessage: "",
   pausedAt: null,
   pausedBy: null,
+  estimatedRestoreAt: null,
+  showEtaToPublic: false,
+  showDowntimeToPublic: false,
 };
 
 export const normalizePaymentPipelinePauseSetting = (value: unknown): PaymentPipelinePauseSetting => {
@@ -306,6 +327,9 @@ export const normalizePaymentPipelinePauseSetting = (value: unknown): PaymentPip
     customMessage: typeof obj.customMessage === "string" ? obj.customMessage.trim() : defaults.customMessage,
     pausedAt: typeof obj.pausedAt === "string" ? obj.pausedAt : null,
     pausedBy: typeof obj.pausedBy === "string" ? obj.pausedBy : null,
+    estimatedRestoreAt: typeof obj.estimatedRestoreAt === "string" ? obj.estimatedRestoreAt : null,
+    showEtaToPublic: typeof obj.showEtaToPublic === "boolean" ? obj.showEtaToPublic : false,
+    showDowntimeToPublic: typeof obj.showDowntimeToPublic === "boolean" ? obj.showDowntimeToPublic : false,
   };
 };
 

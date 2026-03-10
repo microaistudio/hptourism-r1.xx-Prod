@@ -1,5 +1,5 @@
 import express from "express";
-import { desc, and, inArray, eq, notInArray, gte, lte } from "drizzle-orm";
+import { desc, and, inArray, eq, notInArray, gte, lte, ilike, isNotNull } from "drizzle-orm";
 import { requireAuth, requireRole } from "../core/middleware";
 import { storage } from "../../storage";
 import { logger } from "../../logger";
@@ -7,11 +7,13 @@ import { db } from "../../db";
 import {
   applicationActions,
   homestayApplications,
+  users,
   type ApplicationServiceContext,
   type HomestayApplication,
   type InsertHomestayApplication,
   inspectionOrders,
   inspectionReports,
+  creditLedger,
 } from "@shared/schema";
 import { MAX_ROOMS_ALLOWED, MAX_BEDS_ALLOWED } from "@shared/fee-calculator";
 import { queueNotification } from "../../services/notifications";
@@ -22,7 +24,7 @@ import {
   type NormalizedDocumentRecord,
 } from "../../services/documentValidation";
 import { differenceInCalendarDays, format } from "date-fns";
-import { buildDistrictWhereClause, districtsMatch } from "../helpers/district";
+import { buildDistrictWhereClause, districtsMatch, buildSplitDistrictWhereClause, isCoveredBySplitDistrict } from "../helpers/district";
 import { canViewApplicationTimeline, summarizeTimelineActor } from "../helpers/timeline";
 
 const applicationsLog = logger.child({ module: "applications-router" });
@@ -62,7 +64,13 @@ export function createApplicationsRouter() {
         applications = await storage.getApplicationsByUser(userId);
         applications = applications.filter(app => app.status !== 'superseded');
       } else if (user.role === "district_officer" && user.district) {
-        applications = await storage.getApplicationsByDistrict(user.district);
+        // CHANGED: Use buildSplitDistrictWhereClause to handle multi-district coverage
+        const condition = buildSplitDistrictWhereClause(user.district);
+        applications = await db
+          .select()
+          .from(homestayApplications)
+          .where(condition)
+          .orderBy(desc(homestayApplications.createdAt));
       } else if (["state_officer", "admin"].includes(user.role)) {
         // CHANGED: Show ALL applications for global monitoring, not just those assigned for review.
         applications = await storage.getAllApplications();
@@ -134,10 +142,11 @@ export function createApplicationsRouter() {
           if (!user.district) {
             return res.status(400).json({ message: "District role must have an assigned district" });
           }
+          const condition = buildSplitDistrictWhereClause(user.district);
           applications = await db
             .select()
             .from(homestayApplications)
-            .where(eq(homestayApplications.district, user.district))
+            .where(condition)
             .orderBy(desc(homestayApplications.createdAt));
         } else if (["state_officer", "admin"].includes(user.role)) {
           applications = await storage.getAllApplications();
@@ -248,7 +257,7 @@ export function createApplicationsRouter() {
           if (!user.district) {
             return res.status(400).json({ message: "Your profile is missing district information." });
           }
-          const districtCondition = buildDistrictWhereClause(homestayApplications.district, user.district);
+          const districtCondition = buildSplitDistrictWhereClause(user.district);
           filters.push(districtCondition);
         }
 
@@ -285,6 +294,50 @@ export function createApplicationsRouter() {
       if (currentUser.role === "property_owner" && application.userId !== userId) {
         return res.status(403).json({ message: "Access denied" });
       }
+
+      let dtdoSignatureUrl: string | null = null;
+      if (application.dtdoId) {
+        const dtdoUser = await storage.getUser(application.dtdoId);
+        if (dtdoUser?.signatureUrl) {
+          dtdoSignatureUrl = dtdoUser.signatureUrl;
+        }
+      }
+
+      // Fallback for legacy/existing applications where dtdoId was never set:
+      // Look up the DTDO assigned to this application's district
+      if (!dtdoSignatureUrl && application.district) {
+        const [districtDtdo] = await db
+          .select({ signatureUrl: users.signatureUrl })
+          .from(users)
+          .where(
+            and(
+              eq(users.role, 'district_tourism_officer'),
+              eq(users.isActive, true),
+              ilike(users.district, `%${application.district.split(' ')[0]}%`),
+              isNotNull(users.signatureUrl)
+            )
+          )
+          .limit(1);
+        if (districtDtdo?.signatureUrl) {
+          dtdoSignatureUrl = districtDtdo.signatureUrl;
+        }
+      }
+
+      let totalCredit = 0;
+      try {
+        const credits = await db
+          .select({
+            creditAmount: creditLedger.creditAmount,
+          })
+          .from(creditLedger)
+          .where(and(eq(creditLedger.applicationId, application.id), eq(creditLedger.status, 'recorded')));
+
+        totalCredit = credits.reduce((sum, c) => sum + Number(c.creditAmount || 0), 0);
+      } catch (err) {
+        applicationsLog.error({ err, applicationId: application.id }, "Failed to fetch credit ledger");
+      }
+
+      const enhancedApplication = { ...application, dtdoSignatureUrl, totalCredit };
 
       // Merge documents table data for correction mode
       // The documents table has verificationStatus and verificationNotes from DA verification
@@ -351,7 +404,7 @@ export function createApplicationsRouter() {
             // Return application with enhanced documents
             return res.json({
               application: {
-                ...application,
+                ...enhancedApplication,
                 documents: enhancedDocs,
               },
             });
@@ -359,7 +412,7 @@ export function createApplicationsRouter() {
         }
       }
 
-      res.json({ application });
+      res.json({ application: enhancedApplication });
     } catch {
       res.status(500).json({ message: "Failed to fetch application" });
     }
@@ -388,7 +441,7 @@ export function createApplicationsRouter() {
         return res.status(404).json({ message: "Application not found" });
       }
 
-      if (user.role === "district_officer" && !districtsMatch(user.district, application.district)) {
+      if (user.role === "district_officer" && !isCoveredBySplitDistrict(user.district, application.district, application.tehsil)) {
         return res.status(403).json({ message: "You can only review applications in your district" });
       }
 

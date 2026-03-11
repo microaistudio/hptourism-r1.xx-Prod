@@ -319,6 +319,8 @@ export default function SuperAdminConsole() {
   });
   const [himkoshDdoFilter, setHimkoshDdoFilter] = useState<string>("all");
   const [himkoshStatusFilter, setHimkoshStatusFilter] = useState<string>("all");
+  const [himkoshSearchQuery, setHimkoshSearchQuery] = useState<string>("");
+  const [himkoshPage, setHimkoshPage] = useState<number>(1);
   const [seedCount, setSeedCount] = useState(10);
   const [staffCsvName, setStaffCsvName] = useState("");
   const [staffCsvText, setStaffCsvText] = useState("");
@@ -624,16 +626,20 @@ export default function SuperAdminConsole() {
     limit: number;
     offset: number;
   }>({
-    queryKey: ["/api/himkosh/transactions", HIMKOSH_ACTIVITY_LIMIT, himkoshDdoFilter, himkoshStatusFilter],
+    queryKey: ["/api/himkosh/transactions", HIMKOSH_ACTIVITY_LIMIT, himkoshDdoFilter, himkoshStatusFilter, himkoshSearchQuery, himkoshPage],
     queryFn: async () => {
       const params = new URLSearchParams();
       params.set("limit", String(HIMKOSH_ACTIVITY_LIMIT));
+      params.set("offset", String((himkoshPage - 1) * HIMKOSH_ACTIVITY_LIMIT));
       params.set("excludeTest", "true");
       if (himkoshDdoFilter && himkoshDdoFilter !== "all") {
         params.set("ddo", himkoshDdoFilter);
       }
       if (himkoshStatusFilter && himkoshStatusFilter !== "all") {
         params.set("status", himkoshStatusFilter);
+      }
+      if (himkoshSearchQuery) {
+        params.set("search", himkoshSearchQuery);
       }
       const response = await apiRequest(
         "GET",
@@ -2721,8 +2727,17 @@ export default function SuperAdminConsole() {
                         </div>
                         <CardDescription>Newest payment attempts captured from the portal.</CardDescription>
                       </div>
-                      <div className="flex gap-2">
-                        <Select value={himkoshDdoFilter} onValueChange={setHimkoshDdoFilter}>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Input
+                          placeholder="App No, GRN, Name, Property..."
+                          value={himkoshSearchQuery}
+                          onChange={(e) => {
+                            setHimkoshSearchQuery(e.target.value);
+                            setHimkoshPage(1);
+                          }}
+                          className="w-[200px]"
+                        />
+                        <Select value={himkoshDdoFilter} onValueChange={(val) => { setHimkoshDdoFilter(val); setHimkoshPage(1); }}>
                           <SelectTrigger className="w-[200px]">
                             <SelectValue placeholder="Filter by DDO" />
                           </SelectTrigger>
@@ -2735,12 +2750,13 @@ export default function SuperAdminConsole() {
                             ))}
                           </SelectContent>
                         </Select>
-                        <Select value={himkoshStatusFilter} onValueChange={setHimkoshStatusFilter}>
+                        <Select value={himkoshStatusFilter} onValueChange={(val) => { setHimkoshStatusFilter(val); setHimkoshPage(1); }}>
                           <SelectTrigger className="w-[160px]">
                             <SelectValue placeholder="Filter by Status" />
                           </SelectTrigger>
                           <SelectContent>
                             <SelectItem value="all">All Statuses</SelectItem>
+                            <SelectItem value="missing_link">🚨 Missing Link</SelectItem>
                             <SelectItem value="initiated">Initiated</SelectItem>
                             <SelectItem value="redirected">Redirected</SelectItem>
                             <SelectItem value="success">Success</SelectItem>
@@ -2825,10 +2841,36 @@ export default function SuperAdminConsole() {
                         </Table>
                       </div>
                     )}
-                    {latestTransactions.length > 0 && totalHimkoshTransactions > latestTransactions.length && (
-                      <p className="text-xs text-muted-foreground">
-                        Showing latest {latestTransactions.length} of {totalHimkoshTransactions} transactions.
-                      </p>
+                    {latestTransactions.length > 0 && (
+                      <div className="flex flex-col sm:flex-row items-center justify-between mt-4">
+                        <p className="text-sm text-muted-foreground mb-4 sm:mb-0">
+                          Showing {Math.min(
+                            totalHimkoshTransactions > 0 ? (himkoshPage - 1) * HIMKOSH_ACTIVITY_LIMIT + 1 : 0,
+                            totalHimkoshTransactions
+                          )} to {Math.min(
+                            himkoshPage * HIMKOSH_ACTIVITY_LIMIT,
+                            totalHimkoshTransactions
+                          )} of {totalHimkoshTransactions} transactions.
+                        </p>
+                        <div className="flex gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setHimkoshPage(p => Math.max(1, p - 1))}
+                            disabled={himkoshPage === 1}
+                          >
+                            Previous
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setHimkoshPage(p => p + 1)}
+                            disabled={himkoshPage * HIMKOSH_ACTIVITY_LIMIT >= totalHimkoshTransactions}
+                          >
+                            Next
+                          </Button>
+                        </div>
+                      </div>
                     )}
                   </CardContent>
                 </Card>

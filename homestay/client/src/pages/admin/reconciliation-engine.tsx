@@ -5,6 +5,7 @@ import { format } from "date-fns";
 import {
     RefreshCw,
     ShieldAlert,
+    ShieldCheck,
     Save,
     PlayCircle,
     Clock,
@@ -16,6 +17,8 @@ import {
     Unlock,
     Loader2,
     Filter,
+    Eye,
+    ExternalLink,
 } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -26,6 +29,13 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogHeader,
+    DialogTitle,
+} from "@/components/ui/dialog";
 import {
     Table,
     TableBody,
@@ -41,6 +51,7 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select";
+import { formatDateTimeIST } from "@/lib/dateUtils";
 
 // Interfaces
 interface ReconciliationSettings {
@@ -60,6 +71,19 @@ interface HimkoshTransaction {
     updatedAt: string;
     reconciledAt: string | null;
     applicationDistrict?: string;
+    applicationNumber?: string;
+    appRefNo?: string;
+    deptRefNo?: string;
+    totalAmount?: number;
+    transactionStatus?: string;
+    serviceCode?: string;
+    ddo?: string;
+    merchantCode?: string;
+    portalBaseUrl?: string;
+    echTxnId?: string;
+    bankCIN?: string;
+    tenderBy?: string;
+    head1?: string;
 }
 
 interface ReconLogEntry {
@@ -197,25 +221,132 @@ export default function ReconciliationEngine() {
     });
 
     // Transaction Data
-    const [txFilter, setTxFilter] = useState("initiated");
+    const [txFilter, setTxFilter] = useState("all"); // Default to all as requested
+    const [txSearch, setTxSearch] = useState("");
+    const [txPage, setTxPage] = useState(1);
+    const TX_LIMIT = 50;
+
+    // Transaction detail dialog state
+    const [selectedTx, setSelectedTx] = useState<HimkoshTransaction | null>(null);
+    const [txDialogOpen, setTxDialogOpen] = useState(false);
+    const [manualVerifyMode, setManualVerifyMode] = useState(false);
+    const [manualGrn, setManualGrn] = useState("");
+    const [manualReceiptNo, setManualReceiptNo] = useState("");
+
+    const openTxDetail = (tx: HimkoshTransaction) => {
+        setSelectedTx(tx);
+        setTxDialogOpen(true);
+        setManualVerifyMode(false);
+        setManualGrn("");
+        setManualReceiptNo("");
+    };
+
+    const closeTxDetail = () => {
+        setTxDialogOpen(false);
+        setSelectedTx(null);
+        setManualVerifyMode(false);
+        setManualGrn("");
+        setManualReceiptNo("");
+    };
+
+    const formatDateLabel = (value?: string | Date | null) =>
+        value ? (formatDateTimeIST(value) ?? "—") : "—";
+
+    // Auto-verify mutation
+    const verifyTransactionMutation = useMutation({
+        mutationFn: async (appRefNo: string) => {
+            const res = await apiRequest("POST", `/api/himkosh/verify/${appRefNo}`);
+            return await res.json();
+        },
+        onSuccess: (data) => {
+            if (data.verified) {
+                toast({
+                    title: "Payment Verified!",
+                    description: `GRN: ${data.data?.himgrn || data.data?.himgrn_no || 'Success'}. Application status updated.`,
+                });
+            } else {
+                toast({
+                    title: "Verification Complete",
+                    description: `Payment not found or aborted (Status: ${data.data?.TXN_STAT || '0'})`,
+                    variant: "destructive",
+                });
+            }
+            refetchTransactions();
+            closeTxDetail();
+        },
+        onError: (error: any) => {
+            toast({
+                title: "Verification Failed",
+                description: error?.message || "An error occurred",
+                variant: "destructive",
+            });
+        },
+    });
+
+    // Manual verify mutation
+    const manualVerifyMutation = useMutation({
+        mutationFn: async ({ appRefNo, verified, echTxnId, receiptNo }: { appRefNo: string; verified: boolean; echTxnId?: string; receiptNo?: string }) => {
+            const res = await apiRequest("POST", `/api/himkosh/verify/${appRefNo}/manual`, {
+                verified,
+                echTxnId: echTxnId || undefined,
+                receiptNo: receiptNo || undefined,
+            });
+            return await res.json();
+        },
+        onSuccess: (data) => {
+            if (data.verified) {
+                toast({
+                    title: "✅ Payment Manually Verified",
+                    description: `GRN: ${data.data?.himgrn || 'Confirmed'}. Application status updated.`,
+                });
+            } else {
+                toast({
+                    title: "Payment Marked as Not Found",
+                    description: "Transaction marked as failed.",
+                    variant: "destructive",
+                });
+            }
+            refetchTransactions();
+            closeTxDetail();
+        },
+        onError: (error: any) => {
+            toast({
+                title: "Manual Verification Failed",
+                description: error?.message || "An error occurred",
+                variant: "destructive",
+            });
+        },
+    });
 
     const {
         data: txData,
         isLoading: txLoading,
         refetch: refetchTransactions
     } = useQuery<{
-        transactions: (HimkoshTransaction)[];
+        transactions: (HimkoshTransaction & {
+            echTxnId: string;
+            appRefNo: string;
+            tenderBy: string;
+            ddo: string;
+            head1: string;
+            totalAmount: number;
+            transactionStatus: string;
+        })[];
         total: number;
         limit: number;
         offset: number;
     }>({
-        queryKey: ["/api/himkosh/transactions", 50, "all", txFilter],
+        queryKey: ["/api/himkosh/transactions", TX_LIMIT, "all", txFilter, txSearch, txPage],
         queryFn: async () => {
             const params = new URLSearchParams();
-            params.set("limit", "50");
+            params.set("limit", String(TX_LIMIT));
+            params.set("offset", String((txPage - 1) * TX_LIMIT));
             params.set("excludeTest", "true");
             if (txFilter !== "all" && txFilter !== "reconciled") {
                 params.set("status", txFilter);
+            }
+            if (txSearch) {
+                params.set("search", txSearch);
             }
             const response = await apiRequest(
                 "GET",
@@ -485,20 +616,30 @@ export default function ReconciliationEngine() {
                 <TabsContent value="transactions" className="mt-6">
                     <Card>
                         <CardHeader className="pb-4">
-                            <div className="flex items-center justify-between">
+                            <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
                                 <CardTitle className="text-xl flex items-center gap-2 text-slate-800"><RefreshCw className="w-5 h-5" /> Transaction Monitor</CardTitle>
                                 <div className="flex gap-4 items-center">
-                                    <Select value={txFilter} onValueChange={setTxFilter}>
+                                    <Input
+                                        placeholder="App No, GRN, Name, Property..."
+                                        value={txSearch}
+                                        onChange={(e) => {
+                                            setTxSearch(e.target.value);
+                                            setTxPage(1);
+                                        }}
+                                        className="w-[200px]"
+                                    />
+                                    <Select value={txFilter} onValueChange={(val) => { setTxFilter(val); setTxPage(1); }}>
                                         <SelectTrigger className="w-[180px]">
                                             <Filter className="w-4 h-4 mr-2" />
                                             <SelectValue placeholder="Status Filter" />
                                         </SelectTrigger>
                                         <SelectContent>
                                             <SelectItem value="all">All Transactions</SelectItem>
+                                            <SelectItem value="missing_link">🚨 Missing Payment Link</SelectItem>
                                             <SelectItem value="initiated">Stuck: Initiated</SelectItem>
                                             <SelectItem value="redirected">Stuck: Redirected</SelectItem>
                                             <SelectItem value="success">Successful</SelectItem>
-                                            <SelectItem value="failure">Failed</SelectItem>
+                                            <SelectItem value="failed">Failed</SelectItem>
                                             <SelectItem value="reconciled">Reconciled Status</SelectItem>
                                         </SelectContent>
                                     </Select>
@@ -511,67 +652,115 @@ export default function ReconciliationEngine() {
                                     <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
                                 </div>
                             ) : (
-                                <div className="border rounded-md overflow-hidden">
-                                    <Table>
-                                        <TableHeader className="bg-slate-50">
-                                            <TableRow>
-                                                <TableHead>Target Application</TableHead>
-                                                <TableHead>Amount</TableHead>
-                                                <TableHead>Status</TableHead>
-                                                <TableHead>Created</TableHead>
-                                                <TableHead>Reconciled</TableHead>
-                                            </TableRow>
-                                        </TableHeader>
-                                        <TableBody>
-                                            {displayTransactions.length === 0 ? (
+                                <>
+                                    <div className="border rounded-md overflow-hidden">
+                                        <Table>
+                                            <TableHeader className="bg-slate-50">
                                                 <TableRow>
-                                                    <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
-                                                        {txFilter === "initiated" || txFilter === "redirected" ? "No stuck transactions found. The queue is clean." : "No transactions matching filter."}
-                                                    </TableCell>
+                                                    <TableHead>App Number</TableHead>
+                                                    <TableHead>App Ref No</TableHead>
+                                                    <TableHead>Applicant</TableHead>
+                                                    <TableHead>GRN</TableHead>
+                                                    <TableHead>Amount</TableHead>
+                                                    <TableHead>Status</TableHead>
+                                                    <TableHead>Created</TableHead>
+                                                    <TableHead>Reconciled</TableHead>
                                                 </TableRow>
-                                            ) : (
-                                                displayTransactions.map((tx) => (
-                                                    <TableRow key={tx.id}>
-                                                        <TableCell className="font-medium">
-                                                            <Link href={`/admin/rc-applications/${tx.applicationId}`} className="text-primary hover:underline">
-                                                                {tx.applicationId.slice(0, 8)}...
-                                                            </Link>
-                                                        </TableCell>
-                                                        <TableCell>₹{tx.amount}</TableCell>
-                                                        <TableCell>
-                                                            {tx.status === "initiated" || tx.status === "redirected" ? (
-                                                                <Badge variant="outline" className="text-amber-600 border-amber-200 bg-amber-50">
-                                                                    <Clock className="w-3 h-3 mr-1" />
-                                                                    Stuck ({tx.status})
-                                                                </Badge>
-                                                            ) : tx.status === "success" ? (
-                                                                <Badge variant="outline" className="text-emerald-600 border-emerald-200 bg-emerald-50">
-                                                                    <CheckCircle2 className="w-3 h-3 mr-1" />
-                                                                    Success
-                                                                </Badge>
-                                                            ) : (
-                                                                <Badge variant="outline" className="text-red-600 border-red-200 bg-red-50">
-                                                                    <XCircle className="w-3 h-3 mr-1" />
-                                                                    {tx.status}
-                                                                </Badge>
-                                                            )}
-                                                        </TableCell>
-                                                        <TableCell className="text-sm text-slate-500">
-                                                            {format(new Date(tx.createdAt), "MMM d, HH:mm")}
-                                                        </TableCell>
-                                                        <TableCell className="text-sm text-slate-500">
-                                                            {tx.reconciledAt ? (
-                                                                <span className="text-indigo-600 font-medium">
-                                                                    ✓ {format(new Date(tx.reconciledAt), "MMM d, HH:mm")}
-                                                                </span>
-                                                            ) : "-"}
+                                            </TableHeader>
+                                            <TableBody>
+                                                {displayTransactions.length === 0 ? (
+                                                    <TableRow>
+                                                        <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                                                            {txFilter === "initiated" || txFilter === "redirected" ? "No stuck transactions found. The queue is clean." : txFilter === "missing_link" ? "✅ No orphaned payments found — all successful payments are properly linked." : "No transactions matching filter."}
                                                         </TableCell>
                                                     </TableRow>
-                                                ))
-                                            )}
-                                        </TableBody>
-                                    </Table>
-                                </div>
+                                                ) : (
+                                                    displayTransactions.map((tx) => (
+                                                        <TableRow key={tx.id} className="cursor-pointer hover:bg-slate-50" onClick={() => openTxDetail(tx)}>
+                                                            <TableCell className="font-medium text-xs">
+                                                                <Link href={`/admin/rc-applications/${tx.applicationId}`} className="text-primary hover:underline" target="_blank">
+                                                                    {tx.applicationNumber || tx.applicationId.slice(0, 8) + "..."}
+                                                                </Link>
+                                                            </TableCell>
+                                                            <TableCell className="font-mono text-xs max-w-[120px] truncate" title={tx.appRefNo}>
+                                                                {tx.appRefNo || "—"}
+                                                            </TableCell>
+                                                            <TableCell className="text-xs max-w-[100px] truncate" title={tx.tenderBy}>
+                                                                {tx.tenderBy || "—"}
+                                                            </TableCell>
+                                                            <TableCell className="font-mono text-xs">
+                                                                {tx.echTxnId || "—"}
+                                                            </TableCell>
+                                                            <TableCell className="font-semibold text-right">
+                                                                ₹{tx.amount ?? tx.totalAmount ?? 0}
+                                                            </TableCell>
+                                                            <TableCell>
+                                                                {tx.status === "initiated" || tx.status === "redirected" ? (
+                                                                    <Badge variant="outline" className="text-amber-600 border-amber-200 bg-amber-50">
+                                                                        <Clock className="w-3 h-3 mr-1" />
+                                                                        Stuck ({tx.status})
+                                                                    </Badge>
+                                                                ) : tx.status === "success" || tx.transactionStatus === "success" || tx.status === "Success" ? (
+                                                                    <Badge variant="outline" className="text-emerald-600 border-emerald-200 bg-emerald-50">
+                                                                        <CheckCircle2 className="w-3 h-3 mr-1" />
+                                                                        Success
+                                                                    </Badge>
+                                                                ) : (
+                                                                    <Badge variant="outline" className="text-red-600 border-red-200 bg-red-50">
+                                                                        <XCircle className="w-3 h-3 mr-1" />
+                                                                        {tx.transactionStatus || tx.status || "Failed"}
+                                                                    </Badge>
+                                                                )}
+                                                            </TableCell>
+                                                            <TableCell className="text-xs text-slate-500 whitespace-nowrap">
+                                                                {tx.createdAt ? format(new Date(tx.createdAt), "MMM d, HH:mm") : "—"}
+                                                            </TableCell>
+                                                            <TableCell className="text-xs text-slate-500 whitespace-nowrap">
+                                                                {tx.reconciledAt ? (
+                                                                    <span className="text-indigo-600 font-medium">
+                                                                        ✓ {format(new Date(tx.reconciledAt), "MMM d, HH:mm")}
+                                                                    </span>
+                                                                ) : "—"}
+                                                            </TableCell>
+                                                        </TableRow>
+                                                    ))
+                                                )}
+                                            </TableBody>
+                                        </Table>
+                                    </div>
+
+                                    {displayTransactions.length > 0 && (
+                                        <div className="flex flex-col sm:flex-row items-center justify-between mt-4">
+                                            <p className="text-sm text-muted-foreground mb-4 sm:mb-0">
+                                                Showing {Math.min(
+                                                    (txData?.total ?? 0) > 0 ? (txPage - 1) * TX_LIMIT + 1 : 0,
+                                                    txData?.total ?? 0
+                                                )} to {Math.min(
+                                                    txPage * TX_LIMIT,
+                                                    txData?.total ?? 0
+                                                )} of {txData?.total ?? 0} transactions.
+                                            </p>
+                                            <div className="flex gap-2">
+                                                <Button
+                                                    variant="outline"
+                                                    size="sm"
+                                                    onClick={() => setTxPage(p => Math.max(1, p - 1))}
+                                                    disabled={txPage === 1}
+                                                >
+                                                    Previous
+                                                </Button>
+                                                <Button
+                                                    variant="outline"
+                                                    size="sm"
+                                                    onClick={() => setTxPage(p => p + 1)}
+                                                    disabled={txPage * TX_LIMIT >= (txData?.total ?? 0)}
+                                                >
+                                                    Next
+                                                </Button>
+                                            </div>
+                                        </div>
+                                    )}
+                                </>
                             )}
                         </CardContent>
                     </Card>
@@ -633,6 +822,191 @@ export default function ReconciliationEngine() {
                 </TabsContent>
 
             </Tabs>
+
+            {/* Transaction Detail Dialog */}
+            <Dialog open={txDialogOpen && Boolean(selectedTx)} onOpenChange={(open) => { if (!open) closeTxDetail(); }}>
+                <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
+                    {selectedTx && (
+                        <>
+                            <DialogHeader>
+                                <DialogTitle>Transaction {selectedTx.appRefNo || selectedTx.id?.slice(0, 8)}</DialogTitle>
+                                <DialogDescription>
+                                    Application {selectedTx.deptRefNo || selectedTx.applicationId?.slice(0, 12)} · {formatDateLabel(selectedTx.createdAt)}
+                                </DialogDescription>
+                            </DialogHeader>
+                            <div className="grid gap-4 sm:grid-cols-2 mt-4">
+                                <div className="space-y-1">
+                                    <p className="text-xs uppercase text-muted-foreground">Amount</p>
+                                    <p className="font-semibold text-lg">₹{selectedTx.totalAmount ?? selectedTx.amount ?? 0}</p>
+                                </div>
+                                <div className="space-y-1">
+                                    <p className="text-xs uppercase text-muted-foreground">Status</p>
+                                    {(selectedTx.transactionStatus === "success" || selectedTx.status === "success") ? (
+                                        <Badge variant="outline" className="text-emerald-600 border-emerald-200 bg-emerald-50">
+                                            <CheckCircle2 className="w-3 h-3 mr-1" /> Success
+                                        </Badge>
+                                    ) : (selectedTx.transactionStatus === "initiated" || selectedTx.transactionStatus === "redirected") ? (
+                                        <Badge variant="outline" className="text-amber-600 border-amber-200 bg-amber-50">
+                                            <Clock className="w-3 h-3 mr-1" /> Stuck ({selectedTx.transactionStatus})
+                                        </Badge>
+                                    ) : (
+                                        <Badge variant="outline" className="text-red-600 border-red-200 bg-red-50">
+                                            <XCircle className="w-3 h-3 mr-1" /> {selectedTx.transactionStatus || selectedTx.status || "Failed"}
+                                        </Badge>
+                                    )}
+                                </div>
+                                <div className="space-y-1">
+                                    <p className="text-xs uppercase text-muted-foreground">Service Code</p>
+                                    <p className="font-mono text-sm">{selectedTx.serviceCode || "—"}</p>
+                                </div>
+                                <div className="space-y-1">
+                                    <p className="text-xs uppercase text-muted-foreground">DDO</p>
+                                    <p className="font-mono text-sm">{selectedTx.ddo || "—"}</p>
+                                </div>
+                                <div className="space-y-1">
+                                    <p className="text-xs uppercase text-muted-foreground">Merchant</p>
+                                    <p className="text-sm">{selectedTx.merchantCode || "—"}</p>
+                                </div>
+                                <div className="space-y-1">
+                                    <p className="text-xs uppercase text-muted-foreground">Applicant</p>
+                                    <p className="text-sm">{selectedTx.tenderBy || "—"}</p>
+                                </div>
+                                <div className="space-y-1">
+                                    <p className="text-xs uppercase text-muted-foreground">Challan / GRN</p>
+                                    <p className="text-sm">{selectedTx.echTxnId || "—"}</p>
+                                </div>
+                                <div className="space-y-1">
+                                    <p className="text-xs uppercase text-muted-foreground">Bank Reference</p>
+                                    <p className="text-sm">{selectedTx.bankCIN || "—"}</p>
+                                </div>
+                            </div>
+                            <div className="mt-6">
+                                <p className="text-xs uppercase text-muted-foreground mb-2">Raw payload</p>
+                                <pre className="bg-muted p-3 rounded-lg text-xs whitespace-pre-wrap break-all max-h-[200px] overflow-y-auto">
+                                    {JSON.stringify(selectedTx, null, 2)}
+                                </pre>
+                            </div>
+                            {(selectedTx.transactionStatus === "initiated" || selectedTx.transactionStatus === "failed" || selectedTx.transactionStatus === "cancelled_by_applicant") && selectedTx.appRefNo && (
+                                <div className="mt-6 space-y-4">
+                                    {/* Step 1: Open HimKosh SearchChallan in browser */}
+                                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+                                        <h4 className="font-semibold text-amber-900 mb-2 flex items-center gap-2">
+                                            <Eye className="w-4 h-4" /> Step 1: Verify on HimKosh
+                                        </h4>
+                                        <p className="text-sm text-amber-800 mb-3">
+                                            Open the HimKosh SearchChallan page and search with these details:
+                                        </p>
+                                        <div className="bg-white rounded p-3 text-xs space-y-1 font-mono border">
+                                            <p><strong>Name (Tender By):</strong> {selectedTx.tenderBy}</p>
+                                            <p><strong>Date:</strong> {formatDateLabel(selectedTx.createdAt)}</p>
+                                            <p><strong>Our Ref:</strong> {selectedTx.appRefNo}</p>
+                                            <p><strong>DDO:</strong> {selectedTx.ddo}</p>
+                                        </div>
+                                        <Button
+                                            variant="outline"
+                                            className="mt-3 border-amber-400 text-amber-900 hover:bg-amber-100"
+                                            onClick={() => window.open('https://himkosh.hp.nic.in/eChallan/SearchChallan.aspx', '_blank')}
+                                        >
+                                            <ExternalLink className="w-4 h-4 mr-2" /> Open HimKosh SearchChallan
+                                        </Button>
+                                    </div>
+
+                                    {/* Step 2: Verify actions */}
+                                    {!manualVerifyMode ? (
+                                        <div className="flex gap-2">
+                                            <Button
+                                                variant="default"
+                                                className="bg-blue-600 hover:bg-blue-700 text-white flex-1"
+                                                onClick={() => verifyTransactionMutation.mutate(selectedTx.appRefNo!)}
+                                                disabled={verifyTransactionMutation.isPending}
+                                            >
+                                                {verifyTransactionMutation.isPending ? (
+                                                    <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Auto-Verifying...</>
+                                                ) : (
+                                                    <><ShieldCheck className="w-4 h-4 mr-2" /> Try Auto-Verify (Server Sync)</>
+                                                )}
+                                            </Button>
+                                            <Button
+                                                variant="outline"
+                                                className="flex-1"
+                                                onClick={() => setManualVerifyMode(true)}
+                                            >
+                                                <CheckCircle2 className="w-4 h-4 mr-2" /> Manual Verify (Enter GRN)
+                                            </Button>
+                                        </div>
+                                    ) : (
+                                        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                                            <h4 className="font-semibold text-blue-900 mb-2 flex items-center gap-2">
+                                                <CheckCircle2 className="w-4 h-4" /> Step 2: Enter Verification Result
+                                            </h4>
+                                            <p className="text-sm text-blue-800 mb-3">
+                                                Enter the GRN (HIMGRN) number from the HimKosh SearchChallan results:
+                                            </p>
+                                            <div className="space-y-3">
+                                                <div>
+                                                    <Label className="text-xs">GRN / HIMGRN Number *</Label>
+                                                    <Input
+                                                        placeholder="e.g. A26B209280"
+                                                        value={manualGrn}
+                                                        onChange={(e) => setManualGrn(e.target.value)}
+                                                        className="font-mono"
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <Label className="text-xs">Receipt Number (optional)</Label>
+                                                    <Input
+                                                        placeholder="Receipt number if available"
+                                                        value={manualReceiptNo}
+                                                        onChange={(e) => setManualReceiptNo(e.target.value)}
+                                                        className="font-mono"
+                                                    />
+                                                </div>
+                                                <div className="flex gap-2">
+                                                    <Button
+                                                        className="bg-green-600 hover:bg-green-700 text-white flex-1"
+                                                        disabled={!manualGrn.trim() || manualVerifyMutation.isPending}
+                                                        onClick={() => manualVerifyMutation.mutate({
+                                                            appRefNo: selectedTx.appRefNo!,
+                                                            verified: true,
+                                                            echTxnId: manualGrn.trim(),
+                                                            receiptNo: manualReceiptNo.trim(),
+                                                        })}
+                                                    >
+                                                        {manualVerifyMutation.isPending ? (
+                                                            <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Saving...</>
+                                                        ) : (
+                                                            <><CheckCircle2 className="w-4 h-4 mr-2" /> Confirm Payment Found</>
+                                                        )}
+                                                    </Button>
+                                                    <Button
+                                                        variant="destructive"
+                                                        className="flex-1"
+                                                        disabled={manualVerifyMutation.isPending}
+                                                        onClick={() => manualVerifyMutation.mutate({
+                                                            appRefNo: selectedTx.appRefNo!,
+                                                            verified: false,
+                                                        })}
+                                                    >
+                                                        <XCircle className="w-4 h-4 mr-2" /> Not Found
+                                                    </Button>
+                                                </div>
+                                                <Button
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    className="w-full text-muted-foreground"
+                                                    onClick={() => { setManualVerifyMode(false); setManualGrn(""); setManualReceiptNo(""); }}
+                                                >
+                                                    Cancel
+                                                </Button>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </>
+                    )}
+                </DialogContent>
+            </Dialog>
         </div>
     );
 }

@@ -3,7 +3,7 @@ import { db } from '../db';
 import { himkoshTransactions, homestayApplications, systemSettings, users } from '../../shared/schema';
 import { HimKoshCrypto, buildRequestString, parseResponseString, buildVerificationString, verifyChallanViaSearch } from './crypto';
 import { resolveHimkoshGatewayConfig } from './gatewayConfig';
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, sql, ilike, or, isNull } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
 import { config as appConfig } from '@shared/config';
 import { ensureDistrictCodeOnApplicationNumber } from '@shared/applicationNumber';
@@ -763,190 +763,217 @@ router.post('/callback', async (req, res) => {
       return res.status(404).send('Transaction not found');
     }
 
-    // Update transaction with response
-    await db
-      .update(himkoshTransactions)
-      .set({
-        echTxnId: parsedResponse.echTxnId,
-        bankCIN: parsedResponse.bankCIN,
-        bankName: parsedResponse.bankName,
-        paymentDate: parsedResponse.paymentDate || null, // varchar(14) - store raw string
-        status: parsedResponse.status,
-        statusCd: parsedResponse.statusCd,
-        responseChecksum: parsedResponse.checksum,
-        transactionStatus: parsedResponse.statusCd === '1' ? 'success' : 'failed',
-        respondedAt: new Date(),
-        challanPrintUrl: parsedResponse.statusCd === '1'
-          ? `${config.challanPrintUrl}?reportName=PaidChallan&TransId=${parsedResponse.echTxnId}`
-          : undefined,
-      })
-      .where(eq(himkoshTransactions.id, transaction.id));
+    // ── ATOMIC PAYMENT PROCESSING ──────────────────────────────────────────
+    // Wrap transaction-record + application-record updates in a DB transaction.
+    // This ensures both succeed or both roll back, preventing "orphaned" payments
+    // where HimKosh shows success but the application has no paymentId link.
+    //
+    // ROOT CAUSE FIX: Previously these were two independent writes. If the server
+    // died (restart, OOM, timeout) between them, the himkosh_transactions record
+    // got statusCd='1' but homestay_applications.paymentId remained null.
+    // ─────────────────────────────────────────────────────────────────────────
 
-    // If payment successful, update application
-    if (parsedResponse.statusCd === '1') {
-      const [currentApplication] = await db
-        .select()
-        .from(homestayApplications)
-        .where(eq(homestayApplications.id, transaction.applicationId))
-        .limit(1);
+    // Helper to parse DDMMYYYYHHMMSS or DD-MM-YYYY format (defined outside transaction)
+    const parsePaymentDate = (dateStr: string | null | undefined): Date => {
+      if (!dateStr) return new Date();
+      const cleaned = dateStr.trim();
+      if (/^\d{14}$/.test(cleaned)) {
+        const day = parseInt(cleaned.substring(0, 2), 10);
+        const month = parseInt(cleaned.substring(2, 4), 10) - 1;
+        const year = parseInt(cleaned.substring(4, 8), 10);
+        const dt = new Date(year, month, day);
+        return isNaN(dt.getTime()) ? new Date() : dt;
+      }
+      const parts = cleaned.split(/[-/]/);
+      if (parts.length >= 3) {
+        const day = parseInt(parts[0], 10);
+        const month = parseInt(parts[1], 10) - 1;
+        const year = parseInt(parts[2].substring(0, 4), 10);
+        const dt = new Date(year, month, day);
+        return isNaN(dt.getTime()) ? new Date() : dt;
+      }
+      return new Date();
+    };
 
-      // 2025 Workflow: Handle diff between "Pay & Submit" (draft) vs "Final Payment" (payment_pending)
+    await db.transaction(async (tx) => {
+      // Step 1: Update transaction record with HimKosh response
+      await tx
+        .update(himkoshTransactions)
+        .set({
+          echTxnId: parsedResponse.echTxnId,
+          bankCIN: parsedResponse.bankCIN,
+          bankName: parsedResponse.bankName,
+          paymentDate: parsedResponse.paymentDate || null,
+          status: parsedResponse.status,
+          statusCd: parsedResponse.statusCd,
+          responseChecksum: parsedResponse.checksum,
+          transactionStatus: parsedResponse.statusCd === '1' ? 'success' : 'failed',
+          respondedAt: new Date(),
+          challanPrintUrl: parsedResponse.statusCd === '1'
+            ? `${config.challanPrintUrl}?reportName=PaidChallan&TransId=${parsedResponse.echTxnId}`
+            : undefined,
+        })
+        .where(eq(himkoshTransactions.id, transaction.id));
 
-      // Helper to parse DDMMYYYYHHMMSS or DD-MM-YYYY format
-      const parsePaymentDate = (dateStr: string | null | undefined): Date => {
-        if (!dateStr) return new Date();
-        const cleaned = dateStr.trim();
-        // Format: DDMMYYYYHHMMSS (14 chars, no separators)
-        if (/^\d{14}$/.test(cleaned)) {
-          const day = parseInt(cleaned.substring(0, 2), 10);
-          const month = parseInt(cleaned.substring(2, 4), 10) - 1;
-          const year = parseInt(cleaned.substring(4, 8), 10);
-          const dt = new Date(year, month, day);
-          return isNaN(dt.getTime()) ? new Date() : dt;
-        }
-        // Format: DD-MM-YYYY or DD/MM/YYYY
-        const parts = cleaned.split(/[-/]/);
-        if (parts.length >= 3) {
-          const day = parseInt(parts[0], 10);
-          const month = parseInt(parts[1], 10) - 1;
-          const year = parseInt(parts[2].substring(0, 4), 10);
-          const dt = new Date(year, month, day);
-          return isNaN(dt.getTime()) ? new Date() : dt;
-        }
-        return new Date();
-      };
+      // Step 2: If payment successful, update application (SAME transaction)
+      if (parsedResponse.statusCd === '1') {
+        const [currentApplication] = await tx
+          .select()
+          .from(homestayApplications)
+          .where(eq(homestayApplications.id, transaction.applicationId))
+          .limit(1);
 
-      // CASE 1: Pay & Submit (Draft -> Submitted) or Pay First -> await manual submit
-      if (currentApplication?.status === 'draft') {
-        const submitMode = await getUpfrontSubmitMode();
-        const now = new Date();
+        // CASE 1: Pay & Submit (Draft -> Submitted) or Pay First -> await manual submit
+        if (currentApplication?.status === 'draft') {
+          const submitMode = await getUpfrontSubmitMode();
+          const now = new Date();
 
-        // Determine target status based on submit mode
-        // Auto: immediately submit the application
-        // Manual: keep it in paid_pending_submit state for user to confirm
-        const targetStatus = submitMode === "auto" ? "submitted" : "paid_pending_submit";
-        const feedbackMessage = submitMode === "auto"
-          ? `Registration fee paid via HimKosh (CIN: ${parsedResponse.echTxnId ?? "N/A"}). Application submitted.`
-          : `Registration fee paid via HimKosh (CIN: ${parsedResponse.echTxnId ?? "N/A"}). Awaiting manual submission.`;
+          const targetStatus = submitMode === "auto" ? "submitted" : "paid_pending_submit";
+          const feedbackMessage = submitMode === "auto"
+            ? `Registration fee paid via HimKosh (CIN: ${parsedResponse.echTxnId ?? "N/A"}). Application submitted.`
+            : `Registration fee paid via HimKosh (CIN: ${parsedResponse.echTxnId ?? "N/A"}). Awaiting manual submission.`;
 
-        await db
-          .update(homestayApplications)
-          .set({
-            status: targetStatus,
-            paymentStatus: 'paid',
-            paymentId: parsedResponse.echTxnId,
-            paymentAmount: transaction.totalAmount?.toString(),
-            paymentDate: parsePaymentDate(parsedResponse.paymentDate),
-            submittedAt: submitMode === "auto" ? now : null,
-            updatedAt: now,
-            // Analytics: Calculate time spent (Created -> Payment/Submission)
-            formCompletionTimeSeconds: (() => {
-              if (currentApplication.createdAt && submitMode === "auto") {
-                const createdMs = new Date(currentApplication.createdAt).getTime();
-                const nowMs = now.getTime();
-                const diff = Math.round((nowMs - createdMs) / 1000);
-                return (diff > 0 && diff < 2000000000) ? diff : 0;
-              }
-              return undefined;
-            })(),
-          })
-          .where(eq(homestayApplications.id, transaction.applicationId));
-
-        // Log the action
-        await logApplicationAction({
-          applicationId: transaction.applicationId,
-          actorId: currentApplication.userId, // User paid
-          action: "payment_verified",
-          previousStatus: "draft",
-          newStatus: targetStatus,
-          feedback: feedbackMessage,
-        });
-
-        // Sync documents from JSONB to documents table for DA verification
-        if (targetStatus === "submitted") {
-          try {
-            const { storage } = await import('../storage');
-            if (storage.syncDocumentsFromJsonb) {
-              const syncCount = await storage.syncDocumentsFromJsonb(transaction.applicationId);
-              himkoshLogger.info(
-                { applicationId: transaction.applicationId, syncCount },
-                "Synced documents from JSONB to table on submission"
-              );
-            }
-          } catch (syncError) {
-            himkoshLogger.error(
-              { err: syncError, applicationId: transaction.applicationId },
-              "Failed to sync documents from JSONB"
-            );
-          }
-        }
-
-
-      } else {
-        // CASE 2: Final Payment (Payment Pending -> Approved) - existing logic
-        // Generate certificate number
-        const year = new Date().getFullYear();
-        const randomSuffix = Math.floor(10000 + Math.random() * 90000);
-        const certificateNumber = `HP-HST-${year}-${randomSuffix}`;
-
-        const issueDate = new Date();
-        const expiryDate = new Date(issueDate);
-        const validityYears = currentApplication.certificateValidityYears || 1;
-        expiryDate.setFullYear(expiryDate.getFullYear() + validityYears);
-        const formatTimelineDate = (value: Date) =>
-          value.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
-
-        await db
-          .update(homestayApplications)
-          .set({
-            status: 'approved',
-            certificateNumber,
-            certificateIssuedDate: issueDate,
-            certificateExpiryDate: expiryDate,
-            approvedAt: issueDate,
-          })
-          .where(eq(homestayApplications.id, transaction.applicationId));
-
-        // Application Lifecycle: If this was a service request (Add Rooms, etc.),
-        // mark the parent application as superseded to prevent duplicates.
-        if (currentApplication.parentApplicationId) {
-          await db
+          await tx
             .update(homestayApplications)
             .set({
-              status: 'superseded',
-              districtNotes: `Superseded by application ${currentApplication.applicationNumber}`
+              status: targetStatus,
+              paymentStatus: 'paid',
+              paymentId: parsedResponse.echTxnId,
+              paymentAmount: transaction.totalAmount?.toString(),
+              paymentDate: parsePaymentDate(parsedResponse.paymentDate),
+              submittedAt: submitMode === "auto" ? now : null,
+              updatedAt: now,
+              formCompletionTimeSeconds: (() => {
+                if (currentApplication.createdAt && submitMode === "auto") {
+                  const createdMs = new Date(currentApplication.createdAt).getTime();
+                  const nowMs = now.getTime();
+                  const diff = Math.round((nowMs - createdMs) / 1000);
+                  return (diff > 0 && diff < 2000000000) ? diff : 0;
+                }
+                return undefined;
+              })(),
             })
-            .where(eq(homestayApplications.id, currentApplication.parentApplicationId));
-        }
+            .where(eq(homestayApplications.id, transaction.applicationId));
 
-        const actorId =
-          currentApplication?.dtdoId ??
-          currentApplication?.daId ??
-          currentApplication?.userId ??
-          null;
-
-        if (actorId) {
           await logApplicationAction({
             applicationId: transaction.applicationId,
-            actorId,
+            actorId: currentApplication.userId,
             action: "payment_verified",
-            previousStatus: currentApplication?.status ?? null,
-            newStatus: "approved",
-            feedback: `HimKosh payment confirmed (CIN: ${parsedResponse.echTxnId ?? "N/A"})`,
+            previousStatus: "draft",
+            newStatus: targetStatus,
+            feedback: feedbackMessage,
           });
-          await logApplicationAction({
-            applicationId: transaction.applicationId,
-            actorId,
-            action: "certificate_issued",
-            previousStatus: "approved",
-            newStatus: "approved",
-            feedback: `Certificate ${certificateNumber} issued on ${formatTimelineDate(issueDate)} (valid till ${formatTimelineDate(
-              expiryDate,
-            )})`,
-          });
+
+          // Sync documents (non-critical, outside the DB transaction boundary)
+          if (targetStatus === "submitted") {
+            // Defer doc sync to after transaction commits (best-effort)
+            setTimeout(async () => {
+              try {
+                const { storage } = await import('../storage');
+                if (storage.syncDocumentsFromJsonb) {
+                  const syncCount = await storage.syncDocumentsFromJsonb(transaction.applicationId);
+                  himkoshLogger.info(
+                    { applicationId: transaction.applicationId, syncCount },
+                    "Synced documents from JSONB to table on submission"
+                  );
+                }
+              } catch (syncError) {
+                himkoshLogger.error(
+                  { err: syncError, applicationId: transaction.applicationId },
+                  "Failed to sync documents from JSONB"
+                );
+              }
+            }, 100);
+          }
+
+        } else if (currentApplication?.status === 'payment_pending') {
+          // CASE 2: Final Payment (Payment Pending -> Approved)
+          const year = new Date().getFullYear();
+          const randomSuffix = Math.floor(10000 + Math.random() * 90000);
+          const certificateNumber = `HP-HST-${year}-${randomSuffix}`;
+
+          const issueDate = new Date();
+          const expiryDate = new Date(issueDate);
+          const validityYears = currentApplication.certificateValidityYears || 1;
+          expiryDate.setFullYear(expiryDate.getFullYear() + validityYears);
+          const formatTimelineDate = (value: Date) =>
+            value.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+
+          await tx
+            .update(homestayApplications)
+            .set({
+              status: 'approved',
+              paymentStatus: 'paid',
+              paymentId: parsedResponse.echTxnId,
+              paymentAmount: transaction.totalAmount?.toString(),
+              paymentDate: parsePaymentDate(parsedResponse.paymentDate),
+              certificateNumber,
+              certificateIssuedDate: issueDate,
+              certificateExpiryDate: expiryDate,
+              approvedAt: issueDate,
+              updatedAt: issueDate,
+            })
+            .where(eq(homestayApplications.id, transaction.applicationId));
+
+          // Supersede parent app if this was a service request
+          if (currentApplication.parentApplicationId) {
+            await tx
+              .update(homestayApplications)
+              .set({
+                status: 'superseded',
+                districtNotes: `Superseded by application ${currentApplication.applicationNumber}`
+              })
+              .where(eq(homestayApplications.id, currentApplication.parentApplicationId));
+          }
+
+          const actorId =
+            currentApplication?.dtdoId ??
+            currentApplication?.daId ??
+            currentApplication?.userId ??
+            null;
+
+          if (actorId) {
+            await logApplicationAction({
+              applicationId: transaction.applicationId,
+              actorId,
+              action: "payment_verified",
+              previousStatus: currentApplication?.status ?? null,
+              newStatus: "approved",
+              feedback: `HimKosh payment confirmed (CIN: ${parsedResponse.echTxnId ?? "N/A"})`,
+            });
+            await logApplicationAction({
+              applicationId: transaction.applicationId,
+              actorId,
+              action: "certificate_issued",
+              previousStatus: "approved",
+              newStatus: "approved",
+              feedback: `Certificate ${certificateNumber} issued on ${formatTimelineDate(issueDate)} (valid till ${formatTimelineDate(
+                expiryDate,
+              )})`,
+            });
+          }
+        } else {
+          // CASE 3: App already in a forwarded state (submitted, under_scrutiny, etc.)
+          // Still link the payment so dashboards show correct status
+          const now = new Date();
+          await tx
+            .update(homestayApplications)
+            .set({
+              paymentStatus: 'paid',
+              paymentId: parsedResponse.echTxnId,
+              paymentAmount: transaction.totalAmount?.toString(),
+              paymentDate: parsePaymentDate(parsedResponse.paymentDate),
+              updatedAt: now,
+            })
+            .where(eq(homestayApplications.id, transaction.applicationId));
+
+          himkoshLogger.info(
+            { appRefNo: parsedResponse.appRefNo, applicationId: transaction.applicationId, currentStatus: currentApplication?.status, grn: parsedResponse.echTxnId },
+            'Callback: App already in terminal state — paymentStatus set to paid (no status change)',
+          );
         }
       }
-    }
+    }); // END db.transaction
 
     const statusCode = parsedResponse.statusCd ?? parsedResponse.status ?? "";
     const meta = STATUS_META[statusCode] ?? {
@@ -1173,6 +1200,26 @@ router.post('/verify/:appRefNo', async (req, res) => {
             newStatus: "submitted",
             feedback: `Payment double-verified via HimKosh SearchChallan (HIMGRN: ${result.transId}).`,
           });
+        }
+        else {
+          // App is already in a forwarded/terminal state (submitted, under_scrutiny, etc.)
+          // Still update paymentStatus to 'paid' so dashboards stay in sync
+          const now = new Date();
+          await db
+            .update(homestayApplications)
+            .set({
+              paymentStatus: 'paid',
+              paymentId: transaction.echTxnId ?? result.transId,
+              paymentAmount: transaction.totalAmount?.toString(),
+              paymentDate: now,
+              updatedAt: now,
+            })
+            .where(eq(homestayApplications.id, app.id));
+
+          himkoshLogger.info(
+            { appRefNo: transaction.appRefNo, applicationId: app.id, currentStatus: app.status, grn: result.transId, method: 'auto-verify' },
+            'Auto-verify: App in terminal state — paymentStatus set to paid (no status change)',
+          );
         }
       }
     }
@@ -1421,7 +1468,37 @@ router.get('/transactions', async (req, res) => {
       conditions.push(eq(himkoshTransactions.ddo, ddoFilter));
     }
     if (statusFilter && statusFilter !== 'all') {
-      conditions.push(eq(himkoshTransactions.transactionStatus, statusFilter));
+      if (statusFilter === 'missing_link') {
+        conditions.push(
+          sql`${and(
+            or(
+              eq(himkoshTransactions.transactionStatus, 'success'),
+              eq(himkoshTransactions.transactionStatus, 'verified'),
+              eq(himkoshTransactions.statusCd, '1')
+            ),
+            isNull(homestayApplications.paymentId)
+          )}`
+        );
+      } else {
+        conditions.push(eq(himkoshTransactions.transactionStatus, statusFilter));
+      }
+    }
+
+    // Search filter across multiple fields
+    const searchFilter = req.query?.search as string | undefined;
+    if (searchFilter && searchFilter.trim()) {
+      const searchTerm = `%${searchFilter.trim()}%`;
+      conditions.push(
+        sql`${or(
+          ilike(himkoshTransactions.appRefNo, searchTerm),
+          ilike(himkoshTransactions.deptRefNo, searchTerm),
+          ilike(himkoshTransactions.echTxnId, searchTerm),
+          ilike(himkoshTransactions.tenderBy, searchTerm),
+          ilike(homestayApplications.propertyName, searchTerm),
+          ilike(homestayApplications.ownerName, searchTerm),
+          ilike(homestayApplications.applicationNumber, searchTerm)
+        )}`
+      );
     }
 
     const whereClause = and(...conditions);
@@ -1452,6 +1529,7 @@ router.get('/transactions', async (req, res) => {
     const transactions = rawTransactions.map(row => ({
       ...row.himkosh_transactions,
       applicationDistrict: row.homestay_applications?.district ?? null,
+      applicationNumber: row.homestay_applications?.applicationNumber ?? null,
     }));
 
     res.json({

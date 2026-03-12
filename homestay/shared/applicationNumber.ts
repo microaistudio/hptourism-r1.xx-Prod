@@ -70,3 +70,23 @@ export const ensureDistrictCodeOnApplicationNumber = (
 
   return `HP-HS-${yearCandidate}-${districtCode}-${serial.padStart(6, "0")}`;
 };
+
+/**
+ * Convert a full application number into a compact DeptRefNo for HimKosh.
+ *
+ * HimKosh silently truncates the DeptRefNo field at 20 characters.
+ * Our canonical format `HP-HS-YYYY-DDD-NNNNNN` is 21 characters, so the
+ * last digit of the serial gets chopped off on every receipt.
+ *
+ * This helper strips the constant `HP-` prefix, producing
+ * `HS-YYYY-DDD-NNNNNN` (18 chars) which fits comfortably and remains
+ * fully readable on government e-challan receipts.
+ *
+ * @example toHimkoshDeptRefNo("HP-HS-2026-SML-008316") => "HS-2026-SML-008316"
+ */
+export const toHimkoshDeptRefNo = (applicationNumber: string): string => {
+  if (applicationNumber.startsWith("HP-")) {
+    return applicationNumber.substring(3); // "HP-HS-..." → "HS-..."
+  }
+  return applicationNumber;
+};

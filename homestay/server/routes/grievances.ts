@@ -2,7 +2,7 @@
 import { Router } from "express";
 import { db } from "../db";
 import { storage } from "../storage";
-import { grievances, grievanceComments, grievanceAuditLog, insertGrievanceSchema, insertGrievanceCommentSchema } from "@shared/schema";
+import { grievances, grievanceComments, grievanceAuditLog, insertGrievanceSchema, insertGrievanceCommentSchema, users } from "@shared/schema";
 import { eq, desc, and, gt, or, isNull, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { notifyGrievanceCreated, notifyGrievanceOfficerReply, notifyGrievanceStatusChanged } from "../services/grievanceNotifications";
@@ -156,16 +156,61 @@ router.get("/", async (req, res) => {
 
     try {
         if (isOfficer) {
-            // Officers can filter by type; default shows all
-            let whereClause = undefined;
+            // Determine if the officer is district-restricted
+            const isDistrictRestricted = ['dealing_assistant', 'district_tourism_officer', 'district_officer'].includes(user.role);
+            const officerDistrict = user.district;
+
+            let conditions = [];
+            
             if (requestedType === 'owner_grievance' || requestedType === 'internal_ticket') {
-                whereClause = eq(grievances.ticketType, requestedType);
+                conditions.push(eq(grievances.ticketType, requestedType));
             }
-            const allGrievances = await db.query.grievances.findMany({
-                where: whereClause,
-                orderBy: [desc(grievances.createdAt)],
-            });
-            return res.json(allGrievances);
+
+            // If restricted, only show grievances where the reporting user is from the same district
+            // OR where the application attached to the grievance is in the same district
+            if (isDistrictRestricted && officerDistrict) {
+                // We use standard Query Builder to handle joins
+                const query = db.select({
+                    id: grievances.id,
+                    ticketNumber: grievances.ticketNumber,
+                    ticketType: grievances.ticketType,
+                    userId: grievances.userId,
+                    applicationId: grievances.applicationId,
+                    category: grievances.category,
+                    priority: grievances.priority,
+                    status: grievances.status,
+                    subject: grievances.subject,
+                    description: grievances.description,
+                    assignedTo: grievances.assignedTo,
+                    resolutionNotes: grievances.resolutionNotes,
+                    attachments: grievances.attachments,
+                    lastCommentAt: grievances.lastCommentAt,
+                    lastReadByOwner: grievances.lastReadByOwner,
+                    lastReadByOfficer: grievances.lastReadByOfficer,
+                    createdAt: grievances.createdAt,
+                    updatedAt: grievances.updatedAt,
+                    resolvedAt: grievances.resolvedAt
+                })
+                .from(grievances)
+                .leftJoin(users, eq(grievances.userId, users.id))
+                .where(
+                    and(
+                        ...conditions,
+                        eq(users.district, officerDistrict)
+                    )
+                )
+                .orderBy(desc(grievances.createdAt));
+
+                const allGrievances = await query;
+                return res.json(allGrievances);
+            } else {
+                // Admins, state_officer, supervisor_hq see everything
+                const allGrievances = await db.query.grievances.findMany({
+                    where: conditions.length > 0 ? and(...conditions) : undefined,
+                    orderBy: [desc(grievances.createdAt)],
+                });
+                return res.json(allGrievances);
+            }
         } else {
             // Owners only see their own owner_grievance tickets (never internal tickets)
             const userGrievances = await db.query.grievances.findMany({

@@ -9,9 +9,10 @@ import {
 } from "@shared/schema";
 import { requireRole } from "../core/middleware";
 import { logger } from "../../logger";
-import { eq, desc, and, or, isNull, sql, gte, lte, inArray } from "drizzle-orm";
-
+import { eq, desc, and, or, isNull, sql, gte, lte, inArray, ilike } from "drizzle-orm";
 import { getDistrictsCoveredBy } from "@shared/districtRouting";
+import { FORM_TIME_THRESHOLD_SETTING_KEY, DEFAULT_FORM_TIME_THRESHOLD_MINUTES } from "@shared/appSettings";
+import { getSystemSettingRecord } from "../../services/systemSettings";
 
 const log = logger.child({ module: "admin-reports-router" });
 
@@ -527,7 +528,26 @@ export function createAdminReportsRouter() {
 
                 // 2. Form Completion Time Stats
                 const formMetric = (req.query.formMetric as string) || 'average';
-                const formThresholdMinutes = parseInt(req.query.formThreshold as string) || 240; // Default 4 hours
+
+                // Read the central configurable threshold; allow query param override
+                const centralThresholdSetting = await getSystemSettingRecord(FORM_TIME_THRESHOLD_SETTING_KEY);
+                let centralThresholdMinutes = DEFAULT_FORM_TIME_THRESHOLD_MINUTES;
+                if (centralThresholdSetting?.settingValue) {
+                    const raw = centralThresholdSetting.settingValue;
+                    if (typeof raw === 'number' && raw > 0) centralThresholdMinutes = raw;
+                    else if (typeof raw === 'object' && raw !== null && 'minutes' in (raw as any)) {
+                        const m = (raw as any).minutes;
+                        if (typeof m === 'number' && m > 0) centralThresholdMinutes = m;
+                    }
+                    else if (typeof raw === 'string') {
+                        const parsed = parseInt(raw, 10);
+                        if (!isNaN(parsed) && parsed > 0) centralThresholdMinutes = parsed;
+                    }
+                }
+                // UI can override; if not supplied, use central setting
+                const formThresholdMinutes = req.query.formThreshold
+                    ? parseInt(req.query.formThreshold as string) || centralThresholdMinutes
+                    : centralThresholdMinutes;
                 const formThresholdSeconds = formThresholdMinutes * 60;
 
                 // Base filter: Must be > 0 AND <= Threshold
@@ -690,6 +710,20 @@ export function createAdminReportsRouter() {
                     conditions.push(lte(homestayApplications.createdAt, toDate));
                 }
 
+                // Search by app number, owner name, property name, etc.
+                const searchParam = req.query.search as string | undefined;
+                if (searchParam) {
+                    const q = `%${searchParam}%`;
+                    conditions.push(
+                        or(
+                            ilike(homestayApplications.applicationNumber, q),
+                            ilike(homestayApplications.ownerName, q),
+                            ilike(homestayApplications.propertyName, q),
+                            ilike(homestayApplications.ownerMobile, q)
+                        )
+                    );
+                }
+
                 const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
 
                 const [apps, countResult] = await Promise.all([
@@ -739,12 +773,29 @@ export function createAdminReportsRouter() {
         requireRole("state_officer", "admin", "super_admin"),
         async (req, res) => {
             try {
+                // Read the central configurable threshold
+                const thresholdSetting = await getSystemSettingRecord(FORM_TIME_THRESHOLD_SETTING_KEY);
+                let thresholdMinutes = DEFAULT_FORM_TIME_THRESHOLD_MINUTES;
+                if (thresholdSetting?.settingValue) {
+                    const raw = thresholdSetting.settingValue;
+                    if (typeof raw === 'number' && raw > 0) thresholdMinutes = raw;
+                    else if (typeof raw === 'object' && raw !== null && 'minutes' in (raw as any)) {
+                        const m = (raw as any).minutes;
+                        if (typeof m === 'number' && m > 0) thresholdMinutes = m;
+                    }
+                    else if (typeof raw === 'string') {
+                        const parsed = parseInt(raw, 10);
+                        if (!isNaN(parsed) && parsed > 0) thresholdMinutes = parsed;
+                    }
+                }
+                const thresholdSeconds = thresholdMinutes * 60;
+
                 const results = await db
                     .select({
                         district: homestayApplications.district,
                         totalApplications: sql<number>`count(*)::int`,
-                        // Only count time for non-drafts where time > 0
-                        avgTimeSeconds: sql<number>`avg(${homestayApplications.formCompletionTimeSeconds}) FILTER (WHERE ${homestayApplications.formCompletionTimeSeconds} > 0)::int`,
+                        // Only count time for non-drafts where time > 0 and <= configurable threshold
+                        avgTimeSeconds: sql<number>`avg(${homestayApplications.formCompletionTimeSeconds}) FILTER (WHERE ${homestayApplications.formCompletionTimeSeconds} > 0 AND ${homestayApplications.formCompletionTimeSeconds} <= ${thresholdSeconds})::int`,
                         approved: sql<number>`count(*) FILTER (WHERE ${homestayApplications.status} = 'approved')::int`,
                         rejected: sql<number>`count(*) FILTER (WHERE ${homestayApplications.status} = 'rejected')::int`,
                         pending: sql<number>`count(*) FILTER (WHERE ${homestayApplications.status} IN ('submitted', 'under_scrutiny', 'forwarded_to_dtdo', 'pending_payment'))::int`,

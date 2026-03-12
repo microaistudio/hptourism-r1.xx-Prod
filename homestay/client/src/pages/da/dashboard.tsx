@@ -103,6 +103,11 @@ export default function DADashboard() {
     queryKey: ["/api/da/applications"],
   });
 
+  const { data: publicSettings } = useQuery<{ showIncompleteApplications?: boolean }>({
+    queryKey: ["/api/settings/public"],
+  });
+  const showIncompleteApps = publicSettings?.showIncompleteApplications ?? false;
+
   const allApplications = (applications ?? []).filter((app) => !isLegacyApplication(app));
   const correctionStatuses = new Set([
     "sent_back_for_corrections",
@@ -707,14 +712,16 @@ export default function DADashboard() {
             <RefreshCw className="w-4 h-4 mr-2" />
             Refresh
           </Button>
-          <Button
-            variant="outline"
-            onClick={() => setLocation("/da/incomplete-applications")}
-            className="w-full sm:w-fit"
-          >
-            <AlertCircle className="w-4 h-4 mr-2" />
-            Incomplete Applications
-          </Button>
+          {showIncompleteApps && (
+            <Button
+              variant="outline"
+              onClick={() => setLocation("/da/incomplete-applications")}
+              className="w-full sm:w-fit"
+            >
+              <AlertCircle className="w-4 h-4 mr-2" />
+              Incomplete Applications
+            </Button>
+          )}
         </div>
       </div>
 

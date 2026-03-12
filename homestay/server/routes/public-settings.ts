@@ -3,10 +3,14 @@ import { getSystemSettingRecord } from "../services/systemSettings";
 import {
     ENABLE_LEGACY_REGISTRATION_SETTING_KEY,
     PAYMENT_PIPELINE_PAUSE_SETTING_KEY,
+    SHOW_INCOMPLETE_APPLICATIONS_SETTING_KEY,
+    FORM_TIME_THRESHOLD_SETTING_KEY,
+    DEFAULT_FORM_TIME_THRESHOLD_MINUTES,
     normalizePaymentPipelinePauseSetting,
     getPaymentPauseMessage,
     normalizeMaintenanceModeSetting,
     getMaintenanceMessage,
+    normalizeBooleanSetting,
 } from "@shared/appSettings";
 import { logger } from "../logger";
 
@@ -19,12 +23,14 @@ export function createPublicSettingsRouter() {
     // Returns configuration that the frontend needs before generic auth actions or for general UI
     router.get("/public", async (req, res) => {
         try {
-            const [visibilitySetting, inspectionSetting, maintenanceSetting, registrationSetting, paymentPauseSetting] = await Promise.all([
+            const [visibilitySetting, inspectionSetting, maintenanceSetting, registrationSetting, paymentPauseSetting, incompleteAppsSetting, formThresholdSetting] = await Promise.all([
                 getSystemSettingRecord("service_visibility_config"),
                 getSystemSettingRecord("inspection_config"),
-                getSystemSettingRecord("maintenance_mode_config"), // MAINTENANCE_MODE_SETTING_KEY
+                getSystemSettingRecord("maintenance_mode_config"),
                 getSystemSettingRecord(ENABLE_LEGACY_REGISTRATION_SETTING_KEY),
-                getSystemSettingRecord(PAYMENT_PIPELINE_PAUSE_SETTING_KEY)
+                getSystemSettingRecord(PAYMENT_PIPELINE_PAUSE_SETTING_KEY),
+                getSystemSettingRecord(SHOW_INCOMPLETE_APPLICATIONS_SETTING_KEY),
+                getSystemSettingRecord(FORM_TIME_THRESHOLD_SETTING_KEY)
             ]);
 
             const visibility = (visibilitySetting?.settingValue as Record<string, boolean>) ?? {
@@ -80,7 +86,21 @@ export function createPublicSettingsRouter() {
                     ...(paymentPause.enabled && paymentPause.showDowntimeToPublic && paymentPause.pausedAt ? {
                         startedAt: paymentPause.pausedAt,
                     } : {}),
-                }
+                },
+                showIncompleteApplications: normalizeBooleanSetting(incompleteAppsSetting?.settingValue, false),
+                formTimeThresholdMinutes: (() => {
+                    const raw = formThresholdSetting?.settingValue;
+                    if (typeof raw === 'number' && raw > 0) return raw;
+                    if (typeof raw === 'object' && raw !== null && 'minutes' in (raw as any)) {
+                        const m = (raw as any).minutes;
+                        if (typeof m === 'number' && m > 0) return m;
+                    }
+                    if (typeof raw === 'string') {
+                        const parsed = parseInt(raw, 10);
+                        if (!isNaN(parsed) && parsed > 0) return parsed;
+                    }
+                    return DEFAULT_FORM_TIME_THRESHOLD_MINUTES;
+                })(),
             });
         } catch (error) {
             log.error({ err: error }, "Failed to fetch public settings");

@@ -192,16 +192,39 @@ export default function PaymentReportsPage() {
         const saved = localStorage.getItem("formMetric");
         return saved === "average" ? "average" : "median";
     });
+
+    // Fetch centrally configured default threshold from system settings
+    const { data: publicSettings } = useQuery<{ formTimeThresholdMinutes?: number }>({
+        queryKey: ["/api/settings/public-threshold"],
+        queryFn: async () => {
+            const res = await apiRequest("GET", "/api/settings/public");
+            return res.json();
+        },
+        staleTime: 5 * 60 * 1000, // cache for 5 minutes
+    });
+    const centralDefault = String(publicSettings?.formTimeThresholdMinutes || 25);
+
     const [formThreshold, setFormThreshold] = useState<string>(() => {
-        return localStorage.getItem("formThreshold") || "240";
+        return localStorage.getItem("formThreshold") || "";
     });
     const [formThresholdInput, setFormThresholdInput] = useState<string>(() => {
-        return localStorage.getItem("formThreshold") || "240";
+        return localStorage.getItem("formThreshold") || "";
     });
+
+    // When central default loads and no user override exists, apply it
+    useEffect(() => {
+        if (centralDefault && !localStorage.getItem("formThreshold")) {
+            setFormThreshold(centralDefault);
+            setFormThresholdInput(centralDefault);
+        }
+    }, [centralDefault]);
+
+    // If both are still empty (first load before settings arrive), use central default
+    const effectiveThreshold = formThreshold || centralDefault;
 
     // Persist form UX settings to localStorage
     useEffect(() => { localStorage.setItem("formMetric", formMetric); }, [formMetric]);
-    useEffect(() => { localStorage.setItem("formThreshold", formThreshold); }, [formThreshold]);
+    useEffect(() => { if (formThreshold) localStorage.setItem("formThreshold", formThreshold); }, [formThreshold]);
 
     // Sorting state
     type SortField = "date" | "amount" | null;
@@ -353,7 +376,7 @@ export default function PaymentReportsPage() {
         data: operationsData,
         isLoading: operationsLoading,
     } = useQuery<OperationsData>({
-        queryKey: ["reports-operations", fromDate, toDate, selectedDistrict, formMetric, formThreshold],
+        queryKey: ["reports-operations", fromDate, toDate, selectedDistrict, formMetric, effectiveThreshold],
         queryFn: async () => {
             const params = new URLSearchParams();
             if (fromDate) params.set("from", fromDate);
@@ -363,7 +386,7 @@ export default function PaymentReportsPage() {
             }
             // Add Form UX params
             params.set("formMetric", formMetric);
-            params.set("formThreshold", formThreshold);
+            params.set("formThreshold", effectiveThreshold);
 
             const res = await apiRequest("GET", `/api/admin/reports/operations?${params.toString()}`);
             return res.json();
@@ -1418,7 +1441,7 @@ export default function PaymentReportsPage() {
                 {/* Refundable Tab */}
                 {/* Pending Transactions Tab */}
                 <TabsContent value="pending-txns" className="mt-6">
-                    <PendingTransactionsTable />
+                    <PendingTransactionsTable searchQuery={searchQuery} />
                 </TabsContent>
 
                 <TabsContent value="refundable" className="mt-6">
@@ -1683,7 +1706,17 @@ export default function PaymentReportsPage() {
                                             </TableRow>
                                         </TableHeader>
                                         <TableBody>
-                                            {overpaidData?.overpaid.map((row) => (
+                                            {overpaidData?.overpaid
+                                                ?.filter(row => {
+                                                    if (!searchQuery) return true;
+                                                    const q = searchQuery.toLowerCase();
+                                                    return (
+                                                        row.applicationNumber?.toLowerCase().includes(q) ||
+                                                        row.ownerName?.toLowerCase().includes(q) ||
+                                                        row.district?.toLowerCase().includes(q)
+                                                    );
+                                                })
+                                                .map((row) => (
                                                 <TableRow key={row.applicationId}>
                                                     <TableCell className="font-medium">{row.applicationNumber}</TableCell>
                                                     <TableCell>{row.ownerName}</TableCell>
@@ -1704,10 +1737,14 @@ export default function PaymentReportsPage() {
                                                     </TableCell>
                                                 </TableRow>
                                             ))}
-                                            {(!overpaidData?.overpaid || overpaidData.overpaid.length === 0) && (
+                                            {(!overpaidData?.overpaid || overpaidData.overpaid.length === 0 || overpaidData.overpaid.filter(row => {
+                                                    if (!searchQuery) return true;
+                                                    const q = searchQuery.toLowerCase();
+                                                    return row.applicationNumber?.toLowerCase().includes(q) || row.ownerName?.toLowerCase().includes(q) || row.district?.toLowerCase().includes(q);
+                                                }).length === 0) && (
                                                 <TableRow>
                                                     <TableCell colSpan={7} className="text-center py-8 text-slate-500">
-                                                        No overpaid applications found.
+                                                        No overpaid applications found matching your search.
                                                     </TableCell>
                                                 </TableRow>
                                             )}
@@ -1724,6 +1761,7 @@ export default function PaymentReportsPage() {
                         district={selectedDistrict}
                         fromDate={fromDate}
                         toDate={toDate}
+                        searchQuery={searchQuery}
                     />
                 </TabsContent>
             </Tabs>
@@ -1734,11 +1772,13 @@ export default function PaymentReportsPage() {
 function DraftApplicationsTable({
     district,
     fromDate,
-    toDate
+    toDate,
+    searchQuery
 }: {
     district: string;
     fromDate: string;
     toDate: string;
+    searchQuery: string;
 }) {
     const [page, setPage] = useState(1);
     const limit = 10;
@@ -1754,6 +1794,7 @@ function DraftApplicationsTable({
             if (district && district !== "all") params.append("district", district);
             if (fromDate) params.append("from", fromDate);
             if (toDate) params.append("to", toDate);
+            if (searchQuery) params.append("search", searchQuery);
 
             // Use apiRequest helper if available, or fetch
             const res = await fetch(`/api/admin/reports/applications?${params}`);
@@ -1766,7 +1807,7 @@ function DraftApplicationsTable({
     // Reset page when filters change
     useEffect(() => {
         setPage(1);
-    }, [district, fromDate, toDate]);
+    }, [district, fromDate, toDate, searchQuery]);
 
     const apps = data?.applications || [];
     const totalPages = data?.pagination?.totalPages || 0;
@@ -1862,7 +1903,7 @@ function DraftApplicationsTable({
     );
 }
 
-function PendingTransactionsTable() {
+function PendingTransactionsTable({ searchQuery }: { searchQuery: string }) {
     const { data, isLoading } = useQuery<{
         transactions: any[];
         total: number;
@@ -1888,7 +1929,16 @@ function PendingTransactionsTable() {
         },
     });
 
-    const transactions = data?.transactions || [];
+    const transactions = (data?.transactions || []).filter((txn: any) => {
+        if (!searchQuery) return true;
+        const q = searchQuery.toLowerCase();
+        return (
+            txn.appRefNo?.toLowerCase().includes(q) ||
+            txn.tenderBy?.toLowerCase().includes(q) ||
+            txn.ddo?.toLowerCase().includes(q) ||
+            txn.applicationDistrict?.toLowerCase().includes(q)
+        );
+    });
 
     if (isLoading) {
         return (

@@ -1,6 +1,7 @@
 export const ENFORCE_CATEGORY_SETTING_KEY = "enforce_property_category";
 export const DA_SEND_BACK_SETTING_KEY = "da_send_back_enabled";
 export const LEGACY_DTO_FORWARD_SETTING = "legacy_dtdo_forward_enabled";
+export const SHOW_INCOMPLETE_APPLICATIONS_SETTING_KEY = "show_incomplete_applications";
 export const LOGIN_OTP_SETTING_KEY = "login_otp_required";
 export const SINGLE_SESSION_SETTING_KEY = "enforce_single_session";
 export const ROOM_RATE_BANDS_SETTING_KEY = "category_rate_bands";
@@ -9,6 +10,10 @@ export const EXISTING_RC_MIN_ISSUE_DATE_SETTING_KEY = "existing_owner_min_issue_
 export const ENABLE_LEGACY_REGISTRATION_SETTING_KEY = "enable_legacy_registrations";
 export const MAX_REVERT_COUNT_SETTING_KEY = "max_correction_attempts";
 export const DEFAULT_MAX_REVERT_COUNT = 1;
+
+// Form completion time threshold (minutes) — controls the outlier cap for avg form time metrics
+export const FORM_TIME_THRESHOLD_SETTING_KEY = "form_time_threshold_minutes";
+export const DEFAULT_FORM_TIME_THRESHOLD_MINUTES = 25;
 
 export type CategoryEnforcementSetting = {
   enforce: boolean;

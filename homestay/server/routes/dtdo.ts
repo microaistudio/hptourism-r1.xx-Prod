@@ -231,20 +231,28 @@ export function createDtdoRouter() {
             // Fallback for legacy/existing applications where dtdoId was never set:
             // Look up the active DTDO assigned to this application's district
             if (!dtdoSignatureUrl && application.district) {
-                const [districtDtdo] = await db
-                    .select({ signatureUrl: users.signatureUrl })
-                    .from(users)
-                    .where(
-                        and(
-                            eq(users.role, 'district_tourism_officer'),
-                            eq(users.isActive, true),
-                            ilike(users.district, `%${application.district.split(' ')[0]}%`),
-                            isNotNull(users.signatureUrl)
-                        )
-                    )
-                    .limit(1);
-                if (districtDtdo?.signatureUrl) {
-                    dtdoSignatureUrl = districtDtdo.signatureUrl;
+                // If the currently logged-in DTDO covers this district, use their signature!
+                if (req.user && req.user.signatureUrl && req.user.district && isCoveredBySplitDistrict(req.user.district, application.district, application.tehsil)) {
+                    dtdoSignatureUrl = req.user.signatureUrl;
+                } else {
+                    const activeDtdos = await db
+                        .select({ district: users.district, signatureUrl: users.signatureUrl })
+                        .from(users)
+                        .where(
+                            and(
+                                eq(users.role, 'district_tourism_officer'),
+                                eq(users.isActive, true),
+                                isNotNull(users.signatureUrl)
+                            )
+                        );
+
+                    const matchedDtdo = activeDtdos.find(d =>
+                        d.district && isCoveredBySplitDistrict(d.district, application.district, application.tehsil)
+                    );
+
+                    if (matchedDtdo?.signatureUrl) {
+                        dtdoSignatureUrl = matchedDtdo.signatureUrl;
+                    }
                 }
             }
 

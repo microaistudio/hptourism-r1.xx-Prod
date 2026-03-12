@@ -18,8 +18,13 @@ export interface FeeRecalculationInput {
     newCategory: CategoryType;
     newValidityYears: 1 | 3;
 
-    // Parameters that stay the same
+    // Location type — supports changes (e.g. GP → TCP correction)
+    // v1.3.3 fix: Use oldLocationType/newLocationType when location changes.
+    // Falls back to locationType for backward compatibility.
     locationType: LocationType;
+    oldLocationType?: LocationType; // If omitted, uses locationType
+    newLocationType?: LocationType; // If omitted, uses locationType
+
     ownerGender: 'male' | 'female' | 'other';
     isPangiSubDivision: boolean;
     discountMode?: 'ADDITIVE' | 'SEQUENTIAL';
@@ -62,20 +67,25 @@ export interface FeeRecalculationResult {
  * or has earned a credit for overpayment.
  */
 export function recalculateFee(input: FeeRecalculationInput): FeeRecalculationResult {
-    // Calculate old fee using the fee calculator
+    // v1.3.3 fix: Use separate location types for old vs new fee calculation
+    // This correctly handles GP → TCP (or vice versa) corrections
+    const effectiveOldLocationType = input.oldLocationType ?? input.locationType;
+    const effectiveNewLocationType = input.newLocationType ?? input.locationType;
+
+    // Calculate old fee using the fee calculator (with OLD location type)
     const oldFeeBreakdown = calculateHomestayFee({
         category: input.oldCategory,
-        locationType: input.locationType,
+        locationType: effectiveOldLocationType,
         validityYears: input.oldValidityYears,
         ownerGender: input.ownerGender,
         isPangiSubDivision: input.isPangiSubDivision,
         discountMode: input.discountMode,
     });
 
-    // Calculate new fee
+    // Calculate new fee (with NEW location type)
     const newFeeBreakdown = calculateHomestayFee({
         category: input.newCategory,
-        locationType: input.locationType,
+        locationType: effectiveNewLocationType,
         validityYears: input.newValidityYears,
         ownerGender: input.ownerGender,
         isPangiSubDivision: input.isPangiSubDivision,

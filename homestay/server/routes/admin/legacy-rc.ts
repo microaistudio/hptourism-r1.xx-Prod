@@ -15,6 +15,7 @@ import {
 } from "../helpers/legacy";
 import { homestayApplications, users, documents } from "@shared/schema";
 import { parseIsoDateOrNull, trimOptionalString, trimRequiredString } from "../helpers/format";
+import { isCoveredBySplitDistrict } from "../helpers/district";
 
 const log = logger.child({ module: "admin-legacy-rc" });
 
@@ -157,20 +158,23 @@ export function createAdminLegacyRcRouter() {
 
       // Fallback: look up DTDO by district
       if (!dtdoSignatureUrl && appDistrict) {
-        const [districtDtdo] = await db
-          .select({ signatureUrl: users.signatureUrl })
+        const activeDtdos = await db
+          .select({ district: users.district, signatureUrl: users.signatureUrl })
           .from(users)
           .where(
             and(
               eq(users.role, 'district_tourism_officer'),
               eq(users.isActive, true),
-              ilike(users.district, `%${appDistrict.split(' ')[0]}%`),
               isNotNull(users.signatureUrl)
             )
-          )
-          .limit(1);
-        if (districtDtdo?.signatureUrl) {
-          dtdoSignatureUrl = districtDtdo.signatureUrl;
+          );
+
+        const matchedDtdo = activeDtdos.find(d =>
+          d.district && isCoveredBySplitDistrict(d.district, appDistrict, record.application.tehsil)
+        );
+
+        if (matchedDtdo?.signatureUrl) {
+          dtdoSignatureUrl = matchedDtdo.signatureUrl;
         }
       }
 

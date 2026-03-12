@@ -103,6 +103,11 @@ export default function DAQueue() {
         queryKey: ["/api/da/applications/incomplete"],
     });
 
+    const { data: publicSettings } = useQuery<{ showIncompleteApplications?: boolean }>({
+        queryKey: ["/api/settings/public"],
+    });
+    const showIncompleteApps = publicSettings?.showIncompleteApplications ?? false;
+
     const allApplications = applications ?? [];
     const allInspections = inspections ?? [];
     const allDrafts = drafts ?? [];
@@ -341,7 +346,9 @@ export default function DAQueue() {
 
                 {/* Navigation - scrollable */}
                 <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
-                    {NAV_ITEMS.map(item => {
+                    {NAV_ITEMS
+                        .filter(item => item.id !== "drafts" || showIncompleteApps)
+                        .map(item => {
                         const badge = item.id === "applications" ? activeCount :
                             item.id === "drafts" ? allDrafts.length :
                                 item.id === "inspections" ? pendingInspections : undefined;

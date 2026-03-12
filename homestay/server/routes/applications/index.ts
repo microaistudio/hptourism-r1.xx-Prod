@@ -1,5 +1,5 @@
 import express from "express";
-import { desc, and, inArray, eq, notInArray, gte, lte, ilike, isNotNull } from "drizzle-orm";
+import { desc, and, inArray, eq, notInArray, gte, lte, ilike, isNotNull, sql } from "drizzle-orm";
 import { requireAuth, requireRole } from "../core/middleware";
 import { storage } from "../../storage";
 import { logger } from "../../logger";
@@ -162,7 +162,7 @@ export function createApplicationsRouter() {
 
   router.post(
     "/search",
-    requireRole("dealing_assistant", "district_tourism_officer", "district_officer", "state_officer", "admin"),
+    requireRole("dealing_assistant", "district_tourism_officer", "district_officer", "state_officer", "admin", "super_admin", "payment_officer", "supervisor_hq"),
     async (req, res) => {
       try {
         const {
@@ -175,6 +175,12 @@ export function createApplicationsRouter() {
           toDate,
           status,
           recentLimit,
+          textSearch,
+          district,
+          paymentStatus,
+          applicationKind,
+          limit: limitParam,
+          offset: offsetParam,
         } = (req.body ?? {}) as Record<string, string | undefined>;
 
         const userId = req.session.userId!;
@@ -184,7 +190,11 @@ export function createApplicationsRouter() {
           return res.status(401).json({ message: "User not found" });
         }
 
-        const QUICK_VIEW_LIMITS = new Set([10, 20, 50]);
+        // Pagination
+        const limit = Math.min(Math.max(Number(limitParam) || 50, 1), 200);
+        const offset = Math.max(Number(offsetParam) || 0, 0);
+
+        const QUICK_VIEW_LIMITS = new Set([10, 20, 50, 100]);
         let recentLimitValue: number | undefined;
         if (typeof recentLimit === "string" && recentLimit.trim()) {
           const parsed = Number(recentLimit);
@@ -195,8 +205,22 @@ export function createApplicationsRouter() {
 
         const searchConditions: any[] = [];
 
+        // Fuzzy text search across multiple fields
+        if (typeof textSearch === "string" && textSearch.trim().length >= 2) {
+          const term = `%${textSearch.trim()}%`;
+          searchConditions.push(
+            sql`(${ilike(homestayApplications.applicationNumber, term)} OR ${ilike(homestayApplications.propertyName, term)} OR ${ilike(homestayApplications.ownerName, term)} OR ${ilike(homestayApplications.ownerMobile, term)} OR ${ilike(homestayApplications.district, term)})`
+          );
+        }
+
         if (typeof applicationNumber === "string" && applicationNumber.trim()) {
-          searchConditions.push(eq(homestayApplications.applicationNumber, applicationNumber.trim()));
+          const appTerm = applicationNumber.trim();
+          // Support partial match for app number too
+          if (appTerm.includes('%') || appTerm.length < 21) {
+            searchConditions.push(ilike(homestayApplications.applicationNumber, `%${appTerm}%`));
+          } else {
+            searchConditions.push(eq(homestayApplications.applicationNumber, appTerm));
+          }
         }
 
         if (typeof ownerMobile === "string" && ownerMobile.trim()) {
@@ -209,6 +233,26 @@ export function createApplicationsRouter() {
 
         if (typeof status === "string" && status.trim() && status.trim().toLowerCase() !== "all") {
           searchConditions.push(eq(homestayApplications.status, status.trim()));
+        }
+
+        // District filter (for super_admin, state_officer, etc.)
+        if (typeof district === "string" && district.trim() && district.trim().toLowerCase() !== "all") {
+          searchConditions.push(ilike(homestayApplications.district, district.trim()));
+        }
+
+        // Payment status filter
+        if (typeof paymentStatus === "string" && paymentStatus.trim() && paymentStatus.trim().toLowerCase() !== "all") {
+          const ps = paymentStatus.trim().toLowerCase();
+          if (ps === "paid") {
+            searchConditions.push(isNotNull(homestayApplications.paymentId));
+          } else if (ps === "unpaid" || ps === "pending") {
+            searchConditions.push(sql`${homestayApplications.paymentId} IS NULL`);
+          }
+        }
+
+        // Application Kind filter 
+        if (typeof applicationKind === "string" && applicationKind.trim() && applicationKind.trim().toLowerCase() !== "all") {
+          searchConditions.push(eq(homestayApplications.applicationKind, applicationKind.trim()));
         }
 
         let rangeStart: Date | undefined;
@@ -244,15 +288,17 @@ export function createApplicationsRouter() {
           searchConditions.push(lte(homestayApplications.createdAt, rangeEnd));
         }
 
-        if (searchConditions.length === 0 && !recentLimitValue) {
-          return res.status(400).json({
-            message:
-              "Provide at least one search filter (application number, phone, Aadhaar, date range, or quick view limit).",
-          });
+        // Allow empty search with just pagination (shows latest) or require at least one filter
+        const hasAnyFilter = searchConditions.length > 0 || recentLimitValue;
+
+        if (!hasAnyFilter) {
+          // Default: show latest 50
+          recentLimitValue = 50;
         }
 
         const filters = [...searchConditions];
 
+        // Scope by district for district-level roles
         if (["district_officer", "district_tourism_officer", "dealing_assistant"].includes(user.role)) {
           if (!user.district) {
             return res.status(400).json({ message: "Your profile is missing district information." });
@@ -261,18 +307,29 @@ export function createApplicationsRouter() {
           filters.push(districtCondition);
         }
 
-        const whereClause = filters.length === 1 ? filters[0] : and(...filters);
+        const whereClause = filters.length === 0 ? undefined : filters.length === 1 ? filters[0] : and(...filters);
+
+        // Get total count for pagination
+        const [countResult] = await db
+          .select({ count: sql<string>`count(*)` })
+          .from(homestayApplications)
+          .where(whereClause);
+        const totalCount = Number(countResult?.count ?? 0);
+
+        const effectiveLimit = recentLimitValue ?? limit;
+        const effectiveOffset = recentLimitValue ? 0 : offset;
 
         const results = await db
           .select()
           .from(homestayApplications)
           .where(whereClause)
           .orderBy(desc(homestayApplications.createdAt))
-          .limit(recentLimitValue ?? 200);
+          .limit(effectiveLimit)
+          .offset(effectiveOffset);
 
-        res.json({ results });
+        res.json({ results, totalCount, limit: effectiveLimit, offset: effectiveOffset });
       } catch (error) {
-        applicationsLog.error({ err: error, route: "/search" }, "Failed to search applications via workflow monitor");
+        applicationsLog.error({ err: error, route: "/search" }, "Failed to search applications");
         res.status(500).json({ message: "Failed to search applications" });
       }
     },
@@ -306,20 +363,23 @@ export function createApplicationsRouter() {
       // Fallback for legacy/existing applications where dtdoId was never set:
       // Look up the DTDO assigned to this application's district
       if (!dtdoSignatureUrl && application.district) {
-        const [districtDtdo] = await db
-          .select({ signatureUrl: users.signatureUrl })
+        const activeDtdos = await db
+          .select({ district: users.district, signatureUrl: users.signatureUrl })
           .from(users)
           .where(
             and(
               eq(users.role, 'district_tourism_officer'),
               eq(users.isActive, true),
-              ilike(users.district, `%${application.district.split(' ')[0]}%`),
               isNotNull(users.signatureUrl)
             )
-          )
-          .limit(1);
-        if (districtDtdo?.signatureUrl) {
-          dtdoSignatureUrl = districtDtdo.signatureUrl;
+          );
+
+        const matchedDtdo = activeDtdos.find(d =>
+          d.district && isCoveredBySplitDistrict(d.district, application.district, application.tehsil)
+        );
+
+        if (matchedDtdo?.signatureUrl) {
+          dtdoSignatureUrl = matchedDtdo.signatureUrl;
         }
       }
 

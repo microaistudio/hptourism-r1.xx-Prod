@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -5,8 +6,9 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { LayoutGrid, ClipboardCheck, Loader2 } from "lucide-react";
+import { LayoutGrid, ClipboardCheck, Loader2, Timer } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 
 interface PortalSettings {
     visibility: Record<string, boolean>;
@@ -37,6 +39,7 @@ const APPLICATION_KINDS = [
 
 export function PortalConfigCard() {
     const { toast } = useToast();
+    const [thresholdInput, setThresholdInput] = useState<string>("");
 
     const { data: settings, isLoading } = useQuery<PortalSettings>({
         queryKey: ["/api/admin/settings/portal/services"],
@@ -51,7 +54,17 @@ export function PortalConfigCard() {
         queryFn: async () => {
             const res = await apiRequest("GET", "/api/admin/settings/da_send_back_enabled");
             const data = await res.json();
-            // Handle both structure types: raw boolean or object wrapper
+            const val = data?.settingValue;
+            if (val && typeof val === 'object' && 'enabled' in val) return val.enabled;
+            return val === true || val === "true";
+        }
+    });
+
+    const { data: incompleteAppsSetting, isLoading: incompleteAppsLoading } = useQuery({
+        queryKey: ["/api/admin/settings/show_incomplete_applications"],
+        queryFn: async () => {
+            const res = await apiRequest("GET", "/api/admin/settings/show_incomplete_applications");
+            const data = await res.json();
             const val = data?.settingValue;
             if (val && typeof val === 'object' && 'enabled' in val) return val.enabled;
             return val === true || val === "true";
@@ -107,6 +120,58 @@ export function PortalConfigCard() {
             toast({ title: "DA workflow updated" });
         },
         onError: () => toast({ title: "Failed to update setting", variant: "destructive" })
+    });
+
+    const toggleIncompleteAppsMutation = useMutation({
+        mutationFn: async (enabled: boolean) => {
+            const res = await apiRequest("PUT", "/api/admin/settings/show_incomplete_applications", {
+                value: { enabled }
+            });
+            return res.json();
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ["/api/admin/settings/show_incomplete_applications"] });
+            toast({ title: "Incomplete Applications visibility updated" });
+        },
+        onError: () => toast({ title: "Failed to update setting", variant: "destructive" })
+    });
+
+    // Form time threshold setting
+    const { data: formThresholdSetting, isLoading: thresholdLoading } = useQuery({
+        queryKey: ["/api/admin/settings/form_time_threshold_minutes"],
+        queryFn: async () => {
+            const res = await apiRequest("GET", "/api/admin/settings/form_time_threshold_minutes");
+            const data = await res.json();
+            const raw = data?.settingValue;
+            let minutes = 25; // default
+            if (typeof raw === 'number' && raw > 0) minutes = raw;
+            else if (typeof raw === 'object' && raw !== null && 'minutes' in (raw as any)) {
+                const m = (raw as any).minutes;
+                if (typeof m === 'number' && m > 0) minutes = m;
+            }
+            else if (typeof raw === 'string') {
+                const parsed = parseInt(raw, 10);
+                if (!isNaN(parsed) && parsed > 0) minutes = parsed;
+            }
+            // Initialize the input field
+            if (!thresholdInput) setThresholdInput(String(minutes));
+            return minutes;
+        }
+    });
+
+    const updateThresholdMutation = useMutation({
+        mutationFn: async (minutes: number) => {
+            const res = await apiRequest("PUT", "/api/admin/settings/form_time_threshold_minutes", {
+                value: minutes
+            });
+            return res.json();
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ["/api/admin/settings/form_time_threshold_minutes"] });
+            queryClient.invalidateQueries({ queryKey: ["/api/settings/public-threshold"] });
+            toast({ title: "Form time threshold updated" });
+        },
+        onError: () => toast({ title: "Failed to update threshold", variant: "destructive" })
     });
 
     if (isLoading) {
@@ -223,6 +288,71 @@ export function PortalConfigCard() {
                                 disabled={daLoading || toggleDaRevertMutation.isPending}
                                 onCheckedChange={(checked) => toggleDaRevertMutation.mutate(checked)}
                             />
+                        </div>
+
+                        <div className="flex items-center justify-between">
+                            <div className="space-y-0.5">
+                                <Label htmlFor="incomplete-apps" className="text-base font-medium">
+                                    Show Incomplete Applications Button
+                                </Label>
+                                <p className="text-sm text-muted-foreground">
+                                    If enabled, DA/DTDO dashboards show an "Incomplete Applications" button
+                                    that lists draft (unsubmitted) applications in the district.
+                                    <br />
+                                    <span className="text-amber-600 font-medium text-xs">
+                                        ⚠️ Can cause confusion — disable to keep dashboards focused on submitted work only.
+                                    </span>
+                                </p>
+                            </div>
+                            <Switch
+                                id="incomplete-apps"
+                                checked={!!incompleteAppsSetting}
+                                disabled={incompleteAppsLoading || toggleIncompleteAppsMutation.isPending}
+                                onCheckedChange={(checked) => toggleIncompleteAppsMutation.mutate(checked)}
+                            />
+                        </div>
+
+                        {/* Form Time Threshold */}
+                        <div className="flex items-center justify-between">
+                            <div className="space-y-0.5">
+                                <Label htmlFor="form-threshold" className="text-base font-medium flex items-center gap-2">
+                                    <Timer className="h-4 w-4 text-blue-500" />
+                                    Form Completion Time Threshold
+                                </Label>
+                                <p className="text-sm text-muted-foreground">
+                                    Default outlier cap (in minutes) for average form time metrics.
+                                    Forms taking longer than this are excluded from averages.
+                                    <br />
+                                    <span className="text-blue-600 font-medium text-xs">
+                                        Current: {formThresholdSetting ?? 25} min — Affects Operations &amp; District Performance tabs.
+                                    </span>
+                                </p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <Input
+                                    id="form-threshold"
+                                    type="number"
+                                    min={1}
+                                    max={1440}
+                                    className="w-20 h-9"
+                                    value={thresholdInput}
+                                    onChange={(e) => setThresholdInput(e.target.value)}
+                                />
+                                <span className="text-sm text-muted-foreground">min</span>
+                                <Button
+                                    size="sm"
+                                    variant={thresholdInput !== String(formThresholdSetting ?? 25) ? "default" : "outline"}
+                                    disabled={
+                                        thresholdInput === String(formThresholdSetting ?? 25) ||
+                                        !thresholdInput ||
+                                        parseInt(thresholdInput) < 1 ||
+                                        updateThresholdMutation.isPending
+                                    }
+                                    onClick={() => updateThresholdMutation.mutate(parseInt(thresholdInput))}
+                                >
+                                    Save
+                                </Button>
+                            </div>
                         </div>
                     </div>
                 </div>

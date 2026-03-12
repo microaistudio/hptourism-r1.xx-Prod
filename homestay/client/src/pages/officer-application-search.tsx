@@ -1,15 +1,11 @@
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   Card,
-  CardHeader,
-  CardTitle,
-  CardDescription,
   CardContent,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -31,55 +27,61 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { formatDateIST } from "@/lib/dateUtils";
 import type { HomestayApplication, User } from "@shared/schema";
+import {
+  Search,
+  SlidersHorizontal,
+  ChevronDown,
+  ChevronUp,
+  ChevronLeft,
+  ChevronRight,
+  Loader2,
+  X,
+  Eye,
+  FileText,
+} from "lucide-react";
 
-type SearchParams = {
-  applicationNumber: string;
-  ownerMobile: string;
-  ownerAadhaar: string;
-  month: string;
-  year: string;
-  fromDate: string;
-  toDate: string;
-  status: string;
-  recentLimit: string;
+type SearchPayload = {
+  textSearch?: string;
+  applicationNumber?: string;
+  ownerMobile?: string;
+  ownerAadhaar?: string;
+  status?: string;
+  district?: string;
+  paymentStatus?: string;
+  applicationKind?: string;
+  fromDate?: string;
+  toDate?: string;
+  limit?: string;
+  offset?: string;
 };
 
 type SearchResponse = {
   results: HomestayApplication[];
+  totalCount: number;
+  limit: number;
+  offset: number;
 };
 
-const initialParams: SearchParams = {
-  applicationNumber: "",
-  ownerMobile: "",
-  ownerAadhaar: "",
-  month: "",
-  year: "",
-  fromDate: "",
-  toDate: "",
-  status: "all",
-  recentLimit: "10",
+const STATUS_MAP: Record<string, { label: string; color: string }> = {
+  draft: { label: "Draft", color: "bg-gray-100 text-gray-700 border-gray-200" },
+  submitted: { label: "New", color: "bg-blue-50 text-blue-700 border-blue-200" },
+  under_scrutiny: { label: "Under Scrutiny", color: "bg-indigo-50 text-indigo-700 border-indigo-200" },
+  forwarded_to_dtdo: { label: "→ DTDO", color: "bg-violet-50 text-violet-700 border-violet-200" },
+  dtdo_review: { label: "DTDO Review", color: "bg-purple-50 text-purple-700 border-purple-200" },
+  inspection_scheduled: { label: "Inspection", color: "bg-cyan-50 text-cyan-700 border-cyan-200" },
+  inspection_complete: { label: "Inspected", color: "bg-teal-50 text-teal-700 border-teal-200" },
+  payment_pending: { label: "Payment Due", color: "bg-amber-50 text-amber-700 border-amber-200" },
+  approved: { label: "Approved", color: "bg-emerald-50 text-emerald-700 border-emerald-200" },
+  reverted_by_dtdo: { label: "Reverted", color: "bg-orange-50 text-orange-700 border-orange-200" },
+  objection_raised: { label: "Objection", color: "bg-red-50 text-red-700 border-red-200" },
+  reverted_to_applicant: { label: "Sent Back", color: "bg-yellow-50 text-yellow-700 border-yellow-200" },
+  sent_back_for_corrections: { label: "Corrections", color: "bg-yellow-50 text-yellow-700 border-yellow-200" },
+  rejected: { label: "Rejected", color: "bg-red-50 text-red-800 border-red-300" },
+  site_inspection_scheduled: { label: "Inspection", color: "bg-cyan-50 text-cyan-700 border-cyan-200" },
 };
-
-const months = [
-  { value: "1", label: "January" },
-  { value: "2", label: "February" },
-  { value: "3", label: "March" },
-  { value: "4", label: "April" },
-  { value: "5", label: "May" },
-  { value: "6", label: "June" },
-  { value: "7", label: "July" },
-  { value: "8", label: "August" },
-  { value: "9", label: "September" },
-  { value: "10", label: "October" },
-  { value: "11", label: "November" },
-  { value: "12", label: "December" },
-];
-
-const currentYear = new Date().getFullYear();
-const yearOptions = Array.from({ length: 6 }, (_, index) => currentYear - index);
 
 const statusOptions = [
-  { value: "all", label: "All statuses" },
+  { value: "all", label: "All Statuses" },
   { value: "draft", label: "Draft" },
   { value: "submitted", label: "New (Submitted)" },
   { value: "under_scrutiny", label: "Under Scrutiny" },
@@ -89,357 +91,402 @@ const statusOptions = [
   { value: "inspection_complete", label: "Inspection Complete" },
   { value: "payment_pending", label: "Payment Pending" },
   { value: "approved", label: "Approved" },
-  { value: "reverted_by_dtdo", label: "Reverted by Prescribed Authority" },
+  { value: "reverted_by_dtdo", label: "Reverted by PA" },
   { value: "objection_raised", label: "DTDO Objection" },
-  { value: "reverted_to_applicant", label: "Reverted to Applicant" },
+  { value: "reverted_to_applicant", label: "Sent Back" },
   { value: "rejected", label: "Rejected" },
 ];
 
+const PAGE_SIZE = 25;
+
+function StatusBadge({ status }: { status: string }) {
+  const config = STATUS_MAP[status] || { label: status, color: "bg-gray-100 text-gray-600 border-gray-200" };
+  return (
+    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${config.color}`}>
+      {config.label}
+    </span>
+  );
+}
+
 export default function OfficerApplicationSearch() {
-  const [params, setParams] = useState<SearchParams>(initialParams);
+  const [searchText, setSearchText] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [showFilters, setShowFilters] = useState(false);
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [districtFilter, setDistrictFilter] = useState("all");
+  const [paymentFilter, setPaymentFilter] = useState("all");
+  const [appTypeFilter, setAppTypeFilter] = useState("all");
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
+  const [page, setPage] = useState(0);
   const [results, setResults] = useState<HomestayApplication[]>([]);
-  const [sortOrder, setSortOrder] = useState<"newest" | "oldest">("newest");
+  const [totalCount, setTotalCount] = useState(0);
+  const [hasSearched, setHasSearched] = useState(false);
+
   const { toast } = useToast();
   const [, setLocation] = useLocation();
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   const { data: userData } = useQuery<{ user: User }>({
     queryKey: ["/api/auth/me"],
   });
 
+  const role = userData?.user?.role ?? "";
+  const isStateLevel = ["super_admin", "admin", "state_officer", "supervisor_hq", "payment_officer"].includes(role);
+
+  const detailBasePath = useMemo(() => {
+    if (role === "dealing_assistant") return "/da/applications/";
+    if (role === "district_tourism_officer") return "/dtdo/applications/";
+    if (role === "district_officer") return "/da/applications/";
+    return "/da/applications/";
+  }, [role]);
+
+  // Debounce search text
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(searchText), 350);
+    return () => clearTimeout(timer);
+  }, [searchText]);
+
   const searchMutation = useMutation({
-    mutationFn: async (payload: SearchParams) => {
+    mutationFn: async (payload: SearchPayload) => {
       const response = await apiRequest("POST", "/api/applications/search", payload);
       return response.json() as Promise<SearchResponse>;
     },
     onSuccess: (data) => {
       setResults(data.results ?? []);
-      toast({
-        title: "Search complete",
-        description: `${data.results?.length ?? 0} application(s) found.`,
-      });
+      setTotalCount(data.totalCount ?? 0);
+      setHasSearched(true);
     },
     onError: (error: unknown) => {
-      const message =
-        error instanceof Error ? error.message : "Unable to search applications right now.";
-      toast({
-        title: "Search failed",
-        description: message,
-        variant: "destructive",
-      });
+      const message = error instanceof Error ? error.message : "Search failed.";
+      toast({ title: "Search Error", description: message, variant: "destructive" });
     },
   });
 
-  const resetFilters = () => {
-    setParams(initialParams);
-    setResults([]);
-  };
-
-  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-
-    const hasStatusFilter = params.status && params.status !== "all";
-    const hasMonth = Boolean(params.month);
-    const hasYear = Boolean(params.year);
-    if ((hasMonth && !hasYear) || (!hasMonth && hasYear)) {
-      toast({
-        title: "Select month & year",
-        description: "Choose both month and year (or clear both) before filtering by month.",
-        variant: "destructive",
-      });
-      return;
-    }
-    const hasMonthYearFilter = hasMonth && hasYear;
-    const parsedRecentLimit = Number(params.recentLimit);
-    const hasRecentLimit = Number.isFinite(parsedRecentLimit) && parsedRecentLimit > 0;
-    const applyMonthYearFilter = hasMonthYearFilter && !hasRecentLimit;
-    const hasOtherFilters = Object.entries(params).some(([key, value]) => {
-      if (key === "status" || key === "month" || key === "year" || key === "recentLimit") {
-        return false;
-      }
-      return value.trim().length > 0;
-    });
-
-    if (!hasOtherFilters && !hasStatusFilter && !applyMonthYearFilter && !hasRecentLimit) {
-      toast({
-        title: "Add search filters",
-        description: "Provide an application number, owner detail, date range, month + year, or use the quick view option.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    const payload: SearchParams = { ...params };
-    if (!applyMonthYearFilter) {
-      payload.month = "";
-      payload.year = "";
-    }
-    if (hasRecentLimit) {
-      payload.fromDate = "";
-      payload.toDate = "";
-    }
-    if (!hasRecentLimit) {
-      payload.recentLimit = "";
-    }
-
-    searchMutation.mutate(payload);
-  };
-
-  const handleInputChange = (key: keyof SearchParams) => (value: string) => {
-    setParams((prev) => ({ ...prev, [key]: value }));
-  };
-
-  const handleValueChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value } = event.target;
-    setParams((prev) => ({ ...prev, [name]: value }));
-  };
-
-  const role = userData?.user?.role ?? "";
-  const detailBasePath =
-    role === "dealing_assistant" ? "/da/applications/" : "/dtdo/applications/";
-
-  const sortedResults = useMemo(() => {
-    if (results.length === 0) return [];
-    return [...results].sort((a, b) => {
-      const getTimestamp = (item: HomestayApplication) => {
-        const candidate = item.updatedAt ?? item.createdAt ?? item.submittedAt;
-        return candidate ? new Date(candidate).getTime() : 0;
+  const executeSearch = useCallback(
+    (pageOverride?: number) => {
+      const currentPage = pageOverride ?? page;
+      const payload: SearchPayload = {
+        limit: String(PAGE_SIZE),
+        offset: String(currentPage * PAGE_SIZE),
       };
-      const diff = getTimestamp(a) - getTimestamp(b);
-      return sortOrder === "newest" ? -diff : diff;
-    });
-  }, [results, sortOrder]);
+      if (debouncedSearch.trim().length >= 2) {
+        payload.textSearch = debouncedSearch.trim();
+      }
+      if (statusFilter !== "all") payload.status = statusFilter;
+      if (districtFilter !== "all") payload.district = districtFilter;
+      if (paymentFilter !== "all") payload.paymentStatus = paymentFilter;
+      if (appTypeFilter !== "all") payload.applicationKind = appTypeFilter;
+      if (fromDate) payload.fromDate = fromDate;
+      if (toDate) payload.toDate = toDate;
+
+      searchMutation.mutate(payload);
+    },
+    [debouncedSearch, statusFilter, districtFilter, paymentFilter, appTypeFilter, fromDate, toDate, page, searchMutation],
+  );
+
+  // Auto-search on debounced text change or filter change
+  useEffect(() => {
+    setPage(0);
+    executeSearch(0);
+  }, [debouncedSearch, statusFilter, districtFilter, paymentFilter, appTypeFilter, fromDate, toDate]);
+
+  // Re-search on page change
+  useEffect(() => {
+    if (hasSearched) {
+      executeSearch();
+    }
+  }, [page]);
+
+  const totalPages = Math.ceil(totalCount / PAGE_SIZE);
+  const activeFilterCount = [
+    statusFilter !== "all",
+    districtFilter !== "all",
+    paymentFilter !== "all",
+    appTypeFilter !== "all",
+    !!fromDate,
+    !!toDate,
+  ].filter(Boolean).length;
+
+  const clearAllFilters = () => {
+    setSearchText("");
+    setStatusFilter("all");
+    setDistrictFilter("all");
+    setPaymentFilter("all");
+    setAppTypeFilter("all");
+    setFromDate("");
+    setToDate("");
+    setPage(0);
+  };
 
   return (
-    <div className="p-6 space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold">Search Applications</h1>
-        <p className="text-muted-foreground mt-1">
-          Locate applications using reference numbers, owner details, or submission dates.
-        </p>
+    <div className="p-4 sm:p-6 space-y-4 max-w-[1400px] mx-auto">
+      {/* Header */}
+      <div className="flex items-center gap-3">
+        <div className="p-2 rounded-lg bg-primary/10">
+          <Search className="w-5 h-5 text-primary" />
+        </div>
+        <div>
+          <h1 className="text-xl font-bold tracking-tight">Search Applications</h1>
+          <p className="text-sm text-muted-foreground">
+            Find any application by name, number, mobile, property or district
+          </p>
+        </div>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Search Filters</CardTitle>
-          <CardDescription>
-            Provide one or more filters. You can narrow results by application number, contact
-            details, or submission period.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form className="grid gap-6" onSubmit={handleSubmit}>
-            <div className="grid gap-4 md:grid-cols-2">
-              <div className="grid gap-2">
-                <Label htmlFor="applicationNumber">Application Number</Label>
-                <Input
-                  id="applicationNumber"
-                  name="applicationNumber"
-                  value={params.applicationNumber}
-                  onChange={handleValueChange}
-                  placeholder="HP-HS-2025-SML-000123"
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="ownerMobile">Owner Mobile</Label>
-                <Input
-                  id="ownerMobile"
-                  name="ownerMobile"
-                  value={params.ownerMobile}
-                  onChange={handleValueChange}
-                  placeholder="9876543210"
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="ownerAadhaar">Owner Aadhaar</Label>
-                <Input
-                  id="ownerAadhaar"
-                  name="ownerAadhaar"
-                  value={params.ownerAadhaar}
-                  onChange={handleValueChange}
-                  placeholder="12-digit Aadhaar"
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label>Month / Year</Label>
-                <div className="flex gap-2">
-                  <Select
-                    value={params.month}
-                    onValueChange={handleInputChange("month")}
-                  >
-                    <SelectTrigger className="w-full">
-                      <SelectValue placeholder="Month" />
+      {/* Search Bar — THE main input */}
+      <Card className="border-primary/20 shadow-sm">
+        <CardContent className="p-3">
+          <div className="flex items-center gap-2">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Input
+                ref={searchInputRef}
+                value={searchText}
+                onChange={(e) => setSearchText(e.target.value)}
+                placeholder="Type anything — App number, owner name, mobile, homestay name, district..."
+                className="pl-10 pr-10 h-11 text-base border-0 bg-muted/40 focus-visible:ring-1 focus-visible:ring-primary/30"
+                autoFocus
+              />
+              {searchText && (
+                <button
+                  onClick={() => { setSearchText(""); searchInputRef.current?.focus(); }}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              className={`h-11 gap-1.5 shrink-0 ${activeFilterCount > 0 ? "border-primary text-primary" : ""}`}
+              onClick={() => setShowFilters(!showFilters)}
+            >
+              <SlidersHorizontal className="w-4 h-4" />
+              <span className="hidden sm:inline">Filters</span>
+              {activeFilterCount > 0 && (
+                <Badge variant="default" className="h-5 w-5 p-0 flex items-center justify-center text-[10px] rounded-full">
+                  {activeFilterCount}
+                </Badge>
+              )}
+              {showFilters ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+            </Button>
+          </div>
+
+          {/* Collapsible Filters */}
+          {showFilters && (
+            <div className="mt-3 pt-3 border-t space-y-3">
+              <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-5">
+                {/* Status */}
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground mb-1 block">Status</label>
+                  <Select value={statusFilter} onValueChange={setStatusFilter}>
+                    <SelectTrigger className="h-9 text-sm">
+                      <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {months.map((monthOption) => (
-                        <SelectItem key={monthOption.value} value={monthOption.value}>
-                          {monthOption.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Select
-                    value={params.year}
-                    onValueChange={handleInputChange("year")}
-                  >
-                    <SelectTrigger className="w-full">
-                      <SelectValue placeholder="Year" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {yearOptions.map((yearValue) => (
-                        <SelectItem key={yearValue} value={String(yearValue)}>
-                          {yearValue}
-                        </SelectItem>
+                      {statusOptions.map((opt) => (
+                        <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                 </div>
-                <p className="text-xs text-muted-foreground">
-                  Select both month and year, or leave both empty. Providing a custom date range overrides this filter.
-                </p>
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="status">Status</Label>
-                <Select value={params.status} onValueChange={handleInputChange("status")}>
-                  <SelectTrigger id="status">
-                    <SelectValue placeholder="All statuses" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {statusOptions.map((option) => (
-                      <SelectItem key={option.value} value={option.value}>
-                        {option.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="recentLimit">Quick View (Latest Records)</Label>
-                <Select value={params.recentLimit} onValueChange={handleInputChange("recentLimit")}>
-                  <SelectTrigger id="recentLimit">
-                    <SelectValue placeholder="Select count" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="0">Off (require filters)</SelectItem>
-                    <SelectItem value="10">Latest 10</SelectItem>
-                    <SelectItem value="20">Latest 20</SelectItem>
-                    <SelectItem value="50">Latest 50</SelectItem>
-                  </SelectContent>
-                </Select>
-                <p className="text-xs text-muted-foreground">
-                  Fetch the newest entries with no other filters. This overrides the month/year and date range selections.
-                </p>
-              </div>
-            </div>
 
-            <div className="grid gap-4 md:grid-cols-2">
-              <div className="grid gap-2">
-                <Label htmlFor="fromDate">From Date</Label>
-                <Input
-                  id="fromDate"
-                  name="fromDate"
-                  type="date"
-                  value={params.fromDate}
-                  onChange={handleValueChange}
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="toDate">To Date</Label>
-                <Input
-                  id="toDate"
-                  name="toDate"
-                  type="date"
-                  value={params.toDate}
-                  onChange={handleValueChange}
-                />
-              </div>
-            </div>
+                {/* District (state-level roles only) */}
+                {isStateLevel && (
+                  <div>
+                    <label className="text-xs font-medium text-muted-foreground mb-1 block">District</label>
+                    <Select value={districtFilter} onValueChange={setDistrictFilter}>
+                      <SelectTrigger className="h-9 text-sm">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Districts</SelectItem>
+                        {["Shimla", "Kullu", "Kangra", "Mandi", "Chamba", "Solan", "Sirmaur", "Hamirpur", "Una", "Bilaspur", "Kinnaur", "Lahaul & Spiti"].map((d) => (
+                          <SelectItem key={d} value={d}>{d}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
 
-            <div className="flex flex-wrap items-center gap-3">
-              <Button type="submit" disabled={searchMutation.isPending}>
-                {searchMutation.isPending ? "Searching..." : "Search"}
-              </Button>
-              <Button type="button" variant="outline" onClick={resetFilters}>
-                Reset
-              </Button>
-              <p className="text-xs text-muted-foreground">
-                Maximum 200 results returned. Narrow filters for precise matches.
-              </p>
+                {/* App Type */}
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground mb-1 block">App Type</label>
+                  <Select value={appTypeFilter} onValueChange={setAppTypeFilter}>
+                    <SelectTrigger className="h-9 text-sm">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Types</SelectItem>
+                      <SelectItem value="new_registration">New Registration</SelectItem>
+                      <SelectItem value="legacy_onboarding">Existing RC</SelectItem>
+                      <SelectItem value="renewal">Renewal</SelectItem>
+                      <SelectItem value="add_rooms">Add Rooms</SelectItem>
+                      <SelectItem value="delete_rooms">Delete Rooms</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Payment */}
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground mb-1 block">Payment</label>
+                  <Select value={paymentFilter} onValueChange={setPaymentFilter}>
+                    <SelectTrigger className="h-9 text-sm">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All</SelectItem>
+                      <SelectItem value="paid">Paid</SelectItem>
+                      <SelectItem value="unpaid">Unpaid</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* From Date */}
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground mb-1 block">From</label>
+                  <Input
+                    type="date"
+                    value={fromDate}
+                    onChange={(e) => setFromDate(e.target.value)}
+                    className="h-9 text-sm"
+                  />
+                </div>
+
+                {/* To Date */}
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground mb-1 block">To</label>
+                  <Input
+                    type="date"
+                    value={toDate}
+                    onChange={(e) => setToDate(e.target.value)}
+                    className="h-9 text-sm"
+                  />
+                </div>
+              </div>
+
+              {activeFilterCount > 0 && (
+                <div className="flex items-center justify-between">
+                  <p className="text-xs text-muted-foreground">
+                    {activeFilterCount} filter{activeFilterCount > 1 ? "s" : ""} active
+                  </p>
+                  <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={clearAllFilters}>
+                    <X className="w-3 h-3 mr-1" /> Clear all
+                  </Button>
+                </div>
+              )}
             </div>
-          </form>
+          )}
         </CardContent>
       </Card>
 
+      {/* Results */}
       <Card>
-        <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <CardTitle>Results</CardTitle>
-            <CardDescription>
-              {sortedResults.length === 0
-                ? "Run a search to display matching applications."
-                : `Showing ${sortedResults.length} result${sortedResults.length === 1 ? "" : "s"}.`}
-            </CardDescription>
-          </div>
-          {sortedResults.length > 0 && (
-            <div className="flex items-center gap-2 text-sm">
-              <span className="text-muted-foreground">Sort:</span>
-              <Select
-                value={sortOrder}
-                onValueChange={(value: "newest" | "oldest") => setSortOrder(value)}
-              >
-                <SelectTrigger className="w-[160px]" data-testid="select-search-sort-order">
-                  <SelectValue placeholder="Select order" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="newest">Newest first</SelectItem>
-                  <SelectItem value="oldest">Oldest first</SelectItem>
-                </SelectContent>
-              </Select>
+        <CardContent className="p-0">
+          {/* Results Header */}
+          <div className="flex items-center justify-between px-4 py-3 border-b bg-muted/30">
+            <div className="flex items-center gap-2">
+              <FileText className="w-4 h-4 text-muted-foreground" />
+              <span className="text-sm font-medium">
+                {searchMutation.isPending ? (
+                  <span className="flex items-center gap-1.5">
+                    <Loader2 className="w-3 h-3 animate-spin" /> Searching…
+                  </span>
+                ) : (
+                  <>
+                    {totalCount.toLocaleString()} application{totalCount !== 1 ? "s" : ""}
+                    {debouncedSearch && (
+                      <span className="text-muted-foreground font-normal"> matching "{debouncedSearch}"</span>
+                    )}
+                  </>
+                )}
+              </span>
             </div>
-          )}
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {sortedResults.length > 0 ? (
-            <div className="rounded-md border">
+            {totalPages > 1 && (
+              <div className="flex items-center gap-1 text-sm">
+                <Button
+                  variant="ghost" size="icon" className="h-7 w-7"
+                  disabled={page === 0}
+                  onClick={() => setPage((p) => Math.max(0, p - 1))}
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </Button>
+                <span className="text-xs text-muted-foreground px-1">
+                  {page + 1} / {totalPages}
+                </span>
+                <Button
+                  variant="ghost" size="icon" className="h-7 w-7"
+                  disabled={page >= totalPages - 1}
+                  onClick={() => setPage((p) => p + 1)}
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </Button>
+              </div>
+            )}
+          </div>
+
+          {/* Table */}
+          {results.length > 0 ? (
+            <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
-                  <TableRow>
-                    <TableHead>Application #</TableHead>
-                    <TableHead>Property</TableHead>
-                    <TableHead>Owner</TableHead>
-                    <TableHead>Mobile</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Created</TableHead>
-                    <TableHead className="w-[120px] text-right">Action</TableHead>
+                  <TableRow className="bg-muted/20 hover:bg-muted/20">
+                    <TableHead className="font-semibold">App No.</TableHead>
+                    <TableHead className="font-semibold">Homestay</TableHead>
+                    <TableHead className="font-semibold">Owner</TableHead>
+                    <TableHead className="font-semibold hidden sm:table-cell">Mobile</TableHead>
+                    <TableHead className="font-semibold hidden md:table-cell">District</TableHead>
+                    <TableHead className="font-semibold">Type</TableHead>
+                    <TableHead className="font-semibold">Status</TableHead>
+                    <TableHead className="font-semibold hidden lg:table-cell">Date</TableHead>
+                    <TableHead className="text-right font-semibold w-[80px]"></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {sortedResults.map((application) => (
-                    <TableRow key={application.id}>
-                      <TableCell className="font-medium">
-                        <Button
-                          variant="ghost"
-                          className="px-0 font-semibold underline"
-                          onClick={() => setLocation(`${detailBasePath}${application.id}`)}
-                        >
-                          {application.applicationNumber}
-                        </Button>
+                  {results.map((app) => (
+                    <TableRow
+                      key={app.id}
+                      className="cursor-pointer hover:bg-primary/5 transition-colors"
+                      onClick={() => setLocation(`${detailBasePath}${app.id}`)}
+                    >
+                      <TableCell className="font-mono text-xs font-medium whitespace-nowrap text-primary">
+                        {app.applicationNumber}
                       </TableCell>
-                      <TableCell>{application.propertyName}</TableCell>
-                      <TableCell>{application.ownerName}</TableCell>
-                      <TableCell>{application.ownerMobile}</TableCell>
-                      <TableCell>
-                        <Badge variant="secondary">{application.status}</Badge>
+                      <TableCell className="max-w-[160px] truncate text-sm" title={app.propertyName}>
+                        {app.propertyName}
+                      </TableCell>
+                      <TableCell className="text-sm max-w-[120px] truncate" title={app.ownerName}>
+                        {app.ownerName}
+                      </TableCell>
+                      <TableCell className="text-sm font-mono hidden sm:table-cell">
+                        {app.ownerMobile}
+                      </TableCell>
+                      <TableCell className="text-sm hidden md:table-cell">
+                        {app.district}
                       </TableCell>
                       <TableCell>
-                        {formatDateIST(application.createdAt)}
+                        <Badge variant="outline" className="text-xs font-normal whitespace-nowrap bg-muted/30">
+                          {app.applicationKind === 'legacy_onboarding' ? 'Existing RC' : 
+                           app.applicationKind === 'new_registration' ? 'New' : 
+                           app.applicationKind?.replace('_', ' ')}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <StatusBadge status={app.status} />
+                      </TableCell>
+                      <TableCell className="text-xs text-muted-foreground whitespace-nowrap hidden lg:table-cell">
+                        {formatDateIST(app.createdAt)}
                       </TableCell>
                       <TableCell className="text-right">
                         <Button
-                          variant="outline"
+                          variant="ghost"
                           size="sm"
-                          onClick={() => setLocation(`${detailBasePath}${application.id}`)}
+                          className="h-7 w-7 p-0"
+                          onClick={(e) => { e.stopPropagation(); setLocation(`${detailBasePath}${app.id}`); }}
                         >
-                          View
+                          <Eye className="w-4 h-4" />
                         </Button>
                       </TableCell>
                     </TableRow>
@@ -447,10 +494,64 @@ export default function OfficerApplicationSearch() {
                 </TableBody>
               </Table>
             </div>
-          ) : (
-            <p className="text-sm text-muted-foreground">
-              No applications to display. Adjust your filters and try again.
-            </p>
+          ) : hasSearched && !searchMutation.isPending ? (
+            <div className="flex flex-col items-center justify-center py-16 text-center">
+              <Search className="w-10 h-10 text-muted-foreground/30 mb-3" />
+              <p className="text-sm font-medium text-muted-foreground">No applications found</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                Try different keywords or adjust your filters
+              </p>
+            </div>
+          ) : !hasSearched ? (
+            <div className="flex flex-col items-center justify-center py-16 text-center">
+              <Search className="w-10 h-10 text-muted-foreground/30 mb-3" />
+              <p className="text-sm font-medium text-muted-foreground">Start typing to search</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                Search by application number, owner name, mobile, homestay name, or district
+              </p>
+            </div>
+          ) : null}
+
+          {/* Bottom Pagination */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between px-4 py-3 border-t bg-muted/20">
+              <p className="text-xs text-muted-foreground">
+                Showing {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, totalCount)} of {totalCount}
+              </p>
+              <div className="flex items-center gap-1">
+                <Button
+                  variant="outline" size="sm" className="h-7 text-xs"
+                  disabled={page === 0}
+                  onClick={() => setPage(0)}
+                >
+                  First
+                </Button>
+                <Button
+                  variant="outline" size="sm" className="h-7 text-xs"
+                  disabled={page === 0}
+                  onClick={() => setPage((p) => Math.max(0, p - 1))}
+                >
+                  <ChevronLeft className="w-3 h-3" />
+                </Button>
+                <span className="text-xs text-muted-foreground px-2">
+                  Page {page + 1} of {totalPages}
+                </span>
+                <Button
+                  variant="outline" size="sm" className="h-7 text-xs"
+                  disabled={page >= totalPages - 1}
+                  onClick={() => setPage((p) => p + 1)}
+                >
+                  <ChevronRight className="w-3 h-3" />
+                </Button>
+                <Button
+                  variant="outline" size="sm" className="h-7 text-xs"
+                  disabled={page >= totalPages - 1}
+                  onClick={() => setPage(totalPages - 1)}
+                >
+                  Last
+                </Button>
+              </div>
+            </div>
           )}
         </CardContent>
       </Card>

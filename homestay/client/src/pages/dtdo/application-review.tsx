@@ -775,14 +775,59 @@ export default function DTDOApplicationReview() {
                       </CardTitle>
                     </CardHeader>
                     <CardContent className="grid gap-3 text-sm">
-                      <SummaryRow label="Base Fee" value={formatCurrency(application.baseFee)} />
-                      <SummaryRow label="Female Owner Discount" value={formatCurrency(application.femaleOwnerDiscount)} />
-                      <SummaryRow label="Pangi Concession" value={formatCurrency(application.pangiDiscount)} />
-                      <SummaryRow label="Multi-year Discount" value={formatCurrency(application.validityDiscount)} />
-                      <SummaryRow label="Total Discount" value={formatCurrency(application.totalDiscount)} />
-                      <div className="border-t pt-2 text-right text-base font-semibold">
-                        Payable: {formatCurrency(application.totalFee)}
+                      <SummaryRow label="Base Fee (Annual)" value={formatCurrency(application.baseFee)} />
+                      {(application.certificateValidityYears || 1) > 1 && (
+                        <div className="flex justify-between items-center text-sm">
+                          <span className="text-muted-foreground">Total for {application.certificateValidityYears} Years</span>
+                          <span>{formatCurrency(application.totalBeforeDiscounts || (Number(application.baseFee) * (application.certificateValidityYears || 1)).toString())}</span>
+                        </div>
+                      )}
+                      
+                      {Number(application.totalDiscount || 0) > 0 && (
+                        <>
+                          <div className="pt-2 border-t text-xs font-semibold text-muted-foreground uppercase tracking-wider">Discounts Applied</div>
+                          {Number(application.femaleOwnerDiscount || 0) > 0 && (
+                            <div className="flex justify-between items-center text-green-600">
+                              <span>Female Owner Discount</span>
+                              <span>-{formatCurrency(application.femaleOwnerDiscount)}</span>
+                            </div>
+                          )}
+                          {Number(application.pangiDiscount || 0) > 0 && (
+                            <div className="flex justify-between items-center text-green-600">
+                              <span>Pangi Concession</span>
+                              <span>-{formatCurrency(application.pangiDiscount)}</span>
+                            </div>
+                          )}
+                          {Number(application.validityDiscount || 0) > 0 && (
+                            <div className="flex justify-between items-center text-green-600">
+                              <span>Multi-year Discount</span>
+                              <span>-{formatCurrency(application.validityDiscount)}</span>
+                            </div>
+                          )}
+                          <div className="border-t pt-2 flex justify-between items-center text-sm font-medium">
+                            <span className="text-muted-foreground">Total Discount</span>
+                            <span className="text-green-700">-{formatCurrency(application.totalDiscount)}</span>
+                          </div>
+                        </>
+                      )}
+
+                      <div className="border-t pt-2 flex justify-between items-center text-base font-semibold">
+                        <span>{Number((application as any).previousTotalFee || 0) > 0 ? "New Total Fee" : "Payable"}</span>
+                        <span>{formatCurrency(application.totalFee)}</span>
                       </div>
+
+                      {Number((application as any).previousTotalFee || 0) > 0 && (
+                        <>
+                          <div className="flex justify-between items-center text-sm text-muted-foreground">
+                            <span>Previous Fee (Already Paid)</span>
+                            <span>-{formatCurrency((application as any).previousTotalFee)}</span>
+                          </div>
+                          <div className="border-t border-amber-200 mt-1 pt-2 flex justify-between items-center text-base font-bold text-amber-700 bg-amber-50 p-2 rounded-md">
+                            <span>Supplementary Due</span>
+                            <span>{formatCurrency((Number(application.totalFee) - Number((application as any).previousTotalFee)).toString())}</span>
+                          </div>
+                        </>
+                      )}
                     </CardContent>
                   </Card>
 

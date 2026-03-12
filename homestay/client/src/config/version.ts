@@ -1,4 +1,4 @@
 // Application version and deployment identifier
 // Update these values when deploying to different servers
-export const APP_VERSION = "1.3.0";
+export const APP_VERSION = "1.3.5";
 export const SERVER_ID = ""; // Left empty for release builds

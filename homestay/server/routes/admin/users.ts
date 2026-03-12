@@ -19,6 +19,8 @@ const ALLOWED_ROLES = [
   "admin_rc",
   "system_admin",
   "super_admin",
+  "payment_officer",
+  "inspector"
 ];
 
 export function createAdminUsersRouter() {

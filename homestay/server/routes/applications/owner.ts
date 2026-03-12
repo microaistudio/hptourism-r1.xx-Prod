@@ -1566,7 +1566,9 @@ export function createOwnerApplicationsRouter({ getRoomRateBandsSetting }: Owner
         const oldTotalFee = Number(application.previousTotalFee || application.totalFee || 0);
 
         // Use updated values if the applicant changed them (e.g. GP ↔ MC zone correction)
-        const resolvedLocationType = (normalizedUpdate.locationType as string || application.locationType || 'gp') as RecalcLocationType;
+        // v1.3.3 fix: Track old vs new location type separately for correct fee delta
+        const oldLocationType = (application.locationType || 'gp') as RecalcLocationType;
+        const newLocationType = (normalizedUpdate.locationType as string || application.locationType || 'gp') as RecalcLocationType;
         const resolvedOwnerGender = (normalizedUpdate.ownerGender as string || application.ownerGender || 'male') as 'male' | 'female' | 'other';
         const resolvedIsPangi = normalizedUpdate.isPangiSubDivision !== undefined
           ? normalizedUpdate.isPangiSubDivision as boolean
@@ -1578,7 +1580,9 @@ export function createOwnerApplicationsRouter({ getRoomRateBandsSetting }: Owner
           oldTotalFee,
           newCategory,
           newValidityYears,
-          locationType: resolvedLocationType,
+          locationType: newLocationType, // backward compat default
+          oldLocationType,               // what they originally paid for
+          newLocationType,               // what they're correcting to
           ownerGender: resolvedOwnerGender,
           isPangiSubDivision: resolvedIsPangi,
         });

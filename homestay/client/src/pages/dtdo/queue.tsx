@@ -273,6 +273,11 @@ export default function DTDOQueue() {
         queryKey: ["/api/dtdo/applications/incomplete"],
     });
 
+    const { data: publicSettings } = useQuery<{ showIncompleteApplications?: boolean }>({
+        queryKey: ["/api/settings/public"],
+    });
+    const showIncompleteApps = publicSettings?.showIncompleteApplications ?? false;
+
     // Fetch user info
     const { data: user } = useQuery<{ user: { id: string; fullName: string; role: string; district?: string } }>({
         queryKey: ["/api/auth/me"],
@@ -562,7 +567,9 @@ export default function DTDOQueue() {
 
                 {/* Navigation - scrollable */}
                 <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
-                    {NAV_ITEMS.map(item => {
+                    {NAV_ITEMS
+                        .filter(item => item.id !== "drafts" || showIncompleteApps)
+                        .map(item => {
                         // Badge logic
                         let badge: number | undefined;
                         if (item.id === "dashboard") badge = allApplications.filter(a => ['forwarded_to_dtdo', 'dtdo_review'].includes(a.status || '')).length;

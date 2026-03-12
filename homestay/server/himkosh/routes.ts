@@ -6,7 +6,7 @@ import { resolveHimkoshGatewayConfig } from './gatewayConfig';
 import { and, desc, eq, sql, ilike, or, isNull } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
 import { config as appConfig } from '@shared/config';
-import { ensureDistrictCodeOnApplicationNumber } from '@shared/applicationNumber';
+import { ensureDistrictCodeOnApplicationNumber, toHimkoshDeptRefNo } from '@shared/applicationNumber';
 import { logApplicationAction } from '../audit';
 import { deriveDistrictRoutingLabel } from '@shared/districtRouting';
 import { logger, logPaymentTrace } from '../logger';
@@ -538,9 +538,11 @@ router.post('/initiate', async (req, res) => {
 
     // Build request parameters
     // CRITICAL: Government code ALWAYS includes Head2/Amount2 (even if 0)
-    const deptRefNo = ensureDistrictCodeOnApplicationNumber(
-      application.applicationNumber,
-      application.district,
+    const deptRefNo = toHimkoshDeptRefNo(
+      ensureDistrictCodeOnApplicationNumber(
+        application.applicationNumber,
+        application.district,
+      )
     );
 
     const requestParams: {
@@ -887,44 +889,19 @@ router.post('/callback', async (req, res) => {
           }
 
         } else if (currentApplication?.status === 'payment_pending') {
-          // CASE 2: Final Payment (Payment Pending -> Approved)
-          const year = new Date().getFullYear();
-          const randomSuffix = Math.floor(10000 + Math.random() * 90000);
-          const certificateNumber = `HP-HST-${year}-${randomSuffix}`;
-
-          const issueDate = new Date();
-          const expiryDate = new Date(issueDate);
-          const validityYears = currentApplication.certificateValidityYears || 1;
-          expiryDate.setFullYear(expiryDate.getFullYear() + validityYears);
-          const formatTimelineDate = (value: Date) =>
-            value.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
-
-          await tx
-            .update(homestayApplications)
-            .set({
-              status: 'approved',
-              paymentStatus: 'paid',
-              paymentId: parsedResponse.echTxnId,
-              paymentAmount: transaction.totalAmount?.toString(),
-              paymentDate: parsePaymentDate(parsedResponse.paymentDate),
-              certificateNumber,
-              certificateIssuedDate: issueDate,
-              certificateExpiryDate: expiryDate,
-              approvedAt: issueDate,
-              updatedAt: issueDate,
-            })
-            .where(eq(homestayApplications.id, transaction.applicationId));
-
-          // Supersede parent app if this was a service request
-          if (currentApplication.parentApplicationId) {
-            await tx
-              .update(homestayApplications)
-              .set({
-                status: 'superseded',
-                districtNotes: `Superseded by application ${currentApplication.applicationNumber}`
-              })
-              .where(eq(homestayApplications.id, currentApplication.parentApplicationId));
-          }
+          // CASE 2: Supplementary Payment received for payment_pending application.
+          // ──────────────────────────────────────────────────────────────────────
+          // BUG FIX (v1.3.3): Previously this auto-approved ALL payment_pending
+          // applications with a certificate. This caused new applications (HP-HS-*)
+          // to skip DTDO inspection entirely when paying a supplementary fee
+          // (e.g. 1-year → 3-year upgrade). Now we differentiate:
+          //   • Legacy RC (LG-HS-*): Auto-approve + issue certificate (already
+          //     inspected in real life, just paying digital onboarding fee)
+          //   • New applications (HP-HS-*): Route back to dtdo_review so the
+          //     DTDO can conduct inspection before approving
+          // ──────────────────────────────────────────────────────────────────────
+          const isLegacyRC = currentApplication.applicationNumber?.startsWith('LG-HS-');
+          const now = new Date();
 
           const actorId =
             currentApplication?.dtdoId ??
@@ -932,25 +909,95 @@ router.post('/callback', async (req, res) => {
             currentApplication?.userId ??
             null;
 
-          if (actorId) {
-            await logApplicationAction({
-              applicationId: transaction.applicationId,
-              actorId,
-              action: "payment_verified",
-              previousStatus: currentApplication?.status ?? null,
-              newStatus: "approved",
-              feedback: `HimKosh payment confirmed (CIN: ${parsedResponse.echTxnId ?? "N/A"})`,
-            });
-            await logApplicationAction({
-              applicationId: transaction.applicationId,
-              actorId,
-              action: "certificate_issued",
-              previousStatus: "approved",
-              newStatus: "approved",
-              feedback: `Certificate ${certificateNumber} issued on ${formatTimelineDate(issueDate)} (valid till ${formatTimelineDate(
-                expiryDate,
-              )})`,
-            });
+          if (isLegacyRC) {
+            // Legacy RC: Auto-approve with certificate (existing behavior)
+            const year = now.getFullYear();
+            const randomSuffix = Math.floor(10000 + Math.random() * 90000);
+            const certificateNumber = `HP-HST-${year}-${randomSuffix}`;
+
+            const issueDate = now;
+            const expiryDate = new Date(issueDate);
+            const validityYears = currentApplication.certificateValidityYears || 1;
+            expiryDate.setFullYear(expiryDate.getFullYear() + validityYears);
+            const formatTimelineDate = (value: Date) =>
+              value.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+
+            await tx
+              .update(homestayApplications)
+              .set({
+                status: 'approved',
+                paymentStatus: 'paid',
+                paymentId: parsedResponse.echTxnId,
+                paymentAmount: transaction.totalAmount?.toString(),
+                paymentDate: parsePaymentDate(parsedResponse.paymentDate),
+                certificateNumber,
+                certificateIssuedDate: issueDate,
+                certificateExpiryDate: expiryDate,
+                approvedAt: issueDate,
+                updatedAt: issueDate,
+              })
+              .where(eq(homestayApplications.id, transaction.applicationId));
+
+            // Supersede parent app if this was a service request
+            if (currentApplication.parentApplicationId) {
+              await tx
+                .update(homestayApplications)
+                .set({
+                  status: 'superseded',
+                  districtNotes: `Superseded by application ${currentApplication.applicationNumber}`
+                })
+                .where(eq(homestayApplications.id, currentApplication.parentApplicationId));
+            }
+
+            if (actorId) {
+              await logApplicationAction({
+                applicationId: transaction.applicationId,
+                actorId,
+                action: "payment_verified",
+                previousStatus: currentApplication?.status ?? null,
+                newStatus: "approved",
+                feedback: `HimKosh payment confirmed (CIN: ${parsedResponse.echTxnId ?? "N/A"})`,
+              });
+              await logApplicationAction({
+                applicationId: transaction.applicationId,
+                actorId,
+                action: "certificate_issued",
+                previousStatus: "approved",
+                newStatus: "approved",
+                feedback: `Certificate ${certificateNumber} issued on ${formatTimelineDate(issueDate)} (valid till ${formatTimelineDate(
+                  expiryDate,
+                )})`,
+              });
+            }
+          } else {
+            // New application (HP-HS-*): Route back to DTDO for inspection
+            await tx
+              .update(homestayApplications)
+              .set({
+                status: 'dtdo_review',
+                paymentStatus: 'paid',
+                paymentId: parsedResponse.echTxnId,
+                paymentAmount: transaction.totalAmount?.toString(),
+                paymentDate: parsePaymentDate(parsedResponse.paymentDate),
+                updatedAt: now,
+              })
+              .where(eq(homestayApplications.id, transaction.applicationId));
+
+            if (actorId) {
+              await logApplicationAction({
+                applicationId: transaction.applicationId,
+                actorId,
+                action: "payment_verified",
+                previousStatus: currentApplication?.status ?? null,
+                newStatus: "dtdo_review",
+                feedback: `Supplementary HimKosh payment confirmed (CIN: ${parsedResponse.echTxnId ?? "N/A"}). Routed to DTDO for inspection.`,
+              });
+            }
+
+            himkoshLogger.info(
+              { appRefNo: parsedResponse.appRefNo, applicationId: transaction.applicationId, applicationNumber: currentApplication.applicationNumber },
+              'New application supplementary payment received — routed to dtdo_review (not auto-approved)',
+            );
           }
         } else {
           // CASE 3: App already in a forwarded state (submitted, under_scrutiny, etc.)
@@ -1177,13 +1224,17 @@ router.post('/verify/:appRefNo', async (req, res) => {
             }
           } catch (e) { }
         }
-        // CASE 2: Payment Pending (e.g. after inspection or renewal)
+        // CASE 2: Payment Pending — differentiate Legacy RC vs New Application (v1.3.3 fix)
         else if (app.status === 'payment_pending') {
           const now = new Date();
+          const isLegacyRC = app.applicationNumber?.startsWith('LG-HS-');
+          // New apps go to dtdo_review for inspection; Legacy RC goes to submitted
+          const targetStatus = isLegacyRC ? 'submitted' : 'dtdo_review';
+
           await db
             .update(homestayApplications)
             .set({
-              status: 'submitted',
+              status: targetStatus,
               paymentStatus: 'paid',
               paymentId: transaction.echTxnId ?? result.transId,
               paymentAmount: transaction.totalAmount?.toString(),
@@ -1197,8 +1248,8 @@ router.post('/verify/:appRefNo', async (req, res) => {
             actorId: app.userId,
             action: "payment_verified",
             previousStatus: "payment_pending",
-            newStatus: "submitted",
-            feedback: `Payment double-verified via HimKosh SearchChallan (HIMGRN: ${result.transId}).`,
+            newStatus: targetStatus,
+            feedback: `Payment double-verified via HimKosh SearchChallan (HIMGRN: ${result.transId}).${isLegacyRC ? '' : ' Routed to DTDO for inspection.'}`,
           });
         }
         else {
@@ -1356,17 +1407,21 @@ router.post('/verify/:appRefNo/manual', async (req, res) => {
             );
           }
 
-          // CASE 2: On-Approval Payment (payment_pending -> approved)
+          // CASE 2: On-Approval Payment — differentiate Legacy RC vs New Application (v1.3.3 fix)
           if (app.status === 'payment_pending') {
+            const isLegacyRC = app.applicationNumber?.startsWith('LG-HS-');
+            // New apps go to dtdo_review for inspection; Legacy RC auto-approves
+            const targetStatus = isLegacyRC ? 'approved' : 'dtdo_review';
+
             await db
               .update(homestayApplications)
               .set({
-                status: 'approved',
+                status: targetStatus,
                 paymentStatus: 'paid',
                 paymentId: grn,
                 paymentAmount: transaction.totalAmount?.toString(),
                 paymentDate: now,
-                approvedAt: now,
+                ...(isLegacyRC ? { approvedAt: now } : {}),
                 updatedAt: now,
               })
               .where(eq(homestayApplications.id, app.id));
@@ -1376,13 +1431,13 @@ router.post('/verify/:appRefNo/manual', async (req, res) => {
               actorId: adminUserId ?? app.userId,
               action: "payment_verified",
               previousStatus: "payment_pending",
-              newStatus: "approved",
-              feedback: `Payment manually verified via browser (HIMGRN: ${grn}).`,
+              newStatus: targetStatus,
+              feedback: `Payment manually verified via browser (HIMGRN: ${grn}).${isLegacyRC ? '' : ' Routed to DTDO for inspection.'}`,
             });
 
             himkoshLogger.info(
-              { appRefNo, applicationId: app.id, grn, method: 'manual' },
-              'Manual verification: payment_pending -> approved',
+              { appRefNo, applicationId: app.id, grn, isLegacyRC, targetStatus, method: 'manual' },
+              `Manual verification: payment_pending -> ${targetStatus}`,
             );
           }
         } else {
@@ -1530,6 +1585,7 @@ router.get('/transactions', async (req, res) => {
       ...row.himkosh_transactions,
       applicationDistrict: row.homestay_applications?.district ?? null,
       applicationNumber: row.homestay_applications?.applicationNumber ?? null,
+      propertyName: row.homestay_applications?.propertyName ?? null,
     }));
 
     res.json({
@@ -1823,9 +1879,11 @@ router.post('/test-callback-url', async (req, res) => {
     const now = new Date();
     const periodDate = `${String(now.getDate()).padStart(2, '0')}-${String(now.getMonth() + 1).padStart(2, '0')}-${now.getFullYear()}`;
 
-    const deptRefNo = ensureDistrictCodeOnApplicationNumber(
-      application.applicationNumber,
-      application.district,
+    const deptRefNo = toHimkoshDeptRefNo(
+      ensureDistrictCodeOnApplicationNumber(
+        application.applicationNumber,
+        application.district,
+      )
     );
 
     const requestParams = {

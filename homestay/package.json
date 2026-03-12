@@ -1,9 +1,9 @@
 {
   "name": "hptourism-homestay",
-  "version": "1.3.0",
+  "version": "1.3.5",
   "private": true,
   "type": "module",
-  "description": "HP Tourism Homestay Portal - v1.1.6 - Drizzle Timestamp Fix",
+  "description": "HP Tourism Homestay Portal - v1.3.5",
   "license": "MIT",
   "scripts": {
     "dev": "PORT=${PORT:-5057} NODE_ENV=development tsx server/index.ts",

@@ -621,7 +621,7 @@ export default function SuperAdminConsole() {
     isError: himkoshActivityError,
     refetch: refetchHimkoshActivity,
   } = useQuery<{
-    transactions: (HimkoshTransaction & { applicationDistrict?: string })[];
+    transactions: (HimkoshTransaction & { applicationDistrict?: string; applicationNumber?: string; propertyName?: string })[];
     total: number;
     limit: number;
     offset: number;
@@ -2007,6 +2007,7 @@ export default function SuperAdminConsole() {
                             <Input
                               id="db-password"
                               type="password"
+                              autoComplete="new-password"
                               value={dbForm.password}
                               onChange={handleDbInputChange("password")}
                               placeholder={dbHasPassword ? "•••••• (unchanged)" : "Enter password"}
@@ -2795,6 +2796,8 @@ export default function SuperAdminConsole() {
                           <TableHeader>
                             <TableRow>
                               <TableHead>Date</TableHead>
+                              <TableHead>App No.</TableHead>
+                              <TableHead>Homestay</TableHead>
                               <TableHead>District</TableHead>
                               <TableHead>DDO Code</TableHead>
                               <TableHead>Head</TableHead>
@@ -2810,7 +2813,13 @@ export default function SuperAdminConsole() {
                                 <TableCell className="whitespace-nowrap text-xs">
                                   {formatDbTimestamp(transaction.createdAt)}
                                 </TableCell>
-                                <TableCell className="font-medium">
+                                <TableCell className="font-medium text-xs whitespace-nowrap">
+                                  {transaction.applicationNumber || "—"}
+                                </TableCell>
+                                <TableCell className="text-xs max-w-[120px] truncate" title={transaction.propertyName || ""}>
+                                  {transaction.propertyName || "—"}
+                                </TableCell>
+                                <TableCell className="font-medium text-xs">
                                   {transaction.applicationDistrict || "—"}
                                 </TableCell>
                                 <TableCell className="font-mono text-xs">
@@ -3653,6 +3662,7 @@ export default function SuperAdminConsole() {
               <Input
                 id="critical-password"
                 type="password"
+                autoComplete="new-password"
                 value={passwordDialog.password}
                 onChange={(e) => setPasswordDialog((prev) => ({ ...prev, password: e.target.value, error: "" }))}
                 placeholder="Enter your password"
@@ -3753,6 +3763,7 @@ export default function SuperAdminConsole() {
                     <Input
                       id="password"
                       type="password"
+                      autoComplete="new-password"
                       value={resetDialog.password}
                       onChange={(e) =>
                         setResetDialog({ ...resetDialog, password: e.target.value })

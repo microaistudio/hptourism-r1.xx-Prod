@@ -113,6 +113,6 @@ For technical support, contact:
 
 ## Version Information
 
-- **Installer Version**: R1
-- **Application Version**: 0.8.x
-- **Last Updated**: 2026-01-21
+- **Installer Version**: R2 (v1.3.2 ready)
+- **Application Version**: 1.3.2
+- **Last Updated**: 2026-03-11

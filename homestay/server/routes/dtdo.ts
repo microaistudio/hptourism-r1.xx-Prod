@@ -1480,7 +1480,7 @@ export function createDtdoRouter() {
             const certificateNumber = `HP-HST-${year}-${randomSuffix}`;
             const issueDate = new Date();
             const expiryDate = new Date(issueDate);
-            const validityYears = parentApp?.certificateValidityYears || 1;
+            const validityYears = application.certificateValidityYears || 1;
             expiryDate.setFullYear(expiryDate.getFullYear() + validityYears);
 
             const approvedApplication = await storage.updateApplication(req.params.id, {

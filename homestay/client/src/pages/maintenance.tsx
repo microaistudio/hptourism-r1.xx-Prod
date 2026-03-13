@@ -34,23 +34,57 @@ function formatElapsedTime(startedAt: string | null | undefined): string {
     return parts.join(", ");
 }
 
-function LiveDowntime({ startedAt }: { startedAt?: string | null }) {
+function formatRemainingTime(restoreAt: string | null | undefined): string {
+    if (!restoreAt) return "";
+    const restoreTime = new Date(restoreAt).getTime();
+    if (isNaN(restoreTime)) return "";
+    const now = Date.now();
+    const diffMs = restoreTime - now;
+    if (diffMs <= 0) return "moments away";
+
+    const totalSeconds = Math.floor(diffMs / 1000);
+    const days = Math.floor(totalSeconds / 86400);
+    const hours = Math.floor((totalSeconds % 86400) / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+
+    const parts: string[] = [];
+    if (days > 0) parts.push(`${days} day${days > 1 ? "s" : ""}`);
+    if (hours > 0) parts.push(`${hours} hour${hours > 1 ? "s" : ""}`);
+    if (minutes > 0) parts.push(`${minutes} min${minutes > 1 ? "s" : ""}`);
+    if (parts.length === 0) return "less than a minute";
+    return parts.join(", ");
+}
+
+function LiveDowntime({ startedAt, estimatedRestoreAt }: { startedAt?: string | null, estimatedRestoreAt?: string | null }) {
     const [elapsed, setElapsed] = useState(formatElapsedTime(startedAt));
+    const [remaining, setRemaining] = useState(formatRemainingTime(estimatedRestoreAt));
 
     useEffect(() => {
-        if (!startedAt) return;
+        if (!startedAt && !estimatedRestoreAt) return;
         const interval = setInterval(() => {
-            setElapsed(formatElapsedTime(startedAt));
-        }, 30000); // Update every 30 seconds (not too aggressive for public)
+            if (startedAt) setElapsed(formatElapsedTime(startedAt));
+            if (estimatedRestoreAt) setRemaining(formatRemainingTime(estimatedRestoreAt));
+        }, 30000); // Update every 30 seconds
         return () => clearInterval(interval);
-    }, [startedAt]);
+    }, [startedAt, estimatedRestoreAt]);
 
-    if (!startedAt || !elapsed) return null;
+    if (!startedAt && !estimatedRestoreAt) return null;
 
     return (
-        <div className="flex items-center justify-center gap-2 text-sm text-slate-500">
-            <Timer className="h-4 w-4" />
-            <span>Down for: {elapsed}</span>
+        <div className="flex flex-col items-center justify-center gap-3">
+            {startedAt && elapsed && (
+                <div className="flex items-center justify-center gap-2 text-sm text-slate-500">
+                    <Timer className="h-4 w-4" />
+                    <span>Down for: {elapsed}</span>
+                </div>
+            )}
+            
+            {estimatedRestoreAt && remaining && (
+                <div className="flex items-center justify-center gap-2 px-4 py-2 bg-emerald-100 border border-emerald-300 rounded-md text-emerald-800 font-bold text-base shadow-sm shrink-0 w-max">
+                    <Clock className="h-5 w-5 fill-emerald-200" />
+                    <span>Will be back in: {remaining}</span>
+                </div>
+            )}
         </div>
     );
 }
@@ -94,16 +128,16 @@ export default function MaintenancePage({ config }: { config: MaintenancePageCon
                 <CardContent className="space-y-4">
                     {/* Timing Information (only shown if admin enabled showTimingToPublic) */}
                     {hasTimingInfo && (
-                        <div className="space-y-3 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                        <div className="space-y-4 p-5 bg-blue-50/70 border border-blue-200 rounded-lg flex flex-col items-center">
                             {config.estimatedRestoreAt && (
-                                <div className="flex items-center justify-center gap-2 text-sm text-blue-700 font-medium">
+                                <div className="flex items-center justify-center gap-2 text-sm text-blue-700 font-medium border-b border-blue-200 pb-3 w-full">
                                     <Clock className="h-4 w-4" />
                                     <span>
                                         Expected back by: {formatDateTimeIST(config.estimatedRestoreAt)}
                                     </span>
                                 </div>
                             )}
-                            <LiveDowntime startedAt={config.startedAt} />
+                            <LiveDowntime startedAt={config.startedAt} estimatedRestoreAt={config.estimatedRestoreAt} />
                         </div>
                     )}
 

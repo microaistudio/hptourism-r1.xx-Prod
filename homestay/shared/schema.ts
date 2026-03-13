@@ -1401,6 +1401,15 @@ export const inspectionReports = pgTable("inspection_reports", {
   actualInspectionDate: timestamp("actual_inspection_date").notNull(),
   roomCountVerified: boolean("room_count_verified").notNull(),
   actualRoomCount: integer("actual_room_count"),
+  
+  // New verification fields for room types and Aadhaar
+  verifiedSingleBedRooms: integer("verified_single_bed_rooms"),
+  verifiedDoubleBedRooms: integer("verified_double_bed_rooms"),
+  verifiedFamilySuites: integer("verified_family_suites"),
+  roomCorrectionNotes: text("room_correction_notes"),
+  
+  aadhaarVerified: boolean("aadhaar_verified").default(false),
+  verifiedAadhaarNumber: varchar("verified_aadhaar_number", { length: 20 }),
 
   // Category Verification
   categoryMeetsStandards: boolean("category_meets_standards").notNull(),
@@ -1493,6 +1502,12 @@ export const insertInspectionReportSchema = createInsertSchema(inspectionReports
   actualInspectionDate: z.date().or(z.string()),
   roomCountVerified: z.boolean(),
   actualRoomCount: z.number().int().min(0).optional(),
+  verifiedSingleBedRooms: z.number().int().min(0).optional(),
+  verifiedDoubleBedRooms: z.number().int().min(0).optional(),
+  verifiedFamilySuites: z.number().int().min(0).optional(),
+  roomCorrectionNotes: z.string().optional(),
+  aadhaarVerified: z.boolean().optional(),
+  verifiedAadhaarNumber: z.string().optional(),
   categoryMeetsStandards: z.boolean(),
   recommendedCategory: z.enum(['diamond', 'gold', 'silver']).optional().or(z.literal('')),
   mandatoryChecklist: z.object({

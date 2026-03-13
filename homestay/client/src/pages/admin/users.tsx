@@ -34,6 +34,7 @@ type NewUserFormState = {
 };
 
 type EditUserFormState = {
+  fullName: string;
   firstName: string;
   lastName: string;
   username: string;
@@ -74,6 +75,7 @@ export default function AdminUsers() {
     confirmPassword: "",
   });
   const [editUserData, setEditUserData] = useState<EditUserFormState>({
+    fullName: "",
     firstName: "",
     lastName: "",
     username: "",
@@ -187,6 +189,7 @@ export default function AdminUsers() {
       setEditDialogOpen(false);
       setEditingUser(null);
       setEditUserData({
+        fullName: "",
         firstName: "",
         lastName: "",
         username: "",
@@ -261,6 +264,7 @@ export default function AdminUsers() {
   const handleEditUser = (user: User) => {
     setEditingUser(user);
     setEditUserData({
+      fullName: user.fullName || "",
       firstName: user.firstName || "",
       lastName: user.lastName || "",
       username: user.username || "",
@@ -281,8 +285,17 @@ export default function AdminUsers() {
   const handleSaveEdit = () => {
     if (!editingUser) return;
 
-    // Validate required fields for staff users
-    if (editingUser.role !== 'property_owner') {
+    // Validate required fields
+    if (editingUser.role === 'property_owner') {
+      if (!editUserData.fullName) {
+        toast({
+          title: "Validation Error",
+          description: "Full name is required for property owners",
+          variant: "destructive",
+        });
+        return;
+      }
+    } else {
       if (!editUserData.firstName || !editUserData.lastName) {
         toast({
           title: "Validation Error",
@@ -947,9 +960,11 @@ export default function AdminUsers() {
       <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
         <DialogContent className="sm:max-w-[700px] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Edit Staff Profile</DialogTitle>
+            <DialogTitle>{editingUser?.role === 'property_owner' ? 'Edit Property Owner Profile' : 'Edit Staff Profile'}</DialogTitle>
             <DialogDescription>
-              Update comprehensive staff profile information. Leave password empty to keep current password.
+              {editingUser?.role === 'property_owner' 
+                ? 'Update property owner details. Leave password empty to keep current password.' 
+                : 'Update comprehensive staff profile information. Leave password empty to keep current password.'}
             </DialogDescription>
           </DialogHeader>
 
@@ -1131,11 +1146,62 @@ export default function AdminUsers() {
                 </div>
               </div>
             </div>
-          ) : (
-            <div className="space-y-4 py-4">
-              <p className="text-sm text-muted-foreground">Property owner profile editing coming soon...</p>
+          ) : editingUser ? (
+            <div className="space-y-6 py-4">
+              <div className="space-y-4">
+                <h3 className="text-sm font-semibold text-foreground border-b pb-2">Personal Information</h3>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2 col-span-2">
+                    <Label htmlFor="edit-fullName">Full Name *</Label>
+                    <Input
+                      id="edit-fullName"
+                      placeholder="Enter full name"
+                      value={editUserData.fullName}
+                      onChange={(e) => setEditUserData({ ...editUserData, fullName: e.target.value })}
+                      data-testid="input-edit-fullname"
+                      characterRestriction="alpha-space"
+                      maxLength={120}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Mobile Number</Label>
+                    <Input
+                      value={editingUser.mobile}
+                      disabled
+                      className="bg-muted"
+                      data-testid="input-edit-mobile"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <h3 className="text-sm font-semibold text-foreground border-b pb-2">Security</h3>
+                <div className="space-y-2">
+                  <Label htmlFor="edit-password">New Password (optional)</Label>
+                  <Input
+                    id="edit-password"
+                    type="password"
+                    placeholder="Leave empty to keep current password"
+                    value={editUserData.password}
+                    onChange={(e) => setEditUserData({ ...editUserData, password: e.target.value })}
+                    data-testid="input-edit-password"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit-confirm-password">Confirm New Password</Label>
+                  <Input
+                    id="edit-confirm-password"
+                    type="password"
+                    placeholder="Re-enter new password"
+                    value={editUserData.confirmPassword}
+                    onChange={(e) => setEditUserData({ ...editUserData, confirmPassword: e.target.value })}
+                    data-testid="input-edit-confirm-password"
+                  />
+                </div>
+              </div>
             </div>
-          )}
+          ) : null}
 
           <div className="flex justify-end gap-2 pt-4 border-t">
             <Button
@@ -1147,7 +1213,7 @@ export default function AdminUsers() {
             </Button>
             <Button
               onClick={handleSaveEdit}
-              disabled={editUserMutation.isPending || (editingUser?.role === 'property_owner')}
+              disabled={editUserMutation.isPending}
               data-testid="button-save-edit"
             >
               {editUserMutation.isPending ? "Saving..." : "Save Changes"}

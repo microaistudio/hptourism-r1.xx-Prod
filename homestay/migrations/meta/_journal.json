@@ -15,6 +15,13 @@
       "when": 1770799718745,
       "tag": "0001_condemned_thor_girl",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1773333907798,
+      "tag": "0002_powerful_marvex",
+      "breakpoints": true
     }
   ]
 }

@@ -6,7 +6,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { differenceInCalendarDays, subDays } from "date-fns";
 import { formatDateIST, formatDateLongIST, formatDateInputIST } from "@/lib/dateUtils";
-import { ArrowLeft, Save, Send, CheckCircle, XCircle, AlertCircle, Calendar, MapPin, User, FileText, Shield, Star, CheckSquare, SquareX } from "lucide-react";
+import { ArrowLeft, Save, Send, CheckCircle, XCircle, AlertCircle, AlertTriangle, Calendar, MapPin, User, FileText, Shield, Star, CheckSquare, SquareX } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
@@ -28,6 +28,10 @@ const inspectionReportSchema = z.object({
   actualInspectionDate: z.string().min(1, "Inspection date is required"),
   roomCountVerified: z.boolean().optional(),
   actualRoomCount: z.number().int().min(0).optional(),
+  verifiedSingleBedRooms: z.number().int().min(0).optional(),
+  verifiedDoubleBedRooms: z.number().int().min(0).optional(),
+  verifiedFamilySuites: z.number().int().min(0).optional(),
+  roomCorrectionNotes: z.string().optional(),
   categoryMeetsStandards: z.boolean().optional(),
   recommendedCategory: z.enum(['diamond', 'gold', 'silver']).optional(),
 
@@ -126,11 +130,17 @@ const inspectionReportSchema = z.object({
         message: "Turn on all mandatory checklist items before recommending verification.",
       });
     }
-    if (data.roomCountVerified !== true) {
+    if (data.roomCountVerified === undefined) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['roomCountVerified'],
-        message: "Room count must match before recommending verification.",
+        message: "Please either confirm room count matches (toggle ON) or provide corrections (Edit Count).",
+      });
+    } else if (data.roomCountVerified === false && (!data.roomCorrectionNotes || data.roomCorrectionNotes.trim().length === 0)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['roomCorrectionNotes'],
+        message: "Explanation is required when correcting room counts.",
       });
     }
     if (data.categoryMeetsStandards !== true) {
@@ -173,6 +183,10 @@ type InspectionData = {
     propertyName: string;
     category: string;
     totalRooms: number;
+    singleBedRooms?: number;
+    doubleBedRooms?: number;
+    familySuites?: number;
+    ownerAadhaar?: string;
     dtdoRemarks?: string | null;
   };
   owner: {
@@ -260,6 +274,10 @@ export default function DAInspectionReport() {
       overallSatisfactory: undefined,
       recommendedCategory: undefined,
       actualRoomCount: undefined,
+      verifiedSingleBedRooms: undefined,
+      verifiedDoubleBedRooms: undefined,
+      verifiedFamilySuites: undefined,
+      roomCorrectionNotes: '',
       recommendation: 'approve',
       detailedFindings: '',
       objectionDetails: '',
@@ -690,7 +708,7 @@ export default function DAInspectionReport() {
           <Card>
             <CardHeader>
               <CardTitle>Basic Verification</CardTitle>
-              <CardDescription>Verify room count and category</CardDescription>
+              <CardDescription>Verify room count, Aadhaar, and category</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               {/* Room Count Verification */}
@@ -700,7 +718,21 @@ export default function DAInspectionReport() {
                 render={({ field }) => (
                   <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
                     <div className="space-y-0.5">
-                      <FormLabel className="text-base">Room Count Matches</FormLabel>
+                      <div className="flex items-center gap-3">
+                        <FormLabel className="text-base text-gray-800 dark:text-gray-200">Room Count Verification</FormLabel>
+                        {field.value === undefined && (
+                          <Button 
+                            type="button" 
+                            variant="secondary" 
+                            size="sm" 
+                            className="h-6 py-0 px-2 text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 dark:bg-slate-700 dark:text-gray-200 dark:hover:bg-slate-600 border border-gray-200 dark:border-slate-600 shadow-sm"
+                            onClick={() => field.onChange(false)}
+                            data-testid="button-edit-room-count"
+                          >
+                            <span className="mr-1">✏️</span> Edit Count
+                          </Button>
+                        )}
+                      </div>
                       <FormDescription>
                         Does the actual room count match the application? (Applied: {application?.totalRooms} rooms)
                       </FormDescription>
@@ -708,7 +740,7 @@ export default function DAInspectionReport() {
                     <FormControl>
                       <Switch
                         checked={field.value === true}
-                        onCheckedChange={(checked) => field.onChange(checked)}
+                        onCheckedChange={(checked) => field.onChange(checked ? true : undefined)}
                         data-testid="switch-room-count"
                       />
                     </FormControl>
@@ -718,32 +750,127 @@ export default function DAInspectionReport() {
               />
 
               {form.watch('roomCountVerified') === false && (
-                <FormField
-                  control={form.control}
-                  name="actualRoomCount"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Actual Room Count</FormLabel>
-                      <FormControl>
-                        <Input
-                          type="number"
-                          {...field}
-                          onChange={(e) => {
-                            const value = e.target.value;
-                            if (value === "") {
-                              field.onChange(undefined);
-                              return;
-                            }
-                            const parsed = parseInt(value, 10);
-                            field.onChange(Number.isNaN(parsed) ? undefined : parsed);
-                          }}
-                          data-testid="input-actual-room-count"
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                <div className="space-y-4 rounded-lg border-2 border-amber-300 dark:border-amber-700 p-4 bg-amber-50/50 dark:bg-amber-950/20">
+                  <div className="flex items-center gap-2 mb-3">
+                    <AlertTriangle className="w-5 h-5 text-amber-600" />
+                    <h4 className="font-semibold text-amber-800 dark:text-amber-400">Room Count Correction</h4>
+                  </div>
+
+                  {/* Declared vs Verified comparison table */}
+                  <div className="rounded-lg border bg-white dark:bg-slate-900 overflow-hidden">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="bg-slate-100 dark:bg-slate-800">
+                          <th className="text-left p-3 font-semibold">Room Type</th>
+                          <th className="text-center p-3 font-semibold text-slate-500">Applied</th>
+                          <th className="text-center p-3 font-semibold text-amber-700 dark:text-amber-400">Verified ✏️</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr className="border-t">
+                          <td className="p-3 font-medium">Single Bed Rooms</td>
+                          <td className="p-3 text-center text-slate-500">{application?.singleBedRooms ?? 0}</td>
+                          <td className="p-3 text-center">
+                            <FormField
+                              control={form.control}
+                              name="verifiedSingleBedRooms"
+                              render={({ field }) => (
+                                <FormItem className="m-0">
+                                  <FormControl>
+                                    <Input
+                                      type="number"
+                                      min="0"
+                                      className="w-20 mx-auto h-8 text-center text-sm"
+                                      value={field.value ?? ''}
+                                      onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value, 10) : undefined)}
+                                      data-testid="input-verified-single"
+                                    />
+                                  </FormControl>
+                                </FormItem>
+                              )}
+                            />
+                          </td>
+                        </tr>
+                        <tr className="border-t">
+                          <td className="p-3 font-medium">Double Bed Rooms</td>
+                          <td className="p-3 text-center text-slate-500">{application?.doubleBedRooms ?? 0}</td>
+                          <td className="p-3 text-center">
+                            <FormField
+                              control={form.control}
+                              name="verifiedDoubleBedRooms"
+                              render={({ field }) => (
+                                <FormItem className="m-0">
+                                  <FormControl>
+                                    <Input
+                                      type="number"
+                                      min="0"
+                                      className="w-20 mx-auto h-8 text-center text-sm"
+                                      value={field.value ?? ''}
+                                      onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value, 10) : undefined)}
+                                      data-testid="input-verified-double"
+                                    />
+                                  </FormControl>
+                                </FormItem>
+                              )}
+                            />
+                          </td>
+                        </tr>
+                        <tr className="border-t">
+                          <td className="p-3 font-medium">Family Suites</td>
+                          <td className="p-3 text-center text-slate-500">{application?.familySuites ?? 0}</td>
+                          <td className="p-3 text-center">
+                            <FormField
+                              control={form.control}
+                              name="verifiedFamilySuites"
+                              render={({ field }) => (
+                                <FormItem className="m-0">
+                                  <FormControl>
+                                    <Input
+                                      type="number"
+                                      min="0"
+                                      className="w-20 mx-auto h-8 text-center text-sm"
+                                      value={field.value ?? ''}
+                                      onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value, 10) : undefined)}
+                                      data-testid="input-verified-suites"
+                                    />
+                                  </FormControl>
+                                </FormItem>
+                              )}
+                            />
+                          </td>
+                        </tr>
+                        <tr className="border-t bg-slate-50 dark:bg-slate-800/50">
+                          <td className="p-3 font-bold">Total Rooms</td>
+                          <td className="p-3 text-center font-bold text-slate-500">{application?.totalRooms ?? 0}</td>
+                          <td className="p-3 text-center font-bold text-lg text-amber-700 dark:text-amber-400">
+                            {(form.watch("verifiedSingleBedRooms") || 0) +
+                              (form.watch("verifiedDoubleBedRooms") || 0) +
+                              (form.watch("verifiedFamilySuites") || 0)}
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <FormField
+                    control={form.control}
+                    name="roomCorrectionNotes"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Explanation of Discrepancy</FormLabel>
+                        <FormControl>
+                          <Textarea
+                            placeholder="Explain the differences found compared to the application..."
+                            {...field}
+                            rows={2}
+                            data-testid="textarea-room-correction-notes"
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
               )}
 
               <Separator />

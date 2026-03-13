@@ -1374,8 +1374,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // Basic verification fields
         roomCountVerified: req.body.roomCountVerified ?? false,
         actualRoomCount: req.body.actualRoomCount || null,
+        verifiedSingleBedRooms: req.body.verifiedSingleBedRooms || null,
+        verifiedDoubleBedRooms: req.body.verifiedDoubleBedRooms || null,
+        verifiedFamilySuites: req.body.verifiedFamilySuites || null,
+        roomCorrectionNotes: req.body.roomCorrectionNotes || null,
         categoryMeetsStandards: req.body.categoryMeetsStandards ?? false,
         recommendedCategory: req.body.recommendedCategory || null,
+        aadhaarVerified: req.body.aadhaarVerified ?? false,
+        verifiedAadhaarNumber: req.body.verifiedAadhaarNumber || null,
         // ANNEXURE-III Checklists
         mandatoryChecklist: req.body.mandatoryChecklist || null,
         mandatoryRemarks: mergedMandatoryRemarks,

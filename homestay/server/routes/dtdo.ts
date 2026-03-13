@@ -40,8 +40,9 @@ export function createDtdoRouter() {
                 return res.status(400).json({ message: "DTDO must be assigned to a district" });
             }
 
-            routeLog.info({ userId, officerDistrict: user.district }, "Fetching DTDO applications (Split Logic)");
-            const districtCondition = buildSplitDistrictWhereClause(user.district);
+            const userDistrict = user.district as string;
+            routeLog.info({ userId, officerDistrict: userDistrict }, "Fetching DTDO applications (Split Logic)");
+            const districtCondition = buildSplitDistrictWhereClause(userDistrict);
 
 
 
@@ -56,9 +57,9 @@ export function createDtdoRouter() {
             // (e.g. if SQL ILIKE behaves oddly with hidden chars)
             // We use the strict 'isCoveredBySplitDistrict' helper.
             const allApplications = rawApplications.filter(app => {
-                const covered = isCoveredBySplitDistrict(user.district, app.district, app.tehsil);
+                const covered = isCoveredBySplitDistrict(userDistrict, app.district, app.tehsil);
                 if (!covered) {
-                    console.warn(`[SAFETY FILTER] Hiding App ${app.applicationNumber} from ${user.email} (District: ${user.district}, App Tehsil: ${app.tehsil})`);
+                    console.warn(`[SAFETY FILTER] Hiding App ${app.applicationNumber} from ${user.email} (District: ${userDistrict}, App Tehsil: ${app.tehsil})`);
                 }
                 return covered;
             });
@@ -1548,6 +1549,14 @@ export function createDtdoRouter() {
         'urbanBody',
         'pincode',
         'alternatePhone',
+        'ownerName', // Adding ownerName from 1.30
+        'ownerAadhaar',
+        'singleBedRooms',
+        'singleBedRoomRate',
+        'doubleBedRooms',
+        'doubleBedRoomRate',
+        'familySuites',
+        'familySuiteRate',
     ] as const;
 
     type CorrectionField = typeof ALLOWED_CORRECTION_FIELDS[number];
@@ -1607,11 +1616,11 @@ export function createDtdoRouter() {
                 });
             }
 
-            // Only allow corrections on approved/active applications
-            const correctableStatuses = ['approved', 'certificate_issued', 'active', 'completed'];
+            // Allow corrections on mostly all active DTDO stages
+            const correctableStatuses = ['forwarded_to_dtdo', 'dtdo_review', 'dtdo_correction_requested', 'inspection_scheduled', 'inspection_under_review', 'verified_for_payment', 'approved', 'certificate_issued', 'active', 'completed'];
             if (!correctableStatuses.some(s => application.status?.includes(s))) {
                 return res.status(400).json({
-                    message: `Corrections can only be made to approved/active applications. Current status: ${application.status}`,
+                    message: `Corrections can only be made on active/reviewing applications. Current status: ${application.status}`,
                     code: "INVALID_STATUS"
                 });
             }
@@ -1627,17 +1636,41 @@ export function createDtdoRouter() {
 
             for (const [field, newValue] of Object.entries(corrections)) {
                 const fieldKey = field as CorrectionField;
-                const oldValue = (application as any)[fieldKey];
+                const oldValueRaw = (application as any)[fieldKey];
+                const oldValueStr = String(oldValueRaw ?? '');
                 const newValueStr = String(newValue ?? '').trim();
 
                 // Only include if actually changed
-                if (oldValue !== newValueStr && newValueStr.length > 0) {
+                if (oldValueStr !== newValueStr && newValueStr.length > 0) {
                     changeLog.push({
                         field: fieldKey,
-                        oldValue: oldValue ?? null,
+                        oldValue: oldValueRaw ?? null,
                         newValue: newValueStr
                     });
-                    sanitizedCorrections[fieldKey] = newValueStr;
+                    
+                    // Convert numeric fields to actual Numbers to safely store into DB
+                    if (['singleBedRooms', 'doubleBedRooms', 'familySuites', 'singleBedRoomRate', 'doubleBedRoomRate', 'familySuiteRate'].includes(fieldKey)) {
+                        sanitizedCorrections[fieldKey] = Number(newValueStr) as any;
+                    } else {
+                        sanitizedCorrections[fieldKey] = newValueStr as any;
+                    }
+                }
+            }
+
+            // Recalculate totalRooms if room counts were updated
+            if ('singleBedRooms' in sanitizedCorrections || 'doubleBedRooms' in sanitizedCorrections || 'familySuites' in sanitizedCorrections) {
+                const s = 'singleBedRooms' in sanitizedCorrections ? Number(sanitizedCorrections.singleBedRooms) : Number(application.singleBedRooms ?? 0);
+                const d = 'doubleBedRooms' in sanitizedCorrections ? Number(sanitizedCorrections.doubleBedRooms) : Number(application.doubleBedRooms ?? 0);
+                const f = 'familySuites' in sanitizedCorrections ? Number(sanitizedCorrections.familySuites) : Number(application.familySuites ?? 0);
+                const newTotalRooms = s + d + f;
+                
+                if (newTotalRooms !== Number(application.totalRooms ?? 0)) {
+                    (sanitizedCorrections as any).totalRooms = newTotalRooms;
+                    changeLog.push({
+                        field: 'totalRooms',
+                        oldValue: String(application.totalRooms ?? 0),
+                        newValue: String(newTotalRooms)
+                    });
                 }
             }
 

@@ -148,6 +148,15 @@ export default function DTDOApplicationReview() {
   const [isEditMode, setIsEditMode] = useState(false);
   const [editedFields, setEditedFields] = useState<Partial<HomestayApplication>>({});
   const [correctionReason, setCorrectionReason] = useState("");
+  const [unlockDialogOpen, setUnlockDialogOpen] = useState(false);
+  const [unlockPassword, setUnlockPassword] = useState("");
+  const [unlockReason, setUnlockReason] = useState("");
+  const [unlockError, setUnlockError] = useState("");
+
+  const [aadhaarConfirmDialogOpen, setAadhaarConfirmDialogOpen] = useState(false);
+  const [aadhaarConfirmPassword, setAadhaarConfirmPassword] = useState("");
+  const [aadhaarConfirmReason, setAadhaarConfirmReason] = useState("");
+  const [aadhaarConfirmError, setAadhaarConfirmError] = useState("");
 
   // Legacy RC: optional inspection (default: no inspection)
   const [requireInspection, setRequireInspection] = useState(false);
@@ -319,6 +328,63 @@ export default function DTDOApplicationReview() {
         description: error.message || "Failed to apply corrections",
         variant: "destructive",
       });
+    },
+  });
+
+  const { data: authData } = useQuery<{ user: any }>({
+    queryKey: ["/api/auth/me"],
+  });
+
+  const unlockMutation = useMutation({
+    mutationFn: async (password: string) => {
+      const username = authData?.user?.username;
+      const response = await apiRequest("POST", "/api/verify-critical-password", { password, username });
+      if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(errData.message || "Invalid password");
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      setIsEditMode(true);
+      setCorrectionReason(unlockReason);
+      setUnlockDialogOpen(false);
+      setUnlockPassword("");
+      setUnlockReason("");
+      setUnlockError("");
+      toast({
+        title: "Edit Mode Unlocked",
+        description: "You can now correct the application details.",
+      });
+    },
+    onError: (error: Error) => {
+      setUnlockError(error.message);
+    },
+  });
+
+  const aadhaarUnlockMutation = useMutation({
+    mutationFn: async (password: string) => {
+      const username = authData?.user?.username;
+      const response = await apiRequest("POST", "/api/verify-critical-password", { password, username });
+      if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(errData.message || "Invalid password");
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      const finalReason = correctionReason.trim() + "\n\nAadhaar Change Reason: " + aadhaarConfirmReason.trim();
+      correctionMutation.mutate({
+        corrections: editedFields,
+        reason: finalReason
+      });
+      setAadhaarConfirmDialogOpen(false);
+      setAadhaarConfirmPassword("");
+      setAadhaarConfirmReason("");
+      setAadhaarConfirmError("");
+    },
+    onError: (error: Error) => {
+      setAadhaarConfirmError(error.message);
     },
   });
 
@@ -564,6 +630,15 @@ export default function DTDOApplicationReview() {
         description: "Please provide a correction reason (minimum 10 characters)",
         variant: "destructive",
       });
+      return;
+    }
+
+    // Aadhar Confirmation Gate
+    if (editedFields.ownerAadhaar && editedFields.ownerAadhaar !== application?.ownerAadhaar) {
+      setAadhaarConfirmPassword("");
+      setAadhaarConfirmReason("");
+      setAadhaarConfirmError("");
+      setAadhaarConfirmDialogOpen(true);
       return;
     }
 
@@ -1187,194 +1262,295 @@ export default function DTDOApplicationReview() {
                       </>
                     )}
                   </Button>
-
-                  {!isEditMode ? (
-                    <Button
-                      className="w-full"
-                      variant="secondary"
-                      onClick={() => setIsEditMode(true)}
-                      data-testid="button-edit-details"
-                    >
-                      <Pencil className="mr-2 h-4 w-4" />
-                      Edit RC Details
-                    </Button>
-                  ) : (
-                    <div className="space-y-4">
-                      {/* Correction Form */}
-                      <div className="space-y-3 p-3 bg-amber-50 dark:bg-amber-950/20 rounded-lg border border-amber-200 dark:border-amber-800">
-                        <div className="flex items-center gap-2 text-amber-700 dark:text-amber-400 text-sm font-medium">
-                          <AlertTriangle className="h-4 w-4" />
-                          Editing Active RC
-                        </div>
-
-                        {/* Editable Fields */}
-                        <div className="space-y-3">
-                          <div>
-                            <Label className="text-xs text-gray-600">Owner / Applicant Name</Label>
-                            <Input
-                              value={getFieldValue('ownerName') ?? ''}
-                              onChange={(e) => handleEditField('ownerName', e.target.value)}
-                              placeholder="Full name as on RC"
-                              className="h-8 text-sm"
-                            />
-                          </div>
-
-                          <div>
-                            <Label className="text-xs text-gray-600">Property Name</Label>
-                            <Input
-                              value={getFieldValue('propertyName') ?? ''}
-                              onChange={(e) => handleEditField('propertyName', e.target.value)}
-                              placeholder="Property name"
-                              className="h-8 text-sm"
-                            />
-                          </div>
-
-                          <div>
-                            <Label className="text-xs text-gray-600">Guardian / Father's Name</Label>
-                            <Input
-                              value={(editedFields as any).guardianName ?? (application as any).guardianName ?? ''}
-                              onChange={(e) => handleEditField('guardianName' as any, e.target.value)}
-                              placeholder="Father's / Husband's name"
-                              className="h-8 text-sm"
-                            />
-                          </div>
-
-                          <div>
-                            <Label className="text-xs text-gray-600">Address</Label>
-                            <Input
-                              value={getFieldValue('address') ?? ''}
-                              onChange={(e) => handleEditField('address', e.target.value)}
-                              placeholder="Full address"
-                              className="h-8 text-sm"
-                            />
-                          </div>
-
-                          <div className="grid grid-cols-2 gap-2">
-                            <div>
-                              <Label className="text-xs text-gray-600">Gender</Label>
-                              <Select
-                                value={getFieldValue('ownerGender') ?? ''}
-                                onValueChange={(value) => handleEditField('ownerGender', value)}
-                              >
-                                <SelectTrigger className="h-8 text-sm">
-                                  <SelectValue placeholder="Select" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="male">Male</SelectItem>
-                                  <SelectItem value="female">Female</SelectItem>
-                                  <SelectItem value="other">Other</SelectItem>
-                                </SelectContent>
-                              </Select>
-                            </div>
-                            <div>
-                              <Label className="text-xs text-gray-600">Tehsil</Label>
-                              <Input
-                                value={getFieldValue('tehsil') ?? ''}
-                                onChange={(e) => handleEditField('tehsil', e.target.value)}
-                                placeholder="Tehsil"
-                                className="h-8 text-sm"
-                              />
-                            </div>
-                          </div>
-
-                          <div className="grid grid-cols-2 gap-2">
-                            <div>
-                              <Label className="text-xs text-gray-600">Village / Gram Panchayat</Label>
-                              <Input
-                                value={(editedFields as any).gramPanchayat ?? (application as any).gramPanchayat ?? ''}
-                                onChange={(e) => handleEditField('gramPanchayat' as any, e.target.value)}
-                                placeholder="Village name"
-                                className="h-8 text-sm"
-                              />
-                            </div>
-                            <div>
-                              <Label className="text-xs text-gray-600">Urban Body</Label>
-                              <Input
-                                value={(editedFields as any).urbanBody ?? (application as any).urbanBody ?? ''}
-                                onChange={(e) => handleEditField('urbanBody' as any, e.target.value)}
-                                placeholder="MC/NAC name"
-                                className="h-8 text-sm"
-                              />
-                            </div>
-                          </div>
-
-                          <div className="grid grid-cols-2 gap-2">
-                            <div>
-                              <Label className="text-xs text-gray-600">Pincode</Label>
-                              <Input
-                                value={getFieldValue('pincode') ?? ''}
-                                onChange={(e) => handleEditField('pincode', e.target.value)}
-                                placeholder="Pincode"
-                                className="h-8 text-sm"
-                              />
-                            </div>
-                            <div>
-                              <Label className="text-xs text-gray-600">Alternate Phone</Label>
-                              <Input
-                                value={(editedFields as any).alternatePhone ?? (application as any).alternatePhone ?? ''}
-                                onChange={(e) => handleEditField('alternatePhone' as any, e.target.value)}
-                                placeholder="Alt. phone"
-                                className="h-8 text-sm"
-                              />
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Correction Reason - REQUIRED */}
-                        <div className="pt-2 border-t border-amber-200 dark:border-amber-700">
-                          <Label className="text-xs text-gray-600 flex items-center gap-1">
-                            Correction Reason <span className="text-red-500">*</span>
-                          </Label>
-                          <Textarea
-                            value={correctionReason}
-                            onChange={(e) => setCorrectionReason(e.target.value)}
-                            placeholder="Explain why these corrections are needed (min. 10 characters)..."
-                            className="text-sm resize-none"
-                            rows={2}
-                          />
-                          {correctionReason.length > 0 && correctionReason.length < 10 && (
-                            <p className="text-xs text-red-500 mt-1">
-                              {10 - correctionReason.length} more characters needed
-                            </p>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Action Buttons */}
-                      <div className="flex gap-2">
-                        <Button
-                          className="flex-1"
-                          variant="default"
-                          onClick={handleSaveEdits}
-                          disabled={correctionMutation.isPending || Object.keys(editedFields).length === 0}
-                          data-testid="button-save-edits"
-                        >
-                          {correctionMutation.isPending ? (
-                            <>
-                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                              Saving...
-                            </>
-                          ) : (
-                            <>
-                              <Save className="mr-2 h-4 w-4" />
-                              Save Corrections
-                            </>
-                          )}
-                        </Button>
-                        <Button
-                          variant="outline"
-                          onClick={handleCancelEdit}
-                          disabled={correctionMutation.isPending}
-                          data-testid="button-cancel-edit"
-                        >
-                          <X className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </div>
-                  )}
                 </CardContent>
               </Card>
             )}
+
+            {/* Application Corrections Card */}
+            <Card className="border-amber-200 dark:border-amber-800">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-amber-700 dark:text-amber-400">
+                  <Pencil className="h-5 w-5" />
+                  Application Corrections
+                </CardTitle>
+                <CardDescription>
+                  Update details like applicant name, room counts, and Aadhaar index.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {!isEditMode ? (
+                  <Button
+                    className="w-full"
+                    variant="secondary"
+                    onClick={() => {
+                      setUnlockPassword("");
+                      setUnlockReason("");
+                      setUnlockError("");
+                      setUnlockDialogOpen(true);
+                    }}
+                    data-testid="button-edit-details"
+                  >
+                    <Pencil className="mr-2 h-4 w-4" />
+                    Edit Application Details
+                  </Button>
+                ) : (
+                  <div className="space-y-4">
+                    {/* Correction Form */}
+                    <div className="space-y-3 p-3 bg-amber-50 dark:bg-amber-950/20 rounded-lg border border-amber-200 dark:border-amber-800">
+                      <div className="flex items-center gap-2 text-amber-700 dark:text-amber-400 text-sm font-medium">
+                        <AlertTriangle className="h-4 w-4" />
+                        Editing Active RC
+                      </div>
+
+                      {/* Editable Fields */}
+                      <div className="space-y-3">
+                        <div>
+                          <Label className="text-xs text-gray-600">Owner / Applicant Name</Label>
+                          <Input
+                            value={getFieldValue('ownerName') ?? ''}
+                            onChange={(e) => handleEditField('ownerName', e.target.value)}
+                            placeholder="Full name as on RC"
+                            className="h-8 text-sm"
+                          />
+                        </div>
+
+                        <div>
+                          <Label className="text-xs text-gray-600">Property Name</Label>
+                          <Input
+                            value={getFieldValue('propertyName') ?? ''}
+                            onChange={(e) => handleEditField('propertyName', e.target.value)}
+                            placeholder="Property name"
+                            className="h-8 text-sm"
+                          />
+                        </div>
+
+                        <div>
+                          <Label className="text-xs text-gray-600">Guardian / Father's Name</Label>
+                          <Input
+                            value={(editedFields as any).guardianName ?? (application as any).guardianName ?? ''}
+                            onChange={(e) => handleEditField('guardianName' as any, e.target.value)}
+                            placeholder="Father's / Husband's name"
+                            className="h-8 text-sm"
+                          />
+                        </div>
+
+                        <div>
+                          <Label className="text-xs text-gray-600">Address</Label>
+                          <Input
+                            value={getFieldValue('address') ?? ''}
+                            onChange={(e) => handleEditField('address', e.target.value)}
+                            placeholder="Full address"
+                            className="h-8 text-sm"
+                          />
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <Label className="text-xs text-gray-600">Gender</Label>
+                            <Select
+                              value={getFieldValue('ownerGender') ?? ''}
+                              onValueChange={(value) => handleEditField('ownerGender', value)}
+                            >
+                              <SelectTrigger className="h-8 text-sm">
+                                <SelectValue placeholder="Select" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="male">Male</SelectItem>
+                                <SelectItem value="female">Female</SelectItem>
+                                <SelectItem value="other">Other</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div>
+                            <Label className="text-xs text-gray-600">Tehsil</Label>
+                            <Input
+                              value={getFieldValue('tehsil') ?? ''}
+                              onChange={(e) => handleEditField('tehsil', e.target.value)}
+                              placeholder="Tehsil"
+                              className="h-8 text-sm"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <Label className="text-xs text-gray-600">Village / Gram Panchayat</Label>
+                            <Input
+                              value={(editedFields as any).gramPanchayat ?? (application as any).gramPanchayat ?? ''}
+                              onChange={(e) => handleEditField('gramPanchayat' as any, e.target.value)}
+                              placeholder="Village name"
+                              className="h-8 text-sm"
+                            />
+                          </div>
+                          <div>
+                            <Label className="text-xs text-gray-600">Urban Body</Label>
+                            <Input
+                              value={(editedFields as any).urbanBody ?? (application as any).urbanBody ?? ''}
+                              onChange={(e) => handleEditField('urbanBody' as any, e.target.value)}
+                              placeholder="MC/NAC name"
+                              className="h-8 text-sm"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <Label className="text-xs text-gray-600">Pincode</Label>
+                            <Input
+                              value={getFieldValue('pincode') ?? ''}
+                              onChange={(e) => handleEditField('pincode', e.target.value)}
+                              placeholder="Pincode"
+                              className="h-8 text-sm"
+                            />
+                          </div>
+                          <div>
+                            <Label className="text-xs text-gray-600">Alternate Phone</Label>
+                            <Input
+                              value={(editedFields as any).alternatePhone ?? (application as any).alternatePhone ?? ''}
+                              onChange={(e) => handleEditField('alternatePhone' as any, e.target.value)}
+                              placeholder="Alt. phone"
+                              className="h-8 text-sm"
+                            />
+                          </div>
+                        </div>
+                        
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className="col-span-2">
+                            <h4 className="text-xs font-semibold text-gray-700 uppercase mt-2">Room Counts & Rates</h4>
+                          </div>
+                          <div>
+                            <Label className="text-xs text-gray-600">Single Rooms</Label>
+                            <Input
+                              type="number"
+                              value={getFieldValue('singleBedRooms') ?? ''}
+                              onChange={(e) => handleEditField('singleBedRooms', e.target.value ? parseInt(e.target.value) : 0)}
+                              placeholder="Single Rooms"
+                              className="h-8 text-sm"
+                            />
+                          </div>
+                          <div>
+                            <Label className="text-xs text-gray-600">Single Room Rate (₹)</Label>
+                            <Input
+                              type="number"
+                              value={getFieldValue('singleBedRoomRate') ?? ''}
+                              onChange={(e) => handleEditField('singleBedRoomRate', e.target.value ? parseFloat(e.target.value) : 0)}
+                              placeholder="₹ per night"
+                              className="h-8 text-sm"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <Label className="text-xs text-gray-600">Double Rooms</Label>
+                            <Input
+                              type="number"
+                              value={getFieldValue('doubleBedRooms') ?? ''}
+                              onChange={(e) => handleEditField('doubleBedRooms', e.target.value ? parseInt(e.target.value) : 0)}
+                              placeholder="Double Rooms"
+                              className="h-8 text-sm"
+                            />
+                          </div>
+                          <div>
+                            <Label className="text-xs text-gray-600">Double Room Rate (₹)</Label>
+                            <Input
+                              type="number"
+                              value={getFieldValue('doubleBedRoomRate') ?? ''}
+                              onChange={(e) => handleEditField('doubleBedRoomRate', e.target.value ? parseFloat(e.target.value) : 0)}
+                              placeholder="₹ per night"
+                              className="h-8 text-sm"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <Label className="text-xs text-gray-600">Family Suites</Label>
+                            <Input
+                              type="number"
+                              value={getFieldValue('familySuites') ?? ''}
+                              onChange={(e) => handleEditField('familySuites', e.target.value ? parseInt(e.target.value) : 0)}
+                              placeholder="Family Suites"
+                              className="h-8 text-sm"
+                            />
+                          </div>
+                          <div>
+                            <Label className="text-xs text-gray-600">Family Suite Rate (₹)</Label>
+                            <Input
+                              type="number"
+                              value={getFieldValue('familySuiteRate') ?? ''}
+                              onChange={(e) => handleEditField('familySuiteRate', e.target.value ? parseFloat(e.target.value) : 0)}
+                              placeholder="₹ per night"
+                              className="h-8 text-sm"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="mt-2 border-t border-amber-200/50 dark:border-amber-700/50 pt-2">
+                          <Label className="text-xs text-gray-600">Owner Aadhaar</Label>
+                          <Input
+                            value={getFieldValue('ownerAadhaar') ?? ''}
+                            onChange={(e) => handleEditField('ownerAadhaar', e.target.value)}
+                            placeholder="12-digit Aadhaar"
+                            className="h-8 text-sm"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Correction Reason - REQUIRED */}
+                      <div className="pt-2 border-t border-amber-200 dark:border-amber-700">
+                        <Label className="text-xs text-gray-600 flex items-center gap-1">
+                          Correction Reason <span className="text-red-500">*</span>
+                        </Label>
+                        <Textarea
+                          value={correctionReason}
+                          onChange={(e) => setCorrectionReason(e.target.value)}
+                          placeholder="Explain why these corrections are needed (min. 10 characters)..."
+                          className="text-sm resize-none"
+                          rows={2}
+                        />
+                        {correctionReason.length > 0 && correctionReason.length < 10 && (
+                          <p className="text-xs text-red-500 mt-1">
+                            {10 - correctionReason.length} more characters needed
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Action Buttons */}
+                    <div className="flex gap-2">
+                      <Button
+                        className="flex-1"
+                        variant="default"
+                        onClick={handleSaveEdits}
+                        disabled={correctionMutation.isPending || Object.keys(editedFields).length === 0}
+                        data-testid="button-save-edits"
+                      >
+                        {correctionMutation.isPending ? (
+                          <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            Saving...
+                          </>
+                        ) : (
+                          <>
+                            <Save className="mr-2 h-4 w-4" />
+                            Save Corrections
+                          </>
+                        )}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        onClick={handleCancelEdit}
+                        disabled={correctionMutation.isPending}
+                        data-testid="button-cancel-edit"
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
 
             <InspectionReportCard applicationId={id} preferDtdoEndpoint />
 
@@ -1707,10 +1883,180 @@ export default function DTDOApplicationReview() {
                 </div>
               </>
             )}
-          </DialogContent>
-        </Dialog>
-      </div >
-    </>
+        </DialogContent>
+      </Dialog>
+      
+      {/* Unlock Edit Mode Dialog */}
+      <Dialog open={unlockDialogOpen} onOpenChange={(open) => {
+        if (!unlockMutation.isPending) setUnlockDialogOpen(open);
+      }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-amber-600 dark:text-amber-500">
+              <Shield className="h-5 w-5" />
+              Unlock Application Corrections
+            </DialogTitle>
+            <DialogDescription>
+              To modify application details (like Aadhaar, Name, Room Counts), please re-enter your password and provide a reason for the modifications.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label className="text-gray-700 dark:text-gray-300">Correction Reason <span className="text-red-500">*</span></Label>
+              <Textarea
+                placeholder="Explain why these corrections are needed (min. 10 characters)..."
+                value={unlockReason}
+                onChange={(e) => {
+                  setUnlockReason(e.target.value);
+                  setUnlockError("");
+                }}
+                className="resize-none"
+                rows={3}
+              />
+              {unlockReason.length > 0 && unlockReason.length < 10 && (
+                <p className="text-xs text-amber-600 dark:text-amber-500">
+                  {10 - unlockReason.length} more characters needed.
+                </p>
+              )}
+            </div>
+
+            <div className="space-y-2 flex flex-col pt-2">
+              <Label className="text-gray-700 dark:text-gray-300">Account Password <span className="text-red-500">*</span></Label>
+              <Input
+                type="password"
+                placeholder="Enter your DTDO password"
+                value={unlockPassword}
+                onChange={(e) => {
+                  setUnlockPassword(e.target.value);
+                  setUnlockError("");
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && unlockPassword && unlockReason.trim().length >= 10 && !unlockMutation.isPending) {
+                    unlockMutation.mutate(unlockPassword);
+                  }
+                }}
+                className="w-full"
+                autoComplete="current-password"
+              />
+              {unlockError && (
+                <p className="text-sm text-red-500 font-medium tracking-tight mt-1">{unlockError}</p>
+              )}
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setUnlockDialogOpen(false)}
+              disabled={unlockMutation.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="default"
+              onClick={() => unlockMutation.mutate(unlockPassword)}
+              disabled={unlockMutation.isPending || !unlockPassword || unlockReason.trim().length < 10}
+            >
+              {unlockMutation.isPending ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Verifying...
+                </>
+              ) : (
+                "Unlock Edit Mode"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Aadhaar Specific Confirmation Dialog */}
+      <Dialog open={aadhaarConfirmDialogOpen} onOpenChange={(open) => {
+        if (!aadhaarUnlockMutation.isPending) setAadhaarConfirmDialogOpen(open);
+      }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-rose-600 dark:text-rose-500">
+              <Shield className="h-5 w-5" />
+              Verify Aadhaar Modification
+            </DialogTitle>
+            <DialogDescription>
+              Changing the Owner's Aadhaar is a highly sensitive operation. Please explain exactly why this specific change is necessary, and verify your password one more time to authorize this edit.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label className="text-gray-700 dark:text-gray-300">Reason for Aadhaar Edit <span className="text-red-500">*</span></Label>
+              <Textarea
+                placeholder="Explain why the Aadhaar Card is being modified..."
+                value={aadhaarConfirmReason}
+                onChange={(e) => {
+                  setAadhaarConfirmReason(e.target.value);
+                  setAadhaarConfirmError("");
+                }}
+                className="resize-none"
+                rows={3}
+              />
+              {aadhaarConfirmReason.length > 0 && aadhaarConfirmReason.length < 10 && (
+                <p className="text-xs text-rose-600 dark:text-rose-500">
+                  {10 - aadhaarConfirmReason.length} more characters needed.
+                </p>
+              )}
+            </div>
+
+            <div className="space-y-2 flex flex-col pt-2">
+              <Label className="text-gray-700 dark:text-gray-300">Account Password <span className="text-red-500">*</span></Label>
+              <Input
+                type="password"
+                placeholder="Verify DTDO password"
+                value={aadhaarConfirmPassword}
+                onChange={(e) => {
+                  setAadhaarConfirmPassword(e.target.value);
+                  setAadhaarConfirmError("");
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && aadhaarConfirmPassword && aadhaarConfirmReason.trim().length >= 10 && !aadhaarUnlockMutation.isPending) {
+                    aadhaarUnlockMutation.mutate(aadhaarConfirmPassword);
+                  }
+                }}
+                className="w-full"
+                autoComplete="current-password"
+              />
+              {aadhaarConfirmError && (
+                <p className="text-sm text-red-500 font-medium tracking-tight mt-1">{aadhaarConfirmError}</p>
+              )}
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setAadhaarConfirmDialogOpen(false)}
+              disabled={aadhaarUnlockMutation.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => aadhaarUnlockMutation.mutate(aadhaarConfirmPassword)}
+              disabled={aadhaarUnlockMutation.isPending || !aadhaarConfirmPassword || aadhaarConfirmReason.trim().length < 10}
+            >
+              {aadhaarUnlockMutation.isPending ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Verifying...
+                </>
+              ) : (
+                "Authorize Aadhaar Edit"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div >
+  </>
   );
 }
 

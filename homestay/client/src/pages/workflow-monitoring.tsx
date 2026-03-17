@@ -91,11 +91,24 @@ export default function WorkflowMonitoringPage() {
   }, [searchParams]);
 
   // Fetch all applications for monitoring with real-time updates
-  const { data: applications = [], isLoading, error: fetchError } = useQuery<MonitoringApplication[]>({
+  const { data: rawApplications = [], isLoading, error: fetchError } = useQuery<MonitoringApplication[]>({
     queryKey: ['/api/applications/all'],
     refetchInterval: 30000, // Auto-refresh every 30 seconds for real-time updates
     retry: 1,
   });
+
+  // Fetch the "show incomplete applications" setting
+  const { data: publicSettings } = useQuery<{ showIncompleteApplications?: boolean }>({
+    queryKey: ["/api/settings/public"],
+  });
+  const showIncompleteApps = publicSettings?.showIncompleteApplications ?? false;
+
+  // Base applications: filter out drafts when incomplete apps setting is disabled
+  const applications = useMemo(() => {
+    if (showIncompleteApps) return rawApplications;
+    const draftStatuses = new Set(['draft', 'legacy_rc_draft']);
+    return rawApplications.filter(app => !draftStatuses.has(app.status || 'draft'));
+  }, [rawApplications, showIncompleteApps]);
 
   // Get unique districts from applications
   const uniqueDistricts = useMemo(() => {

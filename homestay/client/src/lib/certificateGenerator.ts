@@ -389,17 +389,9 @@ async function renderPolicyCertificate(
     let sigWidth = maxSigWidth;
     let sigHeight = maxSigHeight;
     try {
-      // Load image into an offscreen canvas to get real dimensions
-      const img = new Image();
-      await new Promise<void>((resolve, reject) => {
-        img.onload = () => resolve();
-        img.onerror = () => reject(new Error("Failed to load signature for dimension check"));
-        img.src = signatureBase64;
-      });
-      const naturalW = img.naturalWidth || img.width;
-      const naturalH = img.naturalHeight || img.height;
-      if (naturalW > 0 && naturalH > 0) {
-        const aspectRatio = naturalW / naturalH;
+      const props = doc.getImageProperties(signatureBase64);
+      if (props && props.width > 0 && props.height > 0) {
+        const aspectRatio = props.width / props.height;
         // Scale to fit within max bounding box while preserving aspect ratio
         if (aspectRatio >= (maxSigWidth / maxSigHeight)) {
           // Image is wider than the box — constrain by width

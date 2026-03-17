@@ -260,7 +260,7 @@ export function registerDaRoutes(router: Router) {
     // Forward to DTDO
     router.post("/api/da/applications/:id/forward-to-dtdo", requireRole('dealing_assistant'), async (req, res) => {
         try {
-            const { remarks } = req.body;
+            const { remarks, recommendation } = req.body;
             const userId = req.session.userId!;
             const trimmedRemarks = typeof remarks === "string" ? remarks.trim() : "";
             if (!trimmedRemarks) {
@@ -283,8 +283,13 @@ export function registerDaRoutes(router: Router) {
                 });
             }
 
+            // Determine DA recommendation: null (normal forward) or 'reject' (recommend rejection)
+            const daRecommendation = recommendation === 'reject' ? 'reject' : null;
+            const isRecommendReject = daRecommendation === 'reject';
+
             // For cancellation/deletion requests, documents are optional/not expected
-            if (application.applicationKind !== 'cancel_certificate' && application.applicationKind !== 'delete_rooms') {
+            // For "Recommend Reject", document verification is BYPASSED — no point verifying docs for a rejection
+            if (!isRecommendReject && application.applicationKind !== 'cancel_certificate' && application.applicationKind !== 'delete_rooms') {
                 const docs = await storage.getDocumentsByApplication(req.params.id);
                 if (docs.length === 0) {
                     return res.status(400).json({ message: "Upload and verify required documents before forwarding" });
@@ -302,14 +307,17 @@ export function registerDaRoutes(router: Router) {
                 daReviewDate: new Date(),
                 daForwardedDate: new Date(),
                 daRemarks: trimmedRemarks || null,
+                daRecommendation,
             } as Partial<HomestayApplication>);
             await logApplicationAction({
                 applicationId: req.params.id,
                 actorId: userId,
-                action: "forwarded_to_dtdo",
+                action: isRecommendReject ? "forwarded_to_dtdo_recommend_reject" : "forwarded_to_dtdo",
                 previousStatus: application.status,
                 newStatus: "forwarded_to_dtdo",
-                feedback: trimmedRemarks || null,
+                feedback: isRecommendReject
+                    ? `[DA RECOMMENDS REJECTION] ${trimmedRemarks}`
+                    : (trimmedRemarks || null),
             });
             const daOwner = await storage.getUser(application.userId);
             const forwardedApplication = {
@@ -321,7 +329,11 @@ export function registerDaRoutes(router: Router) {
                 owner: daOwner ?? null,
             });
 
-            res.json({ message: "Application forwarded to DTDO successfully" });
+            res.json({
+                message: isRecommendReject
+                    ? "Application forwarded to DTDO with rejection recommendation"
+                    : "Application forwarded to DTDO successfully",
+            });
         } catch (error) {
             routeLog.error("[da] Failed to forward to DTDO:", error);
             res.status(500).json({ message: "Failed to forward application" });

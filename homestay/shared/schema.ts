@@ -500,6 +500,7 @@ export const homestayApplications = pgTable("homestay_applications", {
   daReviewDate: timestamp("da_review_date"),
   daForwardedDate: timestamp("da_forwarded_date"),
   daRemarks: text("da_remarks"),
+  daRecommendation: varchar("da_recommendation", { length: 20 }), // null = normal, 'approve' = recommend approval, 'reject' = recommend rejection
 
   stateOfficerId: varchar("state_officer_id").references(() => users.id),
   stateReviewDate: timestamp("state_review_date"),

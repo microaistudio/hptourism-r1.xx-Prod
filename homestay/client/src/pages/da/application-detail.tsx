@@ -134,8 +134,10 @@ export default function DAApplicationDetail() {
   const [sendBackDialogOpen, setSendBackDialogOpen] = useState(false);
   const [clearAllDialogOpen, setClearAllDialogOpen] = useState(false);
   const [legacyVerifyDialogOpen, setLegacyVerifyDialogOpen] = useState(false);
+  const [recommendRejectDialogOpen, setRecommendRejectDialogOpen] = useState(false);
   const [remarks, setRemarks] = useState("");
   const [reason, setReason] = useState("");
+  const [rejectRecommendationRemarks, setRejectRecommendationRemarks] = useState("");
   const [legacyRemarks, setLegacyRemarks] = useState("");
   const [selectedDocument, setSelectedDocument] = useState<Document | null>(null);
   const previewRef = useRef<HTMLDivElement | null>(null);
@@ -385,6 +387,34 @@ export default function DAApplicationDetail() {
       toast({
         title: "Application Forwarded",
         description: "Application has been sent to DTDO successfully",
+      });
+      setLocation("/da/dashboard");
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to forward application",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Recommend Reject — Forward to DTDO with rejection recommendation
+  const recommendRejectMutation = useMutation({
+    mutationFn: async () => {
+      return await apiRequest("POST", `/api/da/applications/${id}/forward-to-dtdo`, {
+        remarks: rejectRecommendationRemarks,
+        recommendation: 'reject',
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/da/applications"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/applications", id, "timeline"] });
+      setRecommendRejectDialogOpen(false);
+      setRejectRecommendationRemarks("");
+      toast({
+        title: "Forwarded with Rejection Recommendation",
+        description: "Application sent to DTDO with your recommendation for rejection.",
       });
       setLocation("/da/dashboard");
     },
@@ -922,6 +952,19 @@ export default function DAApplicationDetail() {
                     >
                       <XCircle className="w-4 h-4 mr-2" />
                       Send Back
+                    </Button>
+                  )}
+                  {legacyForwardAllowed && (
+                    <Button
+                      variant="destructive"
+                      onClick={() => {
+                        setRejectRecommendationRemarks("");
+                        setRecommendRejectDialogOpen(true);
+                      }}
+                      data-testid="button-recommend-reject"
+                    >
+                      <XCircle className="w-4 h-4 mr-2" />
+                      Recommend Rejection
                     </Button>
                   )}
                   {legacyForwardAllowed ? (
@@ -1657,6 +1700,66 @@ export default function DAApplicationDetail() {
               >
                 {forwardMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
                 Forward to DTDO
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Recommend Rejection Dialog */}
+        <Dialog open={recommendRejectDialogOpen} onOpenChange={setRecommendRejectDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle className="text-destructive flex items-center gap-2">
+                <XCircle className="w-5 h-5" />
+                Recommend Rejection to DTDO
+              </DialogTitle>
+              <DialogDescription>
+                Forward this application to the DTDO with a recommendation for rejection. Document verification is <strong>not required</strong> for this action. The DTDO will make the final decision.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-sm text-red-800 dark:text-red-300">
+                <strong>⚠️ Important:</strong> You are recommending that this application should be rejected. The DTDO will see your remarks prominently and can choose to accept your recommendation or override it.
+              </div>
+              <div>
+                <Label htmlFor="reject-remarks">Reason for Rejection Recommendation <span className="text-red-500">*</span></Label>
+                <Textarea
+                  id="reject-remarks"
+                  placeholder="Explain clearly why this application should be rejected (e.g., fake documents, ineligible property, incomplete information that cannot be corrected)..."
+                  value={rejectRecommendationRemarks}
+                  onChange={(e) => setRejectRecommendationRemarks(e.target.value)}
+                  rows={4}
+                  data-testid="textarea-reject-recommendation-remarks"
+                />
+                {rejectRecommendationRemarks.length > 0 && rejectRecommendationRemarks.trim().length < 20 && (
+                  <p className="text-xs text-red-500 mt-1">
+                    Please provide at least 20 characters ({20 - rejectRecommendationRemarks.trim().length} more needed)
+                  </p>
+                )}
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setRecommendRejectDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={() => {
+                  if (rejectRecommendationRemarks.trim().length < 20) {
+                    toast({
+                      title: "Insufficient reason",
+                      description: "Please provide a detailed rejection reason (minimum 20 characters).",
+                      variant: "destructive",
+                    });
+                    return;
+                  }
+                  recommendRejectMutation.mutate();
+                }}
+                disabled={recommendRejectMutation.isPending || rejectRecommendationRemarks.trim().length < 20}
+                data-testid="button-confirm-recommend-reject"
+              >
+                {recommendRejectMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                Confirm — Recommend Rejection
               </Button>
             </DialogFooter>
           </DialogContent>

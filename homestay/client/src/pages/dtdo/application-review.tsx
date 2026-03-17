@@ -462,6 +462,8 @@ export default function DTDOApplicationReview() {
   }
   const applicationStatus = application.status ?? "forwarded_to_dtdo";
   const daRemarks = (application as unknown as { daRemarks?: string | null }).daRemarks ?? null;
+  const daRecommendation = (application as unknown as { daRecommendation?: string | null }).daRecommendation ?? null;
+  const isRejectRecommended = daRecommendation === 'reject';
   const actionableStatuses = new Set(["forwarded_to_dtdo", "dtdo_review"]);
   const isActionableStatus = actionableStatuses.has(applicationStatus);
   const formattedStatus = applicationStatus.replace(/_/g, " ").replace(/\b\w/g, (char) =>
@@ -778,8 +780,31 @@ export default function DTDOApplicationReview() {
           </div>
         </div>
 
+        {/* DA Rejection Recommendation Banner */}
+        {isRejectRecommended && (
+          <div className="border-2 border-red-400 dark:border-red-600 bg-red-50 dark:bg-red-950/30 rounded-lg p-4">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="h-6 w-6 text-red-600 dark:text-red-400 mt-0.5 shrink-0" />
+              <div className="space-y-1">
+                <h3 className="font-bold text-red-800 dark:text-red-300 text-base">
+                  ⚠️ DA Recommends Rejection
+                </h3>
+                <p className="text-sm text-red-700 dark:text-red-400">
+                  The Dealing Assistant has forwarded this application with a recommendation for rejection. Please review the details below and take the appropriate action.
+                </p>
+                {daRemarks && (
+                  <div className="mt-2 bg-red-100 dark:bg-red-900/40 rounded-md p-3 border border-red-200 dark:border-red-700">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-red-600 dark:text-red-400 mb-1">DA's Rejection Reason</p>
+                    <p className="text-sm text-red-900 dark:text-red-200 whitespace-pre-wrap">{daRemarks}</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* DA Remarks Card */}
-        {(daRemarks || daInfo) && (
+        {!isRejectRecommended && (daRemarks || daInfo) && (
           <Card className="border-blue-200 dark:border-blue-800 bg-blue-50/50 dark:bg-blue-950/20">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-blue-700 dark:text-blue-400">

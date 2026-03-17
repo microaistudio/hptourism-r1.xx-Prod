@@ -56,6 +56,7 @@ import {
   Calendar as CalendarIcon,
   RotateCcw,
   Printer,
+  Eye,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -64,7 +65,7 @@ import type { HomestayApplication, Document as HomestayDocument } from "@shared/
 import { buildObjectViewUrl } from "@/lib/utils";
 import { ApplicationTimelineCard } from "@/components/application/application-timeline-card";
 import { InspectionReportCard } from "@/components/application/inspection-report-card";
-import { generateCertificatePDF, type CertificateFormat } from "@/lib/certificateGenerator";
+import { generateCertificatePDF, previewCertificatePDF, type CertificateFormat } from "@/lib/certificateGenerator";
 import { fetchInspectionReportSummary } from "@/lib/inspection-report";
 import { ApplicationPrintSheet } from "@/components/application/application-print-sheet";
 
@@ -602,6 +603,26 @@ export default function DTDOApplicationReview() {
       toast({
         title: "Download failed",
         description: error instanceof Error ? error.message : "Unable to prepare certificate right now.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsGeneratingCertificate(false);
+    }
+  };
+
+  const handlePreviewCertificate = async () => {
+    if (!application) return;
+    setIsGeneratingCertificate(true);
+    try {
+      await previewCertificatePDF(application, certificateFormat);
+      toast({
+        title: "Certificate Preview",
+        description: "RC certificate opened in a new tab.",
+      });
+    } catch (error) {
+      toast({
+        title: "Preview failed",
+        description: error instanceof Error ? error.message : "Unable to preview certificate right now.",
         variant: "destructive",
       });
     } finally {
@@ -1243,6 +1264,25 @@ export default function DTDOApplicationReview() {
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-3">
+                  <Button
+                    className="w-full"
+                    variant="default"
+                    onClick={handlePreviewCertificate}
+                    disabled={isGeneratingCertificate}
+                    data-testid="button-preview-certificate"
+                  >
+                    {isGeneratingCertificate ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Generating...
+                      </>
+                    ) : (
+                      <>
+                        <Eye className="mr-2 h-4 w-4" />
+                        Preview RC Certificate
+                      </>
+                    )}
+                  </Button>
                   <Button
                     className="w-full"
                     variant="outline"

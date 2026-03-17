@@ -180,6 +180,57 @@ export async function generateCertificatePDF(
   }
 }
 
+/**
+ * Opens the generated certificate PDF in a new browser tab for preview.
+ * Does NOT trigger a download.
+ */
+export async function previewCertificatePDF(
+  application: HomestayApplication & { dtdoSignatureUrl?: string | null },
+  format: CertificateFormat = "policy_heritage",
+  options?: CertificateOptions,
+) {
+  const layout = POLICY_LAYOUTS[format];
+  const doc = new jsPDF({
+    orientation: layout.orientation,
+    unit: "mm",
+    format: "a4",
+  });
+
+  let signatureBase64: string | null = null;
+  if (application.dtdoSignatureUrl && application.dtdoSignatureUrl.length > 5) {
+    try {
+      const response = await fetch(application.dtdoSignatureUrl);
+      if (response.ok) {
+        const rawBlob = await response.blob();
+        const blob = new Blob([rawBlob], { type: "image/png" });
+        signatureBase64 = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(blob);
+        });
+      }
+    } catch (error) {
+      console.warn("Failed to load DTDO signature image:", error);
+    }
+  }
+
+  renderPolicyCertificate(doc, application, layout, options, signatureBase64);
+
+  // Open in new tab for preview instead of downloading
+  try {
+    const blob = doc.output("blob");
+    const url = URL.createObjectURL(blob);
+    window.open(url, "_blank");
+    // Cleanup after a delay (browser keeps the tab open)
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+  } catch (error) {
+    console.warn("Preview failed, falling back to download:", error);
+    // Fallback: download if preview fails
+    await generateCertificatePDF(application, format, options);
+  }
+}
+
 function renderPolicyCertificate(
   doc: JsPDFInstance,
   application: HomestayApplication,

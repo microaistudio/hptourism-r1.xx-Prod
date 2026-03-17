@@ -153,7 +153,7 @@ export async function generateCertificatePDF(
     }
   }
 
-  renderPolicyCertificate(doc, application, layout, options, signatureBase64);
+  await renderPolicyCertificate(doc, application, layout, options, signatureBase64);
 
   const certificateId = sanitizeFileSegment(application.certificateNumber || "N_A");
   const filename = `HP_Homestay_Certificate_${certificateId}_${format}.pdf`;
@@ -215,7 +215,7 @@ export async function previewCertificatePDF(
     }
   }
 
-  renderPolicyCertificate(doc, application, layout, options, signatureBase64);
+  await renderPolicyCertificate(doc, application, layout, options, signatureBase64);
 
   // Open in new tab for preview instead of downloading
   try {
@@ -231,7 +231,7 @@ export async function previewCertificatePDF(
   }
 }
 
-function renderPolicyCertificate(
+async function renderPolicyCertificate(
   doc: JsPDFInstance,
   application: HomestayApplication,
   layout: PolicyLayout,
@@ -383,10 +383,41 @@ function renderPolicyCertificate(
   }
 
   if (signatureBase64) {
-    const sigWidth = 35;
-    const sigHeight = 15;
+    // Determine actual image aspect ratio to avoid distortion
+    const maxSigWidth = 35;  // mm - maximum width
+    const maxSigHeight = 20; // mm - maximum height (increased from 15 to accommodate taller signatures)
+    let sigWidth = maxSigWidth;
+    let sigHeight = maxSigHeight;
     try {
-      doc.addImage(signatureBase64, "PNG", pageWidth - layout.marginX - 42, signatureY - sigHeight + 1, sigWidth, sigHeight);
+      // Load image into an offscreen canvas to get real dimensions
+      const img = new Image();
+      await new Promise<void>((resolve, reject) => {
+        img.onload = () => resolve();
+        img.onerror = () => reject(new Error("Failed to load signature for dimension check"));
+        img.src = signatureBase64;
+      });
+      const naturalW = img.naturalWidth || img.width;
+      const naturalH = img.naturalHeight || img.height;
+      if (naturalW > 0 && naturalH > 0) {
+        const aspectRatio = naturalW / naturalH;
+        // Scale to fit within max bounding box while preserving aspect ratio
+        if (aspectRatio >= (maxSigWidth / maxSigHeight)) {
+          // Image is wider than the box — constrain by width
+          sigWidth = maxSigWidth;
+          sigHeight = maxSigWidth / aspectRatio;
+        } else {
+          // Image is taller than the box — constrain by height
+          sigHeight = maxSigHeight;
+          sigWidth = maxSigHeight * aspectRatio;
+        }
+      }
+    } catch {
+      // Fallback: use default dimensions if we can't read the image
+      sigWidth = maxSigWidth;
+      sigHeight = 15;
+    }
+    try {
+      doc.addImage(signatureBase64, "PNG", pageWidth - layout.marginX - sigWidth - 7, signatureY - sigHeight + 1, sigWidth, sigHeight);
     } catch (e) {
       console.warn("Could not add signature image to PDF", e);
       doc.setDrawColor(140, 101, 52);

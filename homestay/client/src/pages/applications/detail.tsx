@@ -1151,7 +1151,7 @@ export default function ApplicationDetail() {
 
               <section className="space-y-2">
                 <h3 className="text-lg font-semibold">Fee Summary</h3>
-                <div className="grid gap-4 md:grid-cols-3">
+                <div className="grid gap-4 md:grid-cols-4">
                   <div className="rounded-xl border border-slate-100 p-4">
                     <p className="text-xs uppercase text-muted-foreground">Base Fee</p>
                     <p className="text-lg font-semibold">{formatCurrency(app.baseFee)}</p>
@@ -1160,10 +1160,32 @@ export default function ApplicationDetail() {
                     <p className="text-xs uppercase text-muted-foreground">Discounts</p>
                     <p className="text-lg font-semibold">{formatCurrency(app.totalDiscount)}</p>
                   </div>
-                  <div className="rounded-xl border border-emerald-100 bg-emerald-50/60 p-4">
-                    <p className="text-xs uppercase text-emerald-700">Total Payable</p>
-                    <p className="text-xl font-bold text-emerald-900">{formatCurrency(app.totalFee)}</p>
-                  </div>
+                  {(() => {
+                    const previousTotalFee = Number((app as any)?.previousTotalFee || 0);
+                    const isSupplementary = previousTotalFee > 0 && totalFeeValue > previousTotalFee;
+                    
+                    if (isSupplementary) {
+                      return (
+                        <>
+                          <div className="rounded-xl border border-amber-100 bg-amber-50/60 p-4">
+                            <p className="text-xs uppercase text-amber-700">Previously Paid</p>
+                            <p className="text-lg font-semibold text-amber-900">{formatCurrency(previousTotalFee.toString())}</p>
+                          </div>
+                          <div className="rounded-xl border border-emerald-100 bg-emerald-50/60 p-4">
+                            <p className="text-xs uppercase text-emerald-700">New Target Fee</p>
+                            <p className="text-xl font-bold text-emerald-900">{formatCurrency(app.totalFee)}</p>
+                          </div>
+                        </>
+                      );
+                    }
+                    
+                    return (
+                      <div className="rounded-xl border border-emerald-100 bg-emerald-50/60 p-4 md:col-span-2">
+                        <p className="text-xs uppercase text-emerald-700">Total Payable</p>
+                        <p className="text-xl font-bold text-emerald-900">{formatCurrency(app.totalFee)}</p>
+                      </div>
+                    );
+                  })()}
                 </div>
               </section>
             </CardContent>
@@ -1269,10 +1291,19 @@ export default function ApplicationDetail() {
                   <CardContent>
                     <div className="space-y-3">
                       <div className="p-3 bg-primary/5 rounded-lg">
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="text-sm text-muted-foreground">Total Registration Fee</span>
-                          <span className="text-2xl font-bold text-primary">₹{totalFeeValue.toLocaleString('en-IN')}</span>
-                        </div>
+                        {(() => {
+                          const previousTotalFee = Number((app as any)?.previousTotalFee || 0);
+                          const isSupplementary = previousTotalFee > 0 && totalFeeValue > previousTotalFee;
+                          const dueAmount = isSupplementary ? totalFeeValue - previousTotalFee : totalFeeValue;
+                          return (
+                            <div className="flex items-center justify-between mb-2">
+                              <span className="text-sm text-muted-foreground">
+                                {isSupplementary ? 'Supplementary Payment Due' : 'Total Registration Fee'}
+                              </span>
+                              <span className="text-2xl font-bold text-primary">₹{dueAmount.toLocaleString('en-IN')}</span>
+                            </div>
+                          );
+                        })()}
                       </div>
                       <Button
                         className="w-full"
@@ -1301,10 +1332,19 @@ export default function ApplicationDetail() {
                   </CardHeader>
                   <CardContent>
                     <div className="p-3 bg-primary/5 rounded-lg">
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-sm text-muted-foreground">Total Registration Fee</span>
-                        <span className="text-2xl font-bold text-primary">₹{totalFeeValue.toLocaleString('en-IN')}</span>
-                      </div>
+                      {(() => {
+                        const previousTotalFee = Number((app as any)?.previousTotalFee || 0);
+                        const isSupplementary = previousTotalFee > 0 && totalFeeValue > previousTotalFee;
+                        const dueAmount = isSupplementary ? totalFeeValue - previousTotalFee : totalFeeValue;
+                        return (
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-sm text-muted-foreground">
+                              {isSupplementary ? 'Supplementary Payment Due' : 'Total Registration Fee'}
+                            </span>
+                            <span className="text-2xl font-bold text-primary">₹{dueAmount.toLocaleString('en-IN')}</span>
+                          </div>
+                        );
+                      })()}
                       <p className="text-sm text-muted-foreground mt-2">
                         The property owner needs to complete payment before certificate can be issued.
                       </p>

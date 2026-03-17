@@ -38,6 +38,7 @@ interface Step1PropertyDetailsProps {
         placeholder: string;
         description: string;
     };
+    lockLocationType?: boolean;
 }
 
 export function Step1PropertyDetails({
@@ -51,6 +52,7 @@ export function Step1PropertyDetails({
     showRequiredWarning = false,
     gramFieldConfig,
     urbanBodyConfig,
+    lockLocationType = false,
 }: Step1PropertyDetailsProps) {
     const isHydratingDraft = useRef(false);
 
@@ -343,7 +345,7 @@ export function Step1PropertyDetails({
                                                 <div
                                                     key={type.value}
                                                     onClick={() => {
-                                                        if (isServiceDraft) return;
+                                                        if (isServiceDraft || lockLocationType) return;
                                                         field.onChange(type.value);
                                                         if (type.value === "gp") {
                                                             form.setValue("urbanBody", "", { shouldDirty: false, shouldValidate: step >= 1 });
@@ -351,7 +353,7 @@ export function Step1PropertyDetails({
                                                             form.clearErrors("ward");
                                                         }
                                                     }}
-                                                    className={`p-4 rounded-lg border-2 transition-all ${isServiceDraft ? "cursor-not-allowed opacity-60" : "cursor-pointer"} ${field.value === type.value
+                                                    className={`p-4 rounded-lg border-2 transition-all ${isServiceDraft || lockLocationType ? "cursor-not-allowed opacity-60" : "cursor-pointer"} ${field.value === type.value
                                                         ? "border-primary bg-primary/5 ring-2 ring-primary/20"
                                                         : "border-gray-200 hover:border-gray-300"
                                                         }`}

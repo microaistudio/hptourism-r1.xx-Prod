@@ -57,6 +57,7 @@ interface Step6AmenitiesFeesProps {
     upgradeFeeInfo?: UpgradeFeeInfo;
     isFixedValidity?: boolean;
     fixedValidityDate?: Date;
+    lockValidity?: boolean;
 }
 
 export function Step6AmenitiesFees({
@@ -79,6 +80,7 @@ export function Step6AmenitiesFees({
     upgradeFeeInfo,
     isFixedValidity,
     fixedValidityDate,
+    lockValidity = false,
 }: Step6AmenitiesFeesProps) {
     return (
         <div className="space-y-6">
@@ -194,22 +196,23 @@ export function Step6AmenitiesFees({
                                 <FormItem>
                                     <FormControl>
                                         <RadioGroup
+                                            disabled={lockValidity}
                                             onValueChange={field.onChange}
                                             value={field.value}
                                             className="grid grid-cols-1 md:grid-cols-2 gap-4"
                                         >
-                                            <div className={`flex items-start space-x-3 p-4 border-2 rounded-lg cursor-pointer transition-all hover-elevate ${field.value === "1" ? "border-primary bg-primary/5" : "border-border"}`}>
-                                                <RadioGroupItem value="1" id="validity-1" className="mt-1" />
-                                                <label htmlFor="validity-1" className="flex-1 cursor-pointer">
+                                            <div className={`flex items-start space-x-3 p-4 border-2 rounded-lg ${lockValidity ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer hover-elevate transition-all'} ${field.value === "1" ? "border-primary bg-primary/5" : "border-border"}`}>
+                                                <RadioGroupItem disabled={lockValidity} value="1" id="validity-1" className="mt-1" />
+                                                <label htmlFor="validity-1" className={`flex-1 ${lockValidity ? 'cursor-not-allowed' : 'cursor-pointer'}`}>
                                                     <div className="font-medium mb-1">1 Year (Standard)</div>
                                                     <div className="text-sm text-muted-foreground">
                                                         Annual fee: ₹{fees.baseFee.toFixed(0)}
                                                     </div>
                                                 </label>
                                             </div>
-                                            <div className={`flex items-start space-x-3 p-4 border-2 rounded-lg cursor-pointer transition-all hover-elevate ${field.value === "3" ? "border-primary bg-primary/5" : "border-border"}`}>
-                                                <RadioGroupItem value="3" id="validity-3" className="mt-1" />
-                                                <label htmlFor="validity-3" className="flex-1 cursor-pointer">
+                                            <div className={`flex items-start space-x-3 p-4 border-2 rounded-lg ${lockValidity ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer hover-elevate transition-all'} ${field.value === "3" ? "border-primary bg-primary/5" : "border-border"}`}>
+                                                <RadioGroupItem disabled={lockValidity} value="3" id="validity-3" className="mt-1" />
+                                                <label htmlFor="validity-3" className={`flex-1 ${lockValidity ? 'cursor-not-allowed' : 'cursor-pointer'}`}>
                                                     <div className="font-medium mb-1 flex items-center gap-2">
                                                         3 Years (Lump Sum)
                                                         <Badge variant="default" className="text-xs">10% OFF</Badge>

@@ -105,6 +105,7 @@ interface Step3RoomsCategoryProps {
         double: number;
         suite: number;
     };
+    lockCategory?: boolean;
     fixedQuantities?: {
         single?: number;
         double?: number;
@@ -142,9 +143,11 @@ export function Step3RoomsCategory({
     currentCategory,
     originalRates,
     fixedQuantities,
+    lockCategory = false,
 }: Step3RoomsCategoryProps) {
     const isUpgradeMode = activeApplicationKind === 'change_category';
     const isDeleteRooms = activeApplicationKind === 'delete_rooms';
+    const isRoomConfigLocked = lockCategory || isDeleteRooms;
 
     // Track initial quantities for delete_rooms to use as maximum cap
     const initialQuantitiesRef = useRef<Record<string, number>>({});
@@ -654,13 +657,13 @@ export function Step3RoomsCategory({
 
                                             {roomCalcMode === "direct" ? (
                                                 (() => {
-                                                    const isDeleteRooms = activeApplicationKind === 'delete_rooms';
+                                                    const isLockedOrDelete = isRoomConfigLocked;
                                                     // Force display original parent rate if in delete_rooms mode
-                                                    const displayRate = isDeleteRooms && originalRates
+                                                    const displayRate = (isDeleteRooms && originalRates)
                                                         ? (originalRates[row.roomType as keyof typeof originalRates] || 0)
                                                         : (row.customRate === "" ? "" : row.customRate);
 
-                                                    const isRateMissing = !isDeleteRooms && row.quantity > 0 && (row.customRate === "" || row.customRate === undefined || row.customRate === null || row.customRate <= 0);
+                                                    const isRateMissing = !isLockedOrDelete && row.quantity > 0 && (row.customRate === "" || row.customRate === undefined || row.customRate === null || row.customRate <= 0);
                                                     return (
                                                         <div>
                                                             <div className="relative">
@@ -669,12 +672,12 @@ export function Step3RoomsCategory({
                                                                     type="number"
                                                                     min={0}
                                                                     max={999999}
-                                                                    placeholder={isDeleteRooms ? "—" : "Enter tariff"}
-                                                                    className={`h-9 pl-7 w-full no-spinners ${isRateMissing ? "ring-2 ring-amber-500 border-amber-500 focus:ring-amber-500" : ""} ${isDeleteRooms ? "bg-gray-100 text-gray-500" : ""}`}
+                                                                    placeholder={isLockedOrDelete ? "—" : "Enter tariff"}
+                                                                    className={`h-9 pl-7 w-full no-spinners ${isRateMissing ? "ring-2 ring-amber-500 border-amber-500 focus:ring-amber-500" : ""} ${isLockedOrDelete ? "bg-gray-100 text-gray-500" : ""}`}
                                                                     value={displayRate}
-                                                                    readOnly={isDeleteRooms}
+                                                                    readOnly={isLockedOrDelete}
                                                                     onChange={(e) => {
-                                                                        if (isDeleteRooms) return;
+                                                                        if (isLockedOrDelete) return;
                                                                         const rawVal = e.target.value;
                                                                         if (rawVal === "") {
                                                                             updateType2Row(row.id, { customRate: "" });
@@ -937,7 +940,7 @@ export function Step3RoomsCategory({
                                         <div
                                             key={info.value}
                                             onClick={() => {
-                                                if (!isDisabled && !isDeleteRooms) {
+                                                if (!isDisabled && !isDeleteRooms && !lockCategory) {
                                                     form.setValue("category", info.value);
                                                 }
                                             }}
@@ -945,8 +948,8 @@ export function Step3RoomsCategory({
                                                 relative p-5 rounded-xl border-2 cursor-pointer transition-all
                                                 ${styles.border} ${styles.bg}
                                                 ${!isSelected && !isApplicable ? "opacity-60" : ""}
-                                                ${isDisabled || isDeleteRooms ? "opacity-50 cursor-not-allowed" : "hover:shadow-md"}
-                                                ${isDisabled ? "grayscale" : ""}
+                                                ${isDisabled || isDeleteRooms || lockCategory ? "opacity-50 cursor-not-allowed" : "hover:shadow-md"}
+                                                ${isDisabled || lockCategory ? "grayscale" : ""}
                                             `}
                                         >
                                             {isApplicable && (

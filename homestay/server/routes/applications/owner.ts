@@ -1332,6 +1332,23 @@ export function createOwnerApplicationsRouter({ getRoomRateBandsSetting }: Owner
       }
 
 
+      // v1.3.7 - FIELD LOCKING: Strip changes to fee-affecting fields if not specifically unlocked
+      const pendingCorrectionForLock = application.pendingCorrectionType;
+      if (pendingCorrectionForLock === 'general' || !pendingCorrectionForLock) {
+        if ('category' in normalizedUpdate) normalizedUpdate.category = application.category;
+        if ('locationType' in normalizedUpdate) normalizedUpdate.locationType = application.locationType;
+        if ('certificateValidityYears' in normalizedUpdate) normalizedUpdate.certificateValidityYears = application.certificateValidityYears;
+      } else if (pendingCorrectionForLock === 'category_correction') {
+        if ('locationType' in normalizedUpdate) normalizedUpdate.locationType = application.locationType;
+        if ('certificateValidityYears' in normalizedUpdate) normalizedUpdate.certificateValidityYears = application.certificateValidityYears;
+      } else if (pendingCorrectionForLock === 'location_type_correction') {
+        if ('category' in normalizedUpdate) normalizedUpdate.category = application.category;
+        if ('certificateValidityYears' in normalizedUpdate) normalizedUpdate.certificateValidityYears = application.certificateValidityYears;
+      } else if (pendingCorrectionForLock === 'payment_term_correction') {
+        if ('category' in normalizedUpdate) normalizedUpdate.category = application.category;
+        if ('locationType' in normalizedUpdate) normalizedUpdate.locationType = application.locationType;
+      }
+
       if (normalizedUpdate.pincode !== undefined) {
         normalizedUpdate.pincode = normalizeStringField(
           normalizedUpdate.pincode,
@@ -1552,21 +1569,28 @@ export function createOwnerApplicationsRouter({ getRoomRateBandsSetting }: Owner
       const targetStatus =
         CORRECTION_RESUBMIT_TARGET === "dtdo" ? "dtdo_review" : "under_scrutiny";
 
-      // v1.3.0: Fee recalculation for category/term corrections
+      // v1.3.7: Fee recalculation ONLY for fee-affecting correction types
+      // General corrections lock all fee-affecting fields, so no recalc is needed.
       let feeRecalcResult: ReturnType<typeof recalculateFee> | null = null;
       let supplementaryPaymentNeeded = false;
       const pendingCorrection = application.pendingCorrectionType;
 
-      if (pendingCorrection === 'category_correction' || pendingCorrection === 'payment_term_correction' || pendingCorrection === 'location_type_correction') {
+      // Only run fee recalculation for correction types that actually allow fee-affecting changes
+      const FEE_AFFECTING_CORRECTION_TYPES = ['category_correction', 'location_type_correction', 'payment_term_correction'];
+      const isFeeAffectingCorrection = pendingCorrection && FEE_AFFECTING_CORRECTION_TYPES.includes(pendingCorrection);
+
+      if (isFeeAffectingCorrection) {
         // Determine what changed
         const newCategory = (normalizedUpdate.category as string || application.category) as RecalcCategoryType;
         const newValidityYears = (normalizedUpdate.certificateValidityYears as number || application.certificateValidityYears || 1) as 1 | 3;
         const oldCategory = (application.previousCategory || application.category) as RecalcCategoryType;
         const oldValidityYears = (application.previousValidityYears || application.certificateValidityYears || 1) as 1 | 3;
-        const oldTotalFee = Number(application.previousTotalFee || application.totalFee || 0);
+        
+        // Safety net: Always use payment amount / previous fee as actual money received
+        const actualPaidAmount = Number(application.paymentAmount || application.previousTotalFee || application.totalFee || 0);
+        const oldTotalFee = actualPaidAmount;
 
         // Use updated values if the applicant changed them (e.g. GP ↔ MC zone correction)
-        // v1.3.3 fix: Track old vs new location type separately for correct fee delta
         const oldLocationType = (application.locationType || 'gp') as RecalcLocationType;
         const newLocationType = (normalizedUpdate.locationType as string || application.locationType || 'gp') as RecalcLocationType;
         const resolvedOwnerGender = (normalizedUpdate.ownerGender as string || application.ownerGender || 'male') as 'male' | 'female' | 'other';
@@ -1597,15 +1621,17 @@ export function createOwnerApplicationsRouter({ getRoomRateBandsSetting }: Owner
           oldTotalFee,
           newTotalFee: feeRecalcResult.newTotalFee,
           delta: feeRecalcResult.feeDelta,
-          isUpgrade: feeRecalcResult.isUpgrade,
-          isDowngrade: feeRecalcResult.isDowngrade,
+          isUpgrade: feeRecalcResult.newTotalFee > actualPaidAmount,
+          isDowngrade: feeRecalcResult.newTotalFee < actualPaidAmount,
         }, "[correction] Fee recalculation completed");
 
-        // If new fee > old fee, applicant needs supplementary payment
-        if (feeRecalcResult.isUpgrade) {
+        // If new fee > old fee (actual paid amount), applicant needs supplementary payment
+        if (feeRecalcResult.newTotalFee > actualPaidAmount) {
           supplementaryPaymentNeeded = true;
-          // Update fee fields on the application but DON'T proceed to payment_pending yet
-          // The supplementary payment flow will be handled separately
+          // Force the previous fee value on record for himkosh computation
+          normalizedUpdate.previousTotalFee = actualPaidAmount.toString();
+
+          // Update fee fields on the application
           normalizedUpdate.totalFee = feeRecalcResult.newTotalFee.toString();
           normalizedUpdate.baseFee = feeRecalcResult.newFeeBreakdown.baseFee.toString();
           normalizedUpdate.totalBeforeDiscounts = feeRecalcResult.newFeeBreakdown.totalBeforeDiscounts.toString();
@@ -1616,7 +1642,7 @@ export function createOwnerApplicationsRouter({ getRoomRateBandsSetting }: Owner
         }
 
         // If new fee < old fee, record a credit (silently)
-        if (feeRecalcResult.isDowngrade) {
+        if (feeRecalcResult.newTotalFee < actualPaidAmount) {
           try {
             await db.insert(creditLedger).values({
               applicationId: id,
@@ -1624,7 +1650,7 @@ export function createOwnerApplicationsRouter({ getRoomRateBandsSetting }: Owner
               reason: getCreditReason(feeRecalcResult.categoryChanged, feeRecalcResult.validityYearsChanged),
               previousFee: oldTotalFee.toString(),
               newFee: feeRecalcResult.newTotalFee.toString(),
-              creditAmount: feeRecalcResult.creditAmount.toString(),
+              creditAmount: (actualPaidAmount - feeRecalcResult.newTotalFee).toString(),
               status: 'recorded', // Silent ledger - not applied until policy is defined
               notes: describeFeeChange(feeRecalcResult, {
                 oldCategory,
@@ -1638,7 +1664,7 @@ export function createOwnerApplicationsRouter({ getRoomRateBandsSetting }: Owner
               }),
               createdBy: userId,
             });
-            ownerLog.info({ applicationId: id, creditAmount: feeRecalcResult.creditAmount },
+            ownerLog.info({ applicationId: id, creditAmount: actualPaidAmount - feeRecalcResult.newTotalFee },
               "[correction] Credit ledger entry created for overpayment");
           } catch (creditError) {
             ownerLog.error({ err: creditError, applicationId: id },
@@ -1654,6 +1680,9 @@ export function createOwnerApplicationsRouter({ getRoomRateBandsSetting }: Owner
           normalizedUpdate.pangiDiscount = feeRecalcResult.newFeeBreakdown.pangiDiscount.toString();
           normalizedUpdate.totalDiscount = feeRecalcResult.newFeeBreakdown.totalDiscount.toString();
         }
+      } else {
+        ownerLog.info({ applicationId: id, correctionType: pendingCorrection || 'general' },
+          "[correction] Skipping fee recalculation — general correction with all fee fields locked");
       }
 
       const updatedApplication = await storage.updateApplication(id, {

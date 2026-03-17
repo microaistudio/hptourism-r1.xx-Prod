@@ -1086,6 +1086,21 @@ export default function NewApplication() {
     }
   }, [isCorrectionMode, activeCorrectionApplication, navigate, toast]);
 
+  const correctionLock = useMemo(() => {
+    if (!isCorrectionMode || !activeCorrectionApplication) {
+      return { locationType: false, category: false, validity: false };
+    }
+    const type = activeCorrectionApplication.pendingCorrectionType;
+    if (type === 'general' || !type) {
+      return { locationType: true, category: true, validity: true };
+    }
+    return {
+      locationType: type !== 'location_type_correction',
+      category: type !== 'category_correction',
+      validity: type !== 'payment_term_correction'
+    };
+  }, [isCorrectionMode, activeCorrectionApplication]);
+
   useEffect(() => {
     // Corrections mode: navigate to the appropriate step based on correction type
     if (isCorrectionMode && activeCorrectionApplication && !hasAutoNavigatedToDocuments.current) {
@@ -3483,6 +3498,7 @@ export default function NewApplication() {
                 showRequiredWarning={step1FieldsMissing}
                 gramFieldConfig={gramFieldConfig}
                 urbanBodyConfig={urbanBodyConfig}
+                lockLocationType={correctionLock.locationType}
               />
             )}
 
@@ -3536,6 +3552,7 @@ export default function NewApplication() {
                 shouldLockCategoryWarning={shouldLockCategoryWarning}
                 activeApplicationKind={activeApplicationKind}
                 currentCategory={parentApplication?.category}
+                lockCategory={correctionLock.category}
               />
             )}
 
@@ -3616,6 +3633,7 @@ export default function NewApplication() {
                   } : undefined}
                   isFixedValidity={activeApplicationKind === 'add_rooms' && !!inheritedCertificateExpiry}
                   fixedValidityDate={inheritedCertificateExpiry ? new Date(inheritedCertificateExpiry) : undefined}
+                  lockValidity={correctionLock.validity}
                 />
               ) : null
             }

@@ -2235,9 +2235,33 @@ export default function ApplicationDetail() {
                       </div>
                     )}
                   </div>
-                  <div className="pt-3 border-t flex justify-between font-semibold">
-                    <span>Total Payable</span>
-                    <span className="text-primary" data-testid="text-total">₹{Number(app.totalFee ?? app.baseFee).toFixed(2)}</span>
+                  <div className="pt-3 border-t flex flex-col gap-2">
+                    {(() => {
+                      const previousTotalFee = Number((app as any)?.previousTotalFee || 0);
+                      const isSupplementary = previousTotalFee > 0 && totalFeeValue > previousTotalFee;
+                      const dueAmount = isSupplementary ? totalFeeValue - previousTotalFee : totalFeeValue;
+                      
+                      return (
+                        <>
+                          {isSupplementary && (
+                            <div className="flex justify-between font-medium text-sm text-amber-700">
+                              <span>Previously Paid</span>
+                              <span>-₹{previousTotalFee.toFixed(2)}</span>
+                            </div>
+                          )}
+                          <div className="flex justify-between font-semibold">
+                            <span>{isSupplementary ? 'Supplementary Due' : 'Total Payable'}</span>
+                            <span className="text-primary" data-testid="text-total">₹{dueAmount.toFixed(2)}</span>
+                          </div>
+                          {isSupplementary && (
+                            <div className="flex justify-between font-medium text-xs text-muted-foreground">
+                              <span>New Target Fee</span>
+                              <span>₹{totalFeeValue.toFixed(2)}</span>
+                            </div>
+                          )}
+                        </>
+                      );
+                    })()}
                   </div>
                   {!isPropertyOwner && (app as any).totalCredit > 0 && (
                     <div className="pt-2 mt-2 border-t border-dashed border-emerald-200 flex flex-col gap-1">

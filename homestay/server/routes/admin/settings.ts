@@ -739,5 +739,54 @@ export function createAdminSettingsRouter() {
     }
   });
 
+  router.put("/settings/inspection_backdate_days", requireRole("super_admin"), async (req, res) => {
+    try {
+      const { value } = req.body;
+      const userId = req.session?.userId ?? null;
+
+      if (typeof value !== "number" || value < 1) {
+        return res.status(400).json({ message: "value must be a number >= 1" });
+      }
+
+      const [existing] = await db
+        .select()
+        .from(systemSettings)
+        .where(eq(systemSettings.settingKey, "inspection_backdate_days"))
+        .limit(1);
+
+      if (existing) {
+        const [updated] = await db
+          .update(systemSettings)
+          .set({
+            settingValue: value,
+            updatedBy: userId,
+            updatedAt: new Date(),
+          })
+          .where(eq(systemSettings.settingKey, "inspection_backdate_days"))
+          .returning();
+
+        log.info({ userId, value }, "[admin] Inspection backdate limit updated");
+        res.json({ value: Number(updated.settingValue) });
+      } else {
+        const [created] = await db
+          .insert(systemSettings)
+          .values({
+            settingKey: "inspection_backdate_days",
+            settingValue: value,
+            description: "Number of days in the past allowed for inspection date selection",
+            category: "workflow",
+            updatedBy: userId,
+          })
+          .returning();
+
+        log.info({ userId, value }, "[admin] Inspection backdate limit created");
+        res.json({ value: Number(created.settingValue) });
+      }
+    } catch (error) {
+      log.error({ err: error }, "[admin] Failed to update inspection backdate limit");
+      res.status(500).json({ message: "Failed to update inspection backdate limit" });
+    }
+  });
+
   return router;
 }

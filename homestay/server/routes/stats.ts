@@ -14,7 +14,7 @@ router.get("/state", async (req, res) => {
         // ----------------------------------------------------------------
         const [heroData] = await db
             .select({
-                totalApplications: sql<number>`count(*) filter (where ${homestayApplications.applicationNumber} NOT LIKE 'LG-HS-%')`,
+                totalApplications: sql<number>`count(*) filter (where ${homestayApplications.status} != 'draft' AND ${homestayApplications.status} != 'superseded')`,
                 totalRevenue: sql<number>`coalesce((
                     SELECT sum(${himkoshTransactions.totalAmount})
                     FROM ${himkoshTransactions}
@@ -22,14 +22,13 @@ router.get("/state", async (req, res) => {
                       AND (${himkoshTransactions.isRefunded} IS NULL OR ${himkoshTransactions.isRefunded} = false)
                       AND ${himkoshTransactions.applicationId} IN (
                           SELECT ${homestayApplications.id} FROM ${homestayApplications}
-                          WHERE ${homestayApplications.applicationNumber} NOT LIKE 'LG-HS-%'
                       )
                 ), 0)`,
-                pendingScrutiny: sql<number>`count(*) filter (where ${homestayApplications.status} in ('submitted', 'under_scrutiny') AND ${homestayApplications.applicationNumber} NOT LIKE 'LG-HS-%')`,
-                pendingDistrict: sql<number>`count(*) filter (where ${homestayApplications.status} in ('forwarded_to_dtdo', 'dtdo_review') AND ${homestayApplications.applicationNumber} NOT LIKE 'LG-HS-%')`,
-                pendingInspection: sql<number>`count(*) filter (where ${homestayApplications.status} in ('inspection_scheduled', 'inspection_completed', 'inspection_under_review') AND ${homestayApplications.applicationNumber} NOT LIKE 'LG-HS-%')`,
-                totalApproved: sql<number>`count(*) filter (where ${homestayApplications.status} = 'approved' AND ${homestayApplications.applicationNumber} NOT LIKE 'LG-HS-%')`,
-                avgClearanceDays: sql<number>`avg(extract(epoch from (${homestayApplications.approvedAt} - ${homestayApplications.submittedAt})) / 86400) filter (where ${homestayApplications.applicationNumber} NOT LIKE 'LG-HS-%')`,
+                pendingScrutiny: sql<number>`count(*) filter (where ${homestayApplications.status} in ('submitted', 'under_scrutiny', 'legacy_rc_review'))`,
+                pendingDistrict: sql<number>`count(*) filter (where ${homestayApplications.status} in ('forwarded_to_dtdo', 'dtdo_review'))`,
+                pendingInspection: sql<number>`count(*) filter (where ${homestayApplications.status} in ('inspection_scheduled', 'inspection_completed', 'inspection_under_review'))`,
+                totalApproved: sql<number>`count(*) filter (where ${homestayApplications.status} = 'approved')`,
+                avgClearanceDays: sql<number>`avg(extract(epoch from (${homestayApplications.approvedAt} - ${homestayApplications.submittedAt})) / 86400)`,
                 existingRC: sql<number>`count(*) filter (where ${homestayApplications.applicationNumber} LIKE 'LG-HS-%')`,
             })
             .from(homestayApplications);
@@ -49,8 +48,8 @@ router.get("/state", async (req, res) => {
         const funnelData = [
             { name: "Draft", value: funnelMap.get("draft") || 0, fill: "#94a3b8" },
             { name: "Submitted", value: funnelMap.get("submitted") || 0, fill: "#3b82f6" },
-            { name: "Under Scrutiny", value: (funnelMap.get("document_verification") || 0) + (funnelMap.get("clarification_requested") || 0), fill: "#f59e0b" },
-            { name: "Inspection", value: (funnelMap.get("site_inspection_scheduled") || 0) + (funnelMap.get("site_inspection_complete") || 0), fill: "#8b5cf6" },
+            { name: "DA Scrutiny", value: (funnelMap.get("under_scrutiny") || 0) + (funnelMap.get("legacy_rc_review") || 0), fill: "#f59e0b" },
+            { name: "Inspection", value: (funnelMap.get("inspection_scheduled") || 0) + (funnelMap.get("inspection_completed") || 0) + (funnelMap.get("inspection_under_review") || 0), fill: "#8b5cf6" },
             { name: "Approved", value: funnelMap.get("approved") || 0, fill: "#22c55e" },
             { name: "Rejected", value: funnelMap.get("rejected") || 0, fill: "#ef4444" }
         ];
@@ -200,11 +199,13 @@ router.get("/state", async (req, res) => {
             pipeline_counts: {
                 draft: funnelMap.get("draft") || 0,
                 submitted: funnelMap.get("submitted") || 0,
-                scrutiny: (funnelMap.get("under_scrutiny") || 0),
+                scrutiny: (funnelMap.get("under_scrutiny") || 0) + (funnelMap.get("legacy_rc_review") || 0),
                 district: (funnelMap.get("forwarded_to_dtdo") || 0) + (funnelMap.get("dtdo_review") || 0),
                 inspection: (funnelMap.get("inspection_scheduled") || 0) + (funnelMap.get("inspection_completed") || 0) + (funnelMap.get("inspection_under_review") || 0),
                 approved: funnelMap.get("approved") || 0,
-                objection: (funnelMap.get("objection_raised") || 0) + (funnelMap.get("sent_back_for_corrections") || 0) + (funnelMap.get("reverted_to_applicant") || 0) + (funnelMap.get("reverted_by_dtdo") || 0),
+                awaiting_applicant: (funnelMap.get("sent_back_for_corrections") || 0) + (funnelMap.get("reverted_to_applicant") || 0) + (funnelMap.get("reverted_by_dtdo") || 0),
+                resubmitted_to_da: funnelMap.get("objection_raised") || 0,
+                payment_pending: (funnelMap.get("payment_pending") || 0) + (funnelMap.get("verified_for_payment") || 0),
                 rejected: funnelMap.get("rejected") || 0,
                 existingRC: Number(heroData.existingRC || 0),
             },

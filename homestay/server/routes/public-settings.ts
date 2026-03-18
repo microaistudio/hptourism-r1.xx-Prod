@@ -23,14 +23,15 @@ export function createPublicSettingsRouter() {
     // Returns configuration that the frontend needs before generic auth actions or for general UI
     router.get("/public", async (req, res) => {
         try {
-            const [visibilitySetting, inspectionSetting, maintenanceSetting, registrationSetting, paymentPauseSetting, incompleteAppsSetting, formThresholdSetting] = await Promise.all([
+            const [visibilitySetting, inspectionSetting, maintenanceSetting, registrationSetting, paymentPauseSetting, incompleteAppsSetting, formThresholdSetting, inspectionBackdateSetting] = await Promise.all([
                 getSystemSettingRecord("service_visibility_config"),
                 getSystemSettingRecord("inspection_config"),
                 getSystemSettingRecord("maintenance_mode_config"),
                 getSystemSettingRecord(ENABLE_LEGACY_REGISTRATION_SETTING_KEY),
                 getSystemSettingRecord(PAYMENT_PIPELINE_PAUSE_SETTING_KEY),
                 getSystemSettingRecord(SHOW_INCOMPLETE_APPLICATIONS_SETTING_KEY),
-                getSystemSettingRecord(FORM_TIME_THRESHOLD_SETTING_KEY)
+                getSystemSettingRecord(FORM_TIME_THRESHOLD_SETTING_KEY),
+                getSystemSettingRecord("inspection_backdate_days")
             ]);
 
             const visibility = (visibilitySetting?.settingValue as Record<string, boolean>) ?? {
@@ -100,6 +101,12 @@ export function createPublicSettingsRouter() {
                         if (!isNaN(parsed) && parsed > 0) return parsed;
                     }
                     return DEFAULT_FORM_TIME_THRESHOLD_MINUTES;
+                })(),
+                inspectionBackdateDays: (() => {
+                    const raw = inspectionBackdateSetting?.settingValue;
+                    if (typeof raw === 'number' && raw > 0) return raw;
+                    const parsed = parseInt(String(raw), 10);
+                    return isNaN(parsed) ? 7 : parsed;
                 })(),
             });
         } catch (error) {

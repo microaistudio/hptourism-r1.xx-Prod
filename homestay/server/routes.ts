@@ -262,7 +262,6 @@ const toDateOnly = (value: Date) => {
   return normalized;
 };
 
-const EARLY_INSPECTION_OVERRIDE_WINDOW_DAYS = 7;
 
 const STAFF_PROFILE_ROLES = ['dealing_assistant', 'district_tourism_officer', 'district_officer'] as const;
 
@@ -1320,6 +1319,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const normalizedScheduledDate = toDateOnly(scheduledDate);
       const normalizedActualDate = toDateOnly(actualInspectionDateInput);
       const normalizedToday = toDateOnly(new Date());
+      const [backdateSettingRaw] = await db.select({ value: systemSettings.settingValue })
+                                           .from(systemSettings)
+                                           .where(eq(systemSettings.settingKey, "inspection_backdate_days"));
+      
+      let EARLY_INSPECTION_OVERRIDE_WINDOW_DAYS = 7;
+      if (backdateSettingRaw?.value) {
+          const parsed = parseInt(String(backdateSettingRaw.value), 10);
+          if (!isNaN(parsed) && parsed > 0) EARLY_INSPECTION_OVERRIDE_WINDOW_DAYS = parsed;
+      }
+
       const earliestOverrideDate = toDateOnly(subDays(normalizedScheduledDate, EARLY_INSPECTION_OVERRIDE_WINDOW_DAYS));
       const earlyOverrideEnabled = Boolean(req.body.earlyInspectionOverride);
       const earlyOverrideReason = typeof req.body.earlyInspectionReason === "string"

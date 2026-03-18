@@ -196,10 +196,8 @@ export default function DTDOScheduleInspection() {
   };
 
   const availableDAs = dasData?.das || [];
-  const tomorrow = new Date();
-  tomorrow.setDate(tomorrow.getDate() + 1);
-  tomorrow.setHours(0, 0, 0, 0);
-  const minSelectableDate = tomorrow;
+  const minSelectableDate = new Date();
+  minSelectableDate.setHours(0, 0, 0, 0);
 
   return (
     <div className="container mx-auto p-6 max-w-4xl space-y-6">
@@ -296,7 +294,7 @@ export default function DTDOScheduleInspection() {
               </Select>
             </div>
             <p className="text-xs text-muted-foreground">
-              Calendar opens from the next working day. Time slots are locked to 15-minute intervals
+              Calendar opens from today. Time slots are locked to 15-minute intervals
               (00, 15, 30, 45) to match DA field visits.
             </p>
           </div>

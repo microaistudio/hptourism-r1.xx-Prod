@@ -149,8 +149,12 @@ export default function WorkflowMonitoringPage() {
         result = result.filter(app => app.status === 'approved');
       } else if (statusFilter === 'rejected') {
         result = result.filter(app => app.status === 'rejected');
-      } else if (statusFilter === 'objection') {
-        result = result.filter(app => ['sent_back_for_corrections', 'reverted_to_applicant', 'reverted_by_dtdo', 'objection_raised'].includes(app.status || ''));
+      } else if (statusFilter === 'payment_pending') {
+        result = result.filter(app => ['verified_for_payment', 'payment_pending'].includes(app.status || ''));
+      } else if (statusFilter === 'awaiting_applicant') {
+        result = result.filter(app => ['sent_back_for_corrections', 'reverted_to_applicant', 'reverted_by_dtdo'].includes(app.status || ''));
+      } else if (statusFilter === 'resubmitted_to_da') {
+        result = result.filter(app => ['objection_raised'].includes(app.status || ''));
       } else {
         // Fallback for direct status matches
         result = result.filter(app => app.status === statusFilter);
@@ -475,6 +479,12 @@ function VisualPipelineFlow({
       statuses: ["inspection_scheduled", "inspection_completed", "inspection_under_review"],
     },
     {
+      id: "payment_pending",
+      label: "Payment Pending",
+      color: "bg-amber-500",
+      statuses: ["verified_for_payment", "payment_pending"],
+    },
+    {
       id: "rc_issued",
       label: "RC Issued",
       color: "bg-green-500",
@@ -550,22 +560,40 @@ function VisualPipelineFlow({
           ))}
         </div>
 
-        {/* Secondary row: Objection/Corrections count */}
+        {/* Secondary row: Reverts / Action needed */}
         {(() => {
-          const objectionStatuses = ["sent_back_for_corrections", "reverted_to_applicant", "reverted_by_dtdo", "objection_raised"];
-          const objectionCount = applications.filter(app => objectionStatuses.includes(app.status ?? "")).length;
-          if (objectionCount === 0) return null;
+          const awaitingApplicantStatuses = ["sent_back_for_corrections", "reverted_to_applicant", "reverted_by_dtdo"];
+          const resubmittedDaStatuses = ["objection_raised"];
+          
+          const awaitingCount = applications.filter(app => awaitingApplicantStatuses.includes(app.status ?? "")).length;
+          const resubmittedCount = applications.filter(app => resubmittedDaStatuses.includes(app.status ?? "")).length;
+          
+          if (awaitingCount === 0 && resubmittedCount === 0) return null;
+          
           return (
-            <div className="mt-4 pt-3 border-t border-dashed flex justify-center">
-              <button
-                onClick={() => onStageClick(activeFilter === "objection" ? null : "objection")}
-                className={`flex items-center gap-2 px-4 py-2 rounded-full bg-amber-50 border border-amber-200 hover:bg-amber-100 transition-colors cursor-pointer ${activeFilter === "objection" ? "ring-2 ring-amber-400" : ""
-                  }`}
-              >
-                <AlertTriangle className="h-4 w-4 text-amber-600" />
-                <span className="text-sm font-semibold text-amber-700">{objectionCount}</span>
-                <span className="text-xs text-amber-600 font-medium">Objections / Corrections</span>
-              </button>
+            <div className="mt-4 pt-4 border-t border-dashed flex justify-center gap-4">
+              {awaitingCount > 0 && (
+                <button
+                  onClick={() => onStageClick(activeFilter === "awaiting_applicant" ? null : "awaiting_applicant")}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-full bg-amber-50 border border-amber-200 hover:bg-amber-100 transition-colors cursor-pointer ${activeFilter === "awaiting_applicant" ? "ring-2 ring-amber-400" : ""
+                    }`}
+                >
+                  <AlertTriangle className="h-4 w-4 text-amber-600" />
+                  <span className="text-sm font-semibold text-amber-700">{awaitingCount}</span>
+                  <span className="text-xs text-amber-600 font-medium">🟡 Awaiting Applicant</span>
+                </button>
+              )}
+              {resubmittedCount > 0 && (
+                <button
+                  onClick={() => onStageClick(activeFilter === "resubmitted_to_da" ? null : "resubmitted_to_da")}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-full bg-orange-50 border border-orange-200 hover:bg-orange-100 transition-colors cursor-pointer ${activeFilter === "resubmitted_to_da" ? "ring-2 ring-orange-400" : ""
+                    }`}
+                >
+                  <AlertCircle className="h-4 w-4 text-orange-600" />
+                  <span className="text-sm font-semibold text-orange-700">{resubmittedCount}</span>
+                  <span className="text-xs text-orange-600 font-medium">⚡ Resubmitted to DA</span>
+                </button>
+              )}
             </div>
           );
         })()}

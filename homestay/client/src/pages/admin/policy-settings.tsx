@@ -259,6 +259,9 @@ export default function PolicySettings() {
                 {/* Max Correction Attempts Settings */}
                 <MaxCorrectionCard />
 
+                {/* Inspection Backdate Settings */}
+                <InspectionBackdateCard />
+
                 {/* Maintenance Mode Settings */}
                 <MaintenanceSettingsCard />
             </div>
@@ -355,6 +358,114 @@ function MaxCorrectionCard() {
                         <Button
                             onClick={handleSave}
                             disabled={mutation.isPending || maxReverts === setting?.maxReverts}
+                            className="w-full sm:w-auto"
+                        >
+                            {mutation.isPending ? (
+                                <>
+                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Saving...
+                                </>
+                            ) : (
+                                <>
+                                    <Save className="mr-2 h-4 w-4" /> Save Policy
+                                </>
+                            )}
+                        </Button>
+                    </>
+                )}
+            </CardContent>
+        </Card>
+    );
+}
+
+function InspectionBackdateCard() {
+    const { toast } = useToast();
+    const queryClient = useQueryClient();
+    const [backdateDays, setBackdateDays] = useState<number>(7);
+
+    const { data: setting, isLoading } = useQuery({
+        queryKey: ['/api/settings/public'],
+    });
+
+    useEffect(() => {
+        if (setting?.inspectionBackdateDays) {
+            setBackdateDays(Number(setting.inspectionBackdateDays));
+        }
+    }, [setting]);
+
+    const mutation = useMutation({
+        mutationFn: async (val: number) => {
+            await apiRequest('PUT', '/api/admin/settings/inspection_backdate_days', { value: val });
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['/api/settings/public'] });
+            toast({
+                title: "Settings Updated",
+                description: "Inspection backdate allowance has been updated.",
+            });
+        },
+        onError: () => {
+            toast({
+                title: "Update Failed",
+                description: "Could not update settings. Please try again.",
+                variant: "destructive",
+            });
+        }
+    });
+
+    const handleSave = () => {
+        mutation.mutate(backdateDays);
+    };
+
+    return (
+        <Card className="border-indigo-200 dark:border-indigo-900">
+            <CardHeader>
+                <div className="flex items-center gap-2">
+                    <div className="p-2 rounded bg-indigo-100 dark:bg-indigo-900/30">
+                        <Settings className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
+                    </div>
+                    <CardTitle>Inspection Backdate Limit</CardTitle>
+                </div>
+                <CardDescription>
+                    Configure how many days in the past a Dealing Assistant can record an inspection date.
+                </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+                {isLoading ? (
+                    <div className="flex items-center gap-2 text-muted-foreground">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Loading settings...
+                    </div>
+                ) : (
+                    <>
+                        <div className="space-y-4">
+                            <div className="space-y-2">
+                                <Label htmlFor="backdate-days" className="font-semibold">
+                                    Maximum Backdate Allowance 
+                                </Label>
+                                <div className="flex items-center gap-4">
+                                    <Input
+                                        id="backdate-days"
+                                        type="number"
+                                        min={0}
+                                        max={30}
+                                        value={backdateDays}
+                                        onChange={(e) => setBackdateDays(parseInt(e.target.value) || 0)}
+                                        className="max-w-[100px]"
+                                    />
+                                    <p className="text-sm text-muted-foreground">
+                                        days
+                                    </p>
+                                </div>
+                                <p className="text-sm text-muted-foreground">
+                                    Determines how far back inspectors can log an inspection that happened before the scheduled date.
+                                    Currently set to: <strong>{backdateDays} day(s)</strong>.
+                                </p>
+                            </div>
+                        </div>
+
+                        <Button
+                            onClick={handleSave}
+                            disabled={mutation.isPending || backdateDays === setting?.inspectionBackdateDays}
                             className="w-full sm:w-auto"
                         >
                             {mutation.isPending ? (

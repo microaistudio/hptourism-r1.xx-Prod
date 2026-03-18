@@ -22,7 +22,6 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 
-const EARLY_OVERRIDE_WINDOW_DAYS: number = 7;
 
 const inspectionReportSchema = z.object({
   actualInspectionDate: z.string().min(1, "Inspection date is required"),
@@ -258,6 +257,12 @@ export default function DAInspectionReport() {
     refetchOnMount: true,
   });
 
+  const { data: publicSettings } = useQuery({
+    queryKey: ["/api/settings/public"],
+    staleTime: 5 * 60 * 1000,
+  });
+  const EARLY_OVERRIDE_WINDOW_DAYS = publicSettings?.inspectionBackdateDays || 7;
+
   const form = useForm<InspectionReportForm>({
     resolver: zodResolver(inspectionReportSchema),
     mode: "onChange",
@@ -361,11 +366,18 @@ export default function DAInspectionReport() {
   const { order, application, owner } = data;
   const scheduledDate = new Date(order.inspectionDate);
   const today = new Date();
+  
+  const scheduledDateOnly = new Date(scheduledDate);
+  scheduledDateOnly.setHours(0, 0, 0, 0);
+  const todayOnly = new Date(today);
+  todayOnly.setHours(0, 0, 0, 0);
+
   const earlyOverrideEnabled = form.watch('earlyInspectionOverride') ?? false;
   const earliestOverrideDateObj = subDays(scheduledDate, EARLY_OVERRIDE_WINDOW_DAYS);
   const minDate = formatDateInputIST(scheduledDate);
   const todayDateOnly = formatDateInputIST(today);
-  const scheduleHasStarted = scheduledDate <= today;
+  
+  const scheduleHasStarted = scheduledDateOnly <= todayOnly;
   const baseMaxDateObj = scheduleHasStarted ? today : scheduledDate;
   const maxDate = formatDateInputIST(baseMaxDateObj);
   const overrideWindowOpen = earliestOverrideDateObj <= baseMaxDateObj;

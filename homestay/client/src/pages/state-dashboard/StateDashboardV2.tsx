@@ -30,11 +30,13 @@ type StatsData = {
     pipeline_counts: {
         draft: number;
         submitted: number;
+        payment_pending: number;
         scrutiny: number;
         district: number;
         inspection: number;
         approved: number;
-        objection: number;
+        awaiting_applicant: number;
+        resubmitted_to_da: number;
         rejected: number;
         existingRC: number;
     };
@@ -381,7 +383,7 @@ export default function StateDashboardV2() {
     // ── Derived Strategic Numbers ──
     const pc = stats.pipeline_counts;
     // Total submitted = everything except draft & superseded
-    const totalSubmitted = pc.submitted + pc.scrutiny + pc.district + pc.inspection + pc.approved + pc.objection + pc.rejected;
+    const totalSubmitted = pc.submitted + pc.payment_pending + pc.scrutiny + pc.district + pc.inspection + pc.approved + pc.awaiting_applicant + pc.resubmitted_to_da + pc.rejected;
     const approvalRate = totalSubmitted > 0 ? Math.round((pc.approved / totalSubmitted) * 100) : 0;
     const avgDays = parseFloat(stats.hero.avgClearanceDays) || 0;
 
@@ -453,11 +455,13 @@ export default function StateDashboardV2() {
                     <div className="flex flex-wrap gap-3">
                         {[
                             { label: "Drafts", count: pc.draft, color: "bg-slate-100 text-slate-700 border-slate-200" },
+                            { label: "Payment Pending", count: pc.payment_pending, color: "bg-amber-100 text-amber-700 border-amber-200" },
                             { label: "Submitted", count: pc.submitted, color: "bg-sky-100 text-sky-700 border-sky-200" },
                             { label: "DA Scrutiny", count: pc.scrutiny, color: "bg-orange-100 text-orange-700 border-orange-200" },
                             { label: "District Review", count: pc.district, color: "bg-blue-100 text-blue-700 border-blue-200" },
                             { label: "Inspection", count: pc.inspection, color: "bg-purple-100 text-purple-700 border-purple-200" },
-                            { label: "Objection / Corrections", count: pc.objection, color: "bg-amber-100 text-amber-700 border-amber-200" },
+                            { label: "Awaiting Applicant", count: pc.awaiting_applicant, color: "bg-rose-100 text-rose-700 border-rose-200" },
+                            { label: "Resubmitted to DA", count: pc.resubmitted_to_da, color: "bg-yellow-100 text-yellow-700 border-yellow-200" },
                             { label: "Approved", count: pc.approved, color: "bg-emerald-100 text-emerald-700 border-emerald-200" },
                             { label: "Rejected", count: pc.rejected, color: "bg-red-100 text-red-700 border-red-200" },
                             { label: "Existing RC", count: pc.existingRC, color: "bg-gray-100 text-gray-700 border-gray-200" },
@@ -473,11 +477,13 @@ export default function StateDashboardV2() {
                     <div className="flex h-3 rounded-full overflow-hidden mt-4 bg-muted">
                         {[
                             { count: pc.draft, color: "bg-slate-500" },
+                            { count: pc.payment_pending, color: "bg-amber-400" },
                             { count: pc.submitted, color: "bg-sky-500" },
                             { count: pc.scrutiny, color: "bg-orange-500" },
                             { count: pc.district, color: "bg-blue-500" },
                             { count: pc.inspection, color: "bg-purple-500" },
-                            { count: pc.objection, color: "bg-amber-500" },
+                            { count: pc.awaiting_applicant, color: "bg-rose-400" },
+                            { count: pc.resubmitted_to_da, color: "bg-yellow-400" },
                             { count: pc.approved, color: "bg-emerald-500" },
                             { count: pc.rejected, color: "bg-red-500" },
                         ].filter(s => s.count > 0).map((s, i) => (

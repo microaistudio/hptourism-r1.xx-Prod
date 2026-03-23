@@ -913,7 +913,7 @@ router.post('/callback', async (req, res) => {
             // Legacy RC: Auto-approve with certificate (existing behavior)
             const year = now.getFullYear();
             const randomSuffix = Math.floor(10000 + Math.random() * 90000);
-            const certificateNumber = `HP-HST-${year}-${randomSuffix}`;
+            const certificateNumber = currentApplication.certificateNumber || `HP-HST-${year}-${randomSuffix}`;
 
             const issueDate = now;
             const expiryDate = new Date(issueDate);

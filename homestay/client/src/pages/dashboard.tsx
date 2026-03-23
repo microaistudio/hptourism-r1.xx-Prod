@@ -25,7 +25,7 @@ import { useToast } from "@/hooks/use-toast";
 import type { User, HomestayApplication } from "@shared/schema";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import StateDashboardV2 from "./state-dashboard/StateDashboardV2";
-import StateOperationalDashboard from "./state-dashboard/StateOperationalDashboard";
+
 import { cn } from "@/lib/utils";
 import { ServiceCenterPanel } from "@/components/dashboard/service-center";
 import GeospatialMap from "@/components/dashboard/GeospatialMap";
@@ -129,7 +129,7 @@ const getOwnerProgressState = (app: HomestayApplication) => {
 
 // Dashboard 2.0 Sub-component - Operational Dashboard for Daily Tasks
 function Dashboard2_0_Section({ user }: { user: User }) {
-  return <StateOperationalDashboard user={user} />;
+  return <StateDashboardV2 user={user} />;
 }
 
 export default function Dashboard() {
@@ -313,7 +313,7 @@ export default function Dashboard() {
       {/* State Officer & Admin View - Operational Dashboard */}
       {(user.role === 'state_officer' || user.role === 'admin') && (
         <div className="max-w-7xl mx-auto px-4 py-8">
-          <StateOperationalDashboard user={user} />
+          <StateDashboardV2 user={user} />
         </div>
       )}
 

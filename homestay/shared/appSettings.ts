@@ -10,6 +10,8 @@ export const EXISTING_RC_MIN_ISSUE_DATE_SETTING_KEY = "existing_owner_min_issue_
 export const ENABLE_LEGACY_REGISTRATION_SETTING_KEY = "enable_legacy_registrations";
 export const MAX_REVERT_COUNT_SETTING_KEY = "max_correction_attempts";
 export const DEFAULT_MAX_REVERT_COUNT = 1;
+export const EXISTING_RC_RENEWAL_THRESHOLD_DAYS_SETTING_KEY = "existing_rc_renewal_threshold_days";
+export const DEFAULT_EXISTING_RC_RENEWAL_THRESHOLD_DAYS = 90;
 
 // Form completion time threshold (minutes) — controls the outlier cap for avg form time metrics
 export const FORM_TIME_THRESHOLD_SETTING_KEY = "form_time_threshold_minutes";

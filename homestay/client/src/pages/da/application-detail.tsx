@@ -844,6 +844,12 @@ export default function DAApplicationDetail() {
               <h1 className="text-3xl font-bold mb-2">{application.propertyName}</h1>
               <div className="flex items-center gap-3 text-sm text-muted-foreground flex-wrap">
                 <span>Application #{application.applicationNumber}</span>
+                {application.certificateNumber && (
+                  <>
+                    <Separator orientation="vertical" className="h-4" />
+                    <span className="font-semibold text-primary">RC: {application.certificateNumber}</span>
+                  </>
+                )}
                 <Separator orientation="vertical" className="h-4" />
                 <span>{owner?.fullName} • {owner?.mobile}</span>
                 <Separator orientation="vertical" className="h-4" />
@@ -1442,6 +1448,12 @@ export default function DAApplicationDetail() {
                   <DetailRow label="Property Ownership" value={ownershipLabel} />
                   <DetailRow label="Property Area" value={propertyAreaLabel} />
                   <DetailRow label="Certificate Validity" value={certificateValidityLabel} />
+                  {application.certificateNumber && (
+                    <DetailRow label="Current RC #" value={application.certificateNumber} />
+                  )}
+                  {application.parentCertificateNumber && application.parentCertificateNumber !== application.certificateNumber && (
+                    <DetailRow label="Parent RC #" value={application.parentCertificateNumber} />
+                  )}
                 </CardContent>
               </Card>
 

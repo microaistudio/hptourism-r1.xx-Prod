@@ -409,7 +409,7 @@ const draftSchema = z
 
 // Extended schema for service requests
 const serviceRequestDraftSchema = draftSchema.extend({
-  applicationKind: z.enum(['new_registration', 'add_rooms', 'delete_rooms', 'cancel_certificate', 'change_category', 'change_ownership']).optional(),
+  applicationKind: z.enum(['new_registration', 'renewal', 'legacy_onboarding', 'add_rooms', 'delete_rooms', 'cancel_certificate', 'change_category', 'change_ownership']).optional(),
   parentApplicationId: z.string().uuid().optional(),
   serviceContext: z.object({
     requestedRooms: z.any().optional(),
@@ -491,6 +491,8 @@ const ownerSubmittableSchema = z.object({
   tehsilOther: z.string().optional(),
   latitude: z.string().optional(),
   longitude: z.string().optional(),
+  applicationKind: z.string().optional(),
+  parentCertificateNumber: z.string().optional(),
   documents: z
     .array(
       z.preprocess(
@@ -686,22 +688,34 @@ export function createOwnerApplicationsRouter({ getRoomRateBandsSetting }: Owner
       let parentApp: HomestayApplication | undefined;
       let draftData = { ...body };
 
-      if (applicationKind === "new_registration") {
+      if (applicationKind === "new_registration" || applicationKind === "legacy_onboarding" || applicationKind === "renewal") {
         // ORIGINAL LOGIC: One active application check
+        // For renewal, we might allow it even if there's no existing app, as they might be renewing an existing paper RC.
         if (existingApps.length > 0) {
           const existing = existingApps[0];
-          // If the *only* existing app is a draft, we can return it (or user should resume it)
-          // But strict rule: "Only one homestay application... permitted" including history often implies one *active* flow.
-          // RC5 Logic: If existing is draft, return it. If approved/submitted, block new registration.
-          if (existing.status === "draft") {
-            return res.json({ application: existing, message: "Existing draft loaded" });
-          }
 
-          return res.status(409).json({
-            message: "Only one homestay application is permitted per owner account. Please maintain your existing property.",
-            existingApplicationId: existing.id,
-            status: existing.status,
-          });
+          // For renewal: check if there's already a pending renewal draft
+          if (applicationKind === "renewal") {
+            const existingRenewalDraft = existingApps.find(
+              app => app.status === "draft" && app.applicationKind === "renewal"
+            );
+            if (existingRenewalDraft) {
+              return res.json({ application: existingRenewalDraft, message: "Existing renewal draft loaded" });
+            }
+            // For renewal, allow creating a new draft even if there are other apps
+            // (the user is renewing their existing registration)
+          } else {
+            // For new_registration / legacy_onboarding: strict one-app check
+            if (existing.status === "draft") {
+              return res.json({ application: existing, message: "Existing draft loaded" });
+            }
+
+            return res.status(409).json({
+              message: "Only one homestay application is permitted per owner account. Please maintain your existing property.",
+              existingApplicationId: existing.id,
+              status: existing.status,
+            });
+          }
         }
       } else {
         // SERVICE REQUEST LOGIC (Add/Delete Rooms, Cancel, Change Category, etc.)
@@ -1148,6 +1162,8 @@ export function createOwnerApplicationsRouter({ getRoomRateBandsSetting }: Owner
         ownerGender: validatedData.ownerGender || null,
         latitude: validatedData.latitude || null,
         longitude: validatedData.longitude || null,
+        applicationKind: validatedData.applicationKind || null,
+        parentCertificateNumber: validatedData.parentCertificateNumber || null,
         userId,
       });
 

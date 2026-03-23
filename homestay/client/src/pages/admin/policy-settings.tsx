@@ -7,7 +7,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";
-import { Settings, ArrowLeft, Loader2, Save, Shield, AlertTriangle, TrendingUp } from "lucide-react";
+import { Settings, ArrowLeft, Loader2, Save, Shield, AlertTriangle, TrendingUp, CalendarClock } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Link } from "wouter";
 import { apiRequest } from "@/lib/queryClient";
@@ -259,6 +259,9 @@ export default function PolicySettings() {
                 {/* Max Correction Attempts Settings */}
                 <MaxCorrectionCard />
 
+                {/* Renewal Window Settings */}
+                <RenewalWindowCard />
+
                 {/* Inspection Backdate Settings */}
                 <InspectionBackdateCard />
 
@@ -266,6 +269,115 @@ export default function PolicySettings() {
                 <MaintenanceSettingsCard />
             </div>
         </div>
+    );
+}
+
+function RenewalWindowCard() {
+    const { toast } = useToast();
+    const queryClient = useQueryClient();
+    const [windowDays, setWindowDays] = useState<number>(90);
+
+    const { data: setting, isLoading } = useQuery({
+        queryKey: ['/api/admin/settings/workflow/renewal-window'],
+    });
+
+    useEffect(() => {
+        if (setting?.days) {
+            setWindowDays(Number(setting.days));
+        }
+    }, [setting]);
+
+    const mutation = useMutation({
+        mutationFn: async (val: number) => {
+            await apiRequest('POST', '/api/admin/settings/workflow/renewal-window', { days: val });
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['/api/admin/settings/workflow/renewal-window'] });
+            toast({
+                title: "Settings Updated",
+                description: "Renewal window has been updated.",
+            });
+        },
+        onError: () => {
+            toast({
+                title: "Update Failed",
+                description: "Could not update renewal window. Please try again.",
+                variant: "destructive",
+            });
+        }
+    });
+
+    const handleSave = () => {
+        mutation.mutate(windowDays);
+    };
+
+    return (
+        <Card className="border-emerald-200 dark:border-emerald-900">
+            <CardHeader>
+                <div className="flex items-center gap-2">
+                    <div className="p-2 rounded bg-emerald-100 dark:bg-emerald-900/30">
+                        <CalendarClock className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+                    </div>
+                    <CardTitle>Renewal Window</CardTitle>
+                </div>
+                <CardDescription>
+                    Configure how many days before certificate expiry a property owner can initiate a renewal application.
+                    This applies to both the Service Center and the Existing RC Onboarding flow.
+                </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+                {isLoading ? (
+                    <div className="flex items-center gap-2 text-muted-foreground">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Loading settings...
+                    </div>
+                ) : (
+                    <>
+                        <div className="space-y-4">
+                            <div className="space-y-2">
+                                <Label htmlFor="renewal-window" className="font-semibold">
+                                    Days Before Expiry
+                                </Label>
+                                <div className="flex items-center gap-4">
+                                    <Input
+                                        id="renewal-window"
+                                        type="number"
+                                        min={1}
+                                        max={365}
+                                        value={windowDays}
+                                        onChange={(e) => setWindowDays(parseInt(e.target.value) || 90)}
+                                        className="max-w-[100px]"
+                                    />
+                                    <p className="text-sm text-muted-foreground">
+                                        days before expiry
+                                    </p>
+                                </div>
+                                <p className="text-sm text-muted-foreground">
+                                    Property owners can apply for renewal when their certificate is within <strong>{windowDays} day(s)</strong> of expiry.
+                                    Set to 90 for the standard 3-month window.
+                                </p>
+                            </div>
+                        </div>
+
+                        <Button
+                            onClick={handleSave}
+                            disabled={mutation.isPending || windowDays === setting?.days}
+                            className="w-full sm:w-auto"
+                        >
+                            {mutation.isPending ? (
+                                <>
+                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Saving...
+                                </>
+                            ) : (
+                                <>
+                                    <Save className="mr-2 h-4 w-4" /> Save Policy
+                                </>
+                            )}
+                        </Button>
+                    </>
+                )}
+            </CardContent>
+        </Card>
     );
 }
 

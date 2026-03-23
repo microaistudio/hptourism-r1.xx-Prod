@@ -313,7 +313,7 @@ export function createDtdoRouter() {
             if (isServiceRequest) {
                 const year = new Date().getFullYear();
                 const randomSuffix = Math.floor(10000 + Math.random() * 90000);
-                const certificateNumber = `HP-HST-${year}-${randomSuffix}`;
+                const certificateNumber = application.certificateNumber || `HP-HST-${year}-${randomSuffix}`;
                 const issueDate = new Date();
 
                 let expiryDate = new Date(issueDate);
@@ -1028,7 +1028,7 @@ export function createDtdoRouter() {
                 // Payment already made - issue certificate directly
                 const year = new Date().getFullYear();
                 const randomSuffix = Math.floor(10000 + Math.random() * 90000);
-                const certificateNumber = `HP-HST-${year}-${randomSuffix}`;
+                const certificateNumber = application.certificateNumber || `HP-HST-${year}-${randomSuffix}`;
                 const issueDate = new Date();
                 const expiryDate = new Date(issueDate);
                 const validityYears = application.certificateValidityYears || 1;
@@ -1477,7 +1477,7 @@ export function createDtdoRouter() {
             // Standard Approval Logic (Issue Certificate)
             const year = new Date().getFullYear();
             const randomSuffix = Math.floor(10000 + Math.random() * 90000);
-            const certificateNumber = `HP-HST-${year}-${randomSuffix}`;
+            const certificateNumber = application.certificateNumber || `HP-HST-${year}-${randomSuffix}`;
             const issueDate = new Date();
             const expiryDate = new Date(issueDate);
             const validityYears = application.certificateValidityYears || 1;

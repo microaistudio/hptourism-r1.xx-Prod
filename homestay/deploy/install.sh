@@ -845,23 +845,19 @@ update_installation() {
     print_info "Fixing executable permissions..."
     chmod -R +x "$install_path/node_modules"
     
-    # Run migrations
-    print_info "Running database migrations..."
+    # Run migrations as service user to avoid root-owned temp files
+    print_info "Running database migrations (as $service_user)..."
     cd "$install_path"
-    npm run db:push
+    sudo -u "$service_user" bash -c "cd $install_path && export \$(grep -v '^#' .env | xargs) && npm run db:push"
     
-    # Re-seed admin accounts
-    print_info "Updating system accounts..."
-    if [[ -f "$install_path/.env" ]]; then
-        db_url=$(grep "^DATABASE_URL=" "$install_path/.env" | cut -d'=' -f2)
-        # Extract last part after /
-        db_name=$(echo "$db_url" | awk -F'/' '{print $NF}')
-        
-        if [[ -n "$db_name" && -f "$install_path/Database/admin_accounts_seed.sql" ]]; then
-             sudo -u postgres psql -d "$db_name" -f "$install_path/Database/admin_accounts_seed.sql"
-             print_success "System accounts updated"
-        fi
-    fi
+    # Re-fix permissions in case migration created any root-owned files
+    set_permissions "$install_path" "$service_user"
+    
+    # NOTE: Admin account re-seeding is intentionally SKIPPED on updates.
+    # The seed SQL uses ON CONFLICT DO UPDATE which resets passwords back to
+    # hardcoded defaults — this would overwrite any password changes made on PROD.
+    # Admin accounts are only seeded during FRESH installations (Choice 1).
+    print_info "Skipping admin re-seed (preserving existing PROD credentials)"
     
     # Get port from .env
     port=$(grep "^PORT=" "$install_path/.env" | cut -d'=' -f2)

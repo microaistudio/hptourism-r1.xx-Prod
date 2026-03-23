@@ -1,38 +1,87 @@
-
-> hptourism-portal@0.8.2 start
-> NODE_ENV=production node dist/index.js
-
-[dotenv@17.2.3] injecting env (45) from .env -- tip: 🔐 encrypt with Dotenvx: https://dotenvx.com
-[2026-01-16 02:34:43.434 +0000] [32mINFO[39m (1364183): [36m[captcha] configuration[39m
+nohup: ignoring input
+[dotenv@17.2.3] injecting env (52) from .env -- tip: ⚙️  load multiple .env files with { path: ['.env.local', '.env'] }
+======================================
+>>> V10 LOADED: SAFE CLAMP (no string clamping) <<<
+======================================
+[2026-03-21 15:23:15.283 +0530] [32mINFO[39m (1228230): [36m[captcha] configuration[39m
     [35mmodule[39m: "captcha-settings"
-[2026-01-16 02:34:43.446 +0000] [34mDEBUG[39m (1364183): [36m[logging] bootstrap configuration[39m
+[2026-03-21 15:23:15.304 +0530] [34mDEBUG[39m (1228230): [36m[logging] bootstrap configuration[39m
     [35mpretty[39m: true
     [35mfile[39m: {
       "enabled": false,
-      "path": "/home/subhash.thakur.india/Projects/hptourism-rc7/logs/app.log",
+      "path": "/home/subhash.thakur.india/Projects/hptourism/homestay/logs/app.log",
       "maxSizeMB": 10,
       "maxFiles": 7,
       "interval": "1d"
     }
-[2026-01-16 02:34:43.510 +0000] [32mINFO[39m (1364183): [36m[himkosh] Payment gateway routes registered[39m
+[2026-03-21 15:23:15.409 +0530] [32mINFO[39m (1228230): [36m[himkosh] Payment gateway routes registered[39m
     [35mmodule[39m: "routes"
-[2026-01-16 02:34:43.512 +0000] [32mINFO[39m (1364183): [36mFetching stats from https://eservices.himachaltourism.gov.in/[39m
-    [35mmodule[39m: "scraper"
-[2026-01-16 02:34:43.628 +0000] [32mINFO[39m (1364183): [36mScheduler started - will scrape every hour[39m
-    [35mmodule[39m: "scraper"
-[2026-01-16 02:34:43.628 +0000] [32mINFO[39m (1364183): [36m[scraper] Production stats scraper initialized[39m
+[2026-03-21 15:23:15.410 +0530] [32mINFO[39m (1228230): [36m[ccavenue] Payment gateway routes registered[39m
     [35mmodule[39m: "routes"
-[2026-01-16 02:34:43.634 +0000] [32mINFO[39m (1364183): [36mserver started[39m
-    [35mport[39m: 5057
-    [35mhost[39m: "0.0.0.0"
-[2026-01-16 02:34:43.716 +0000] [32mINFO[39m (1364183): [36mEnsured portal_base_url column exists on himkosh_transactions[39m
+[2026-03-21 15:23:15.410 +0530] [32mINFO[39m (1228230): [36mFetching stats from https://eservices.himachaltourism.gov.in/[39m
+    [35mmodule[39m: "scraper"
+[2026-03-21 15:23:15.457 +0530] [32mINFO[39m (1228230): [36mScheduler started - will scrape every hour[39m
+    [35mmodule[39m: "scraper"
+[2026-03-21 15:23:15.457 +0530] [32mINFO[39m (1228230): [36m[scraper] Production stats scraper initialized[39m
+    [35mmodule[39m: "routes"
+[2026-03-21 15:23:15.464 +0530] [33mWARN[39m (1228230): [36m[server] port in use, retrying in 3 seconds...[39m
+    [35mport[39m: 5055
+    [35mretryCount[39m: 1
+[2026-03-21 15:23:15.565 +0530] [31mERROR[39m (1228230): [36mFailed to ensure portal_base_url column[39m
     [35mmodule[39m: "himkosh"
-[2026-01-16 02:34:43.755 +0000] [32mINFO[39m (1364183): [36mBackup scheduler started[39m
-    [35mmodule[39m: "backup-scheduler"
-    [35mschedule[39m: "0 2 * * *"
-    [35mdescription[39m: "Daily at 2:00 AM"
-[2026-01-16 02:34:43.921 +0000] [32mINFO[39m (1364183): [36mParsed stats[39m
+    err: {
+      "type": "DatabaseError",
+      "message": "must be owner of table himkosh_transactions",
+      "stack":
+          error: must be owner of table himkosh_transactions
+              at /home/subhash.thakur.india/Projects/hptourism/homestay/node_modules/pg-pool/index.js:45:11
+              at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+              at async ensurePortalBaseUrlColumn (file:///home/subhash.thakur.india/Projects/hptourism/homestay/dist/index.js:8987:5)
+      "length": 103,
+      "name": "error",
+      "severity": "ERROR",
+      "code": "42501",
+      "file": "aclchk.c",
+      "line": "2950",
+      "routine": "aclcheck_error"
+    }
+[2026-03-21 15:23:15.619 +0530] [32mINFO[39m (1228230): [36m🕐 Payment reconciliation cron started[39m
+    [35mmodule[39m: "payment-reconciliation"
+    [35mintervalMinutes[39m: 15
+    [35mstaleThresholdMinutes[39m: 30
+    [35mmaxBatchSize[39m: 10
+    [35menabled[39m: true
+[2026-03-21 15:23:15.828 +0530] [32mINFO[39m (1228230): [36mParsed stats[39m
     [35mmodule[39m: "scraper"
-[2026-01-16 02:34:43.924 +0000] [32mINFO[39m (1364183): [36mSuccessfully scraped and saved stats[39m
+[2026-03-21 15:23:15.833 +0530] [32mINFO[39m (1228230): [36mSuccessfully scraped and saved stats[39m
     [35mmodule[39m: "scraper"
-Killed
+[2026-03-21 15:23:18.466 +0530] [33mWARN[39m (1228230): [36m[server] port in use, retrying in 3 seconds...[39m
+    [35mport[39m: 5055
+    [35mretryCount[39m: 2
+[2026-03-21 15:23:21.468 +0530] [33mWARN[39m (1228230): [36m[server] port in use, retrying in 3 seconds...[39m
+    [35mport[39m: 5055
+    [35mretryCount[39m: 3
+[2026-03-21 15:23:24.472 +0530] [33mWARN[39m (1228230): [36m[server] port in use, retrying in 3 seconds...[39m
+    [35mport[39m: 5055
+    [35mretryCount[39m: 4
+[2026-03-21 15:23:27.474 +0530] [33mWARN[39m (1228230): [36m[server] port in use, retrying in 3 seconds...[39m
+    [35mport[39m: 5055
+    [35mretryCount[39m: 5
+[2026-03-21 15:23:30.478 +0530] [33mWARN[39m (1228230): [36m[server] port in use, retrying in 3 seconds...[39m
+    [35mport[39m: 5055
+    [35mretryCount[39m: 6
+[2026-03-21 15:23:33.480 +0530] [33mWARN[39m (1228230): [36m[server] port in use, retrying in 3 seconds...[39m
+    [35mport[39m: 5055
+    [35mretryCount[39m: 7
+[2026-03-21 15:23:36.481 +0530] [33mWARN[39m (1228230): [36m[server] port in use, retrying in 3 seconds...[39m
+    [35mport[39m: 5055
+    [35mretryCount[39m: 8
+[2026-03-21 15:23:39.484 +0530] [33mWARN[39m (1228230): [36m[server] port in use, retrying in 3 seconds...[39m
+    [35mport[39m: 5055
+    [35mretryCount[39m: 9
+[2026-03-21 15:23:42.486 +0530] [33mWARN[39m (1228230): [36m[server] port in use, retrying in 3 seconds...[39m
+    [35mport[39m: 5055
+    [35mretryCount[39m: 10
+[2026-03-21 15:23:45.493 +0530] [31mERROR[39m (1228230): [36m[server] port still in use after max retries, exiting[39m
+    [35mport[39m: 5055
+    [35mretryCount[39m: 11

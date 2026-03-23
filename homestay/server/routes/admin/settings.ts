@@ -788,5 +788,69 @@ export function createAdminSettingsRouter() {
     }
   });
 
+  // Renewal Window Days
+  const RENEWAL_WINDOW_KEY = "existing_rc_renewal_threshold_days";
+  const DEFAULT_RENEWAL_WINDOW_DAYS = 90;
+
+  router.get("/settings/workflow/renewal-window", requireRole("admin", "super_admin", "system_admin"), async (_req, res) => {
+    try {
+      const record = await getSystemSettingRecord(RENEWAL_WINDOW_KEY);
+      const days = record ? Number(record.settingValue) : DEFAULT_RENEWAL_WINDOW_DAYS;
+      res.json({ days: Number.isFinite(days) ? days : DEFAULT_RENEWAL_WINDOW_DAYS, source: record ? "database" : "default" });
+    } catch (error) {
+      log.error({ err: error }, "[admin] Failed to fetch renewal window");
+      res.status(500).json({ message: "Failed to fetch renewal window setting" });
+    }
+  });
+
+  router.post("/settings/workflow/renewal-window", requireRole("super_admin", "admin"), async (req, res) => {
+    try {
+      const { days } = req.body;
+      const userId = req.session?.userId ?? null;
+
+      if (typeof days !== "number" || days < 1 || days > 365) {
+        return res.status(400).json({ message: "days must be a number between 1 and 365" });
+      }
+
+      const [existing] = await db
+        .select()
+        .from(systemSettings)
+        .where(eq(systemSettings.settingKey, RENEWAL_WINDOW_KEY))
+        .limit(1);
+
+      if (existing) {
+        const [updated] = await db
+          .update(systemSettings)
+          .set({
+            settingValue: days,
+            updatedBy: userId,
+            updatedAt: new Date(),
+          })
+          .where(eq(systemSettings.settingKey, RENEWAL_WINDOW_KEY))
+          .returning();
+
+        log.info({ userId, days }, "[admin] Renewal window days updated");
+        res.json({ days: Number(updated.settingValue) });
+      } else {
+        const [created] = await db
+          .insert(systemSettings)
+          .values({
+            settingKey: RENEWAL_WINDOW_KEY,
+            settingValue: days,
+            description: "Number of days before certificate expiry when renewal is allowed",
+            category: "workflow",
+            updatedBy: userId,
+          })
+          .returning();
+
+        log.info({ userId, days }, "[admin] Renewal window days created");
+        res.json({ days: Number(created.settingValue) });
+      }
+    } catch (error) {
+      log.error({ err: error }, "[admin] Failed to update renewal window");
+      res.status(500).json({ message: "Failed to update renewal window setting" });
+    }
+  });
+
   return router;
 }

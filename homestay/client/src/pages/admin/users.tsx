@@ -14,6 +14,12 @@ import { Users, UserCheck, Shield, Building2, MapPin, Search, UserPlus, Edit } f
 import { useState } from "react";
 import type { User } from "@shared/schema";
 
+const HP_DISTRICTS = [
+  "Bilaspur", "Chamba", "Hamirpur", "Kangra", "Kinnaur",
+  "Kullu", "Lahaul and Spiti", "Mandi", "Shimla",
+  "Sirmaur", "Solan", "Una"
+] as const;
+
 type NewUserFormState = {
   mobile: string;
   fullName: string;
@@ -604,16 +610,23 @@ export default function AdminUsers() {
                       </div>
                       {(newUserData.role === 'dealing_assistant' ||
                         newUserData.role === 'district_tourism_officer' ||
-                        newUserData.role === 'district_officer') && (
+                        newUserData.role === 'district_officer' ||
+                        newUserData.role === 'inspector') && (
                           <div className="space-y-2">
-                            <Label htmlFor="create-district">District Assignment</Label>
-                            <Input
-                              id="create-district"
-                              placeholder="e.g., Shimla, Kullu, Mandi"
+                            <Label htmlFor="create-district">District Assignment *</Label>
+                            <Select
                               value={newUserData.district}
-                              onChange={(e) => setNewUserData({ ...newUserData, district: e.target.value })}
-                              data-testid="input-create-district"
-                            />
+                              onValueChange={(value) => setNewUserData({ ...newUserData, district: value })}
+                            >
+                              <SelectTrigger data-testid="select-create-district">
+                                <SelectValue placeholder="Select district" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {HP_DISTRICTS.map((d) => (
+                                  <SelectItem key={d} value={d}>{d}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
                           </div>
                         )}
                       <div className="space-y-2">
@@ -1085,14 +1098,21 @@ export default function AdminUsers() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="edit-district">District</Label>
-                    <Input
-                      id="edit-district"
-                      placeholder="e.g., Shimla, Kullu, Mandi"
-                      value={editUserData.district}
-                      onChange={(e) => setEditUserData({ ...editUserData, district: e.target.value })}
-                      data-testid="input-edit-district"
-                    />
+                    <Label htmlFor="edit-district">District Assignment</Label>
+                    <Select
+                      value={editUserData.district || ""}
+                      onValueChange={(value) => setEditUserData({ ...editUserData, district: value })}
+                    >
+                      <SelectTrigger data-testid="select-edit-district">
+                        <SelectValue placeholder="Select district" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="">— No District —</SelectItem>
+                        {HP_DISTRICTS.map((d) => (
+                          <SelectItem key={d} value={d}>{d}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
                   <div className="space-y-2 col-span-2">
                     <Label htmlFor="edit-officeAddress">Office Address</Label>

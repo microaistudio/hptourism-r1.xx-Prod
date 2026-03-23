@@ -713,7 +713,10 @@ export default function NewApplication() {
     undertakingFormC: [],
     commercialElectricityBill: [],
     commercialWaterBill: [],
+    approvedMap: [],
   });
+  const [isApprovedMapNA, setIsApprovedMapNA] = useState(false);
+  const [approvedMapReason, setApprovedMapReason] = useState("");
   const [propertyPhotos, setPropertyPhotos] = useState<UploadedFileMetadata[]>([]);
   const [additionalDocuments, setAdditionalDocuments] = useState<UploadedFileMetadata[]>([]);
   const totalSteps = 6;
@@ -1736,6 +1739,7 @@ export default function NewApplication() {
         undertakingFormC: [],
         commercialElectricityBill: [],
         commercialWaterBill: [],
+        approvedMap: [],
       };
       const photos: UploadedFileMetadata[] = [];
       const additionalDocs: UploadedFileMetadata[] = [];
@@ -1766,6 +1770,13 @@ export default function NewApplication() {
           case "commercial_water_bill":
             docs.commercialWaterBill.push(base);
             break;
+          case "approved_map":
+            docs.approvedMap.push(base);
+            break;
+          case "approved_map_reason":
+            setIsApprovedMapNA(true);
+            setApprovedMapReason(doc.fileName.replace(/^NA: /, ''));
+            break;
           case "property_photo":
             photos.push(base);
             break;
@@ -1786,7 +1797,10 @@ export default function NewApplication() {
         undertakingFormC: [],
         commercialElectricityBill: [],
         commercialWaterBill: [],
+        approvedMap: [],
       });
+      setIsApprovedMapNA(false);
+      setApprovedMapReason("");
       setPropertyPhotos([]);
       setAdditionalDocuments([]);
     }
@@ -1850,6 +1864,14 @@ export default function NewApplication() {
       ...normalize(uploadedDocuments.undertakingFormC, "undertaking_form_c"),
       ...normalize(uploadedDocuments.commercialElectricityBill, "commercial_electricity_bill"),
       ...normalize(uploadedDocuments.commercialWaterBill, "commercial_water_bill"),
+      ...normalize(uploadedDocuments.approvedMap, "approved_map"),
+      ...(isApprovedMapNA ? [{
+        id: `na-approved-map-${Date.now()}`,
+        fileName: `NA: ${approvedMapReason}`,
+        fileUrl: "NA",
+        documentType: "approved_map_reason",
+        uploadedAt: new Date().toISOString()
+      }] : []),
       ...normalize(propertyPhotos, "property_photo"),
       ...normalize(additionalDocuments, "additional_document"),
     ];
@@ -3242,6 +3264,7 @@ export default function NewApplication() {
         if (uploadedDocuments.revenuePapers.length === 0) missingDocs.push("Revenue Papers");
         if (uploadedDocuments.affidavitSection29.length === 0) missingDocs.push("Affidavit under Section 29");
         if (uploadedDocuments.undertakingFormC.length === 0) missingDocs.push("Undertaking in Form-C");
+        if (uploadedDocuments.approvedMap.length === 0 && !isApprovedMapNA) missingDocs.push("Approved Map or check 'Not Applicable'");
         if (requiresCommercialUtilityProof) {
           if (uploadedDocuments.commercialElectricityBill.length === 0) missingDocs.push("Commercial electricity bill");
           if (uploadedDocuments.commercialWaterBill.length === 0) missingDocs.push("Commercial water bill");
@@ -3307,6 +3330,7 @@ export default function NewApplication() {
     undertakingFormC: uploadedDocuments.undertakingFormC,
     commercialElectricityBill: uploadedDocuments.commercialElectricityBill,
     commercialWaterBill: uploadedDocuments.commercialWaterBill,
+    approvedMap: uploadedDocuments.approvedMap,
     propertyPhotos: propertyPhotos,
   };
   const correctionReason =
@@ -3573,6 +3597,10 @@ export default function NewApplication() {
                 <Step5Documents
                   uploadedDocuments={uploadedDocuments}
                   setUploadedDocuments={setUploadedDocuments}
+                  isApprovedMapNA={isApprovedMapNA}
+                  setIsApprovedMapNA={setIsApprovedMapNA}
+                  approvedMapReason={approvedMapReason}
+                  setApprovedMapReason={setApprovedMapReason}
                   propertyPhotos={propertyPhotos}
                   setPropertyPhotos={setPropertyPhotos}
                   additionalDocuments={additionalDocuments}
@@ -3764,12 +3792,6 @@ export default function NewApplication() {
                     Next
                     <ArrowRight className="w-4 h-4 ml-2" />
                   </Button>
-                  {/* DEBUG: Show why Next is disabled */}
-                  {isNextDisabled && (
-                    <div className="absolute top-full mt-2 right-0 bg-red-100 text-red-800 text-xs px-2 py-1 rounded border border-red-300 whitespace-nowrap z-50">
-                      Next Disabled: {validationErrorReason}
-                    </div>
-                  )}
                 </>
               ) : activeApplicationKind !== 'cancel_certificate' && !isLegacyRCCorrection && step === totalSteps && (
                 <Button

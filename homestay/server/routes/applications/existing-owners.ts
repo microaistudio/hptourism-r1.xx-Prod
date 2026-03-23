@@ -11,6 +11,8 @@ import {
   DEFAULT_EXISTING_RC_MIN_ISSUE_DATE,
   EXISTING_RC_MIN_ISSUE_DATE_SETTING_KEY,
   ENABLE_LEGACY_REGISTRATION_SETTING_KEY,
+  EXISTING_RC_RENEWAL_THRESHOLD_DAYS_SETTING_KEY,
+  DEFAULT_EXISTING_RC_RENEWAL_THRESHOLD_DAYS,
   normalizeIsoDateSetting,
   normalizeBooleanSetting,
 } from "@shared/appSettings";
@@ -52,6 +54,8 @@ const existingOwnerIntakeSchema = z.object({
   notes: z.string().optional(),
   certificateDocuments: z.array(uploadedFileSchema).min(1),
   identityProofDocuments: z.array(uploadedFileSchema).min(1),
+  affidavitDocuments: z.array(uploadedFileSchema).min(1),
+  undertakingDocuments: z.array(uploadedFileSchema).min(1),
 });
 
 // Relaxed schema for drafts - only require minimal fields
@@ -73,6 +77,8 @@ const existingOwnerDraftSchema = z.object({
   notes: z.string().optional(),
   certificateDocuments: z.array(uploadedFileSchema).optional(),
   identityProofDocuments: z.array(uploadedFileSchema).optional(),
+  affidavitDocuments: z.array(uploadedFileSchema).optional(),
+  undertakingDocuments: z.array(uploadedFileSchema).optional(),
 });
 
 const LEGACY_RC_DRAFT_STATUS = "legacy_rc_draft";
@@ -147,10 +153,35 @@ const findApplicationByCertificateNumber = async (certificateNumber: string) => 
 export function createExistingOwnersRouter() {
   const router = express.Router();
 
+  router.get("/check-duplicate", requireAuth, async (req, res) => {
+    try {
+      const { rcNumber } = req.query;
+      if (!rcNumber || typeof rcNumber !== 'string') {
+        return res.status(400).json({ message: "RC Number is required" });
+      }
+      
+      const userId = req.session.userId!;
+      const existingDraft = await findDraftExistingOwnerRequest(userId);
+      const existingApplication = await findApplicationByCertificateNumber(rcNumber);
+      
+      const isDuplicate = existingApplication && (!existingDraft || existingApplication.id !== existingDraft.id);
+      
+      res.json({ isDuplicate });
+    } catch (error) {
+      existingOwnersLog.error({ err: error, route: "GET /check-duplicate" }, "Failed to check duplicate RC");
+      res.status(500).json({ message: "Unable to verify RC uniqueness" });
+    }
+  });
+
   router.get("/settings", requireAuth, async (_req, res) => {
     try {
       const cutoff = await getExistingOwnerIntakeCutoff();
-      res.json({ minIssueDate: cutoff.toISOString() });
+      const renewalRecord = await getSystemSettingRecord(EXISTING_RC_RENEWAL_THRESHOLD_DAYS_SETTING_KEY);
+      const renewalDays = renewalRecord ? Number(renewalRecord.settingValue) : DEFAULT_EXISTING_RC_RENEWAL_THRESHOLD_DAYS;
+      res.json({
+        minIssueDate: cutoff.toISOString(),
+        renewalThresholdDays: Number.isFinite(renewalDays) ? renewalDays : DEFAULT_EXISTING_RC_RENEWAL_THRESHOLD_DAYS,
+      });
     } catch (error) {
       existingOwnersLog.error({ err: error, route: "GET /settings" }, "Failed to load intake settings");
       res.status(500).json({ message: "Unable to load onboarding settings" });
@@ -202,6 +233,24 @@ export function createExistingOwnersRouter() {
           mimeType: d.mimeType,
         }));
 
+      const affidavitDocuments = draftDocs
+        .filter(d => d.documentType === "affidavit_section_29")
+        .map(d => ({
+          fileName: d.fileName,
+          filePath: d.filePath,
+          fileSize: d.fileSize,
+          mimeType: d.mimeType,
+        }));
+
+      const undertakingDocuments = draftDocs
+        .filter(d => d.documentType === "undertaking_form_c")
+        .map(d => ({
+          fileName: d.fileName,
+          filePath: d.filePath,
+          fileSize: d.fileSize,
+          mimeType: d.mimeType,
+        }));
+
       res.json({
         draft: {
           id: draft.id,
@@ -224,6 +273,8 @@ export function createExistingOwnersRouter() {
           },
           certificateDocuments,
           identityProofDocuments,
+          affidavitDocuments,
+          undertakingDocuments,
           savedAt: draft.updatedAt?.toISOString(),
         },
       });
@@ -379,6 +430,36 @@ export function createExistingOwnersRouter() {
         }));
         const insertedIdDocs = await db.insert(documents).values(idDocs).returning();
         for (const doc of insertedIdDocs) {
+          await linkDocumentToStorage(doc);
+        }
+      }
+
+      if (payload.affidavitDocuments && payload.affidavitDocuments.length > 0) {
+        const docs = payload.affidavitDocuments.map((file) => ({
+          applicationId: draftId,
+          documentType: "affidavit_section_29",
+          fileName: file.fileName,
+          filePath: file.filePath,
+          fileSize: Math.max(1, Math.round(file.fileSize ?? 0)),
+          mimeType: file.mimeType || "application/pdf",
+        }));
+        const inserted = await db.insert(documents).values(docs).returning();
+        for (const doc of inserted) {
+          await linkDocumentToStorage(doc);
+        }
+      }
+
+      if (payload.undertakingDocuments && payload.undertakingDocuments.length > 0) {
+        const docs = payload.undertakingDocuments.map((file) => ({
+          applicationId: draftId,
+          documentType: "undertaking_form_c",
+          fileName: file.fileName,
+          filePath: file.filePath,
+          fileSize: Math.max(1, Math.round(file.fileSize ?? 0)),
+          mimeType: file.mimeType || "application/pdf",
+        }));
+        const inserted = await db.insert(documents).values(docs).returning();
+        for (const doc of inserted) {
           await linkDocumentToStorage(doc);
         }
       }
@@ -615,6 +696,24 @@ export function createExistingOwnersRouter() {
         mimeType: file.mimeType || "application/pdf",
       }));
 
+      const affidavitDocuments = payload.affidavitDocuments.map((file) => ({
+        applicationId: application.id,
+        documentType: "affidavit_section_29",
+        fileName: file.fileName,
+        filePath: file.filePath,
+        fileSize: Math.max(1, Math.round(file.fileSize ?? 0)),
+        mimeType: file.mimeType || "application/pdf",
+      }));
+
+      const undertakingDocuments = payload.undertakingDocuments.map((file) => ({
+        applicationId: application.id,
+        documentType: "undertaking_form_c",
+        fileName: file.fileName,
+        filePath: file.filePath,
+        fileSize: Math.max(1, Math.round(file.fileSize ?? 0)),
+        mimeType: file.mimeType || "application/pdf",
+      }));
+
       if (certificateDocuments.length > 0) {
         const insertedCertificateDocs = await db.insert(documents).values(certificateDocuments).returning();
         for (const doc of insertedCertificateDocs) {
@@ -624,6 +723,18 @@ export function createExistingOwnersRouter() {
       if (identityProofDocuments.length > 0) {
         const insertedIdentityDocs = await db.insert(documents).values(identityProofDocuments).returning();
         for (const doc of insertedIdentityDocs) {
+          await linkDocumentToStorage(doc);
+        }
+      }
+      if (affidavitDocuments.length > 0) {
+        const insertedAffidavitDocs = await db.insert(documents).values(affidavitDocuments).returning();
+        for (const doc of insertedAffidavitDocs) {
+          await linkDocumentToStorage(doc);
+        }
+      }
+      if (undertakingDocuments.length > 0) {
+        const insertedUndertakingDocs = await db.insert(documents).values(undertakingDocuments).returning();
+        for (const doc of insertedUndertakingDocs) {
           await linkDocumentToStorage(doc);
         }
       }

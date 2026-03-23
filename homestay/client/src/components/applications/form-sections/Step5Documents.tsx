@@ -1,9 +1,12 @@
 import { Dispatch, SetStateAction } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
-import { FileText, AlertTriangle, Paperclip, Image } from "lucide-react";
+import { FileText, AlertTriangle, Paperclip, Image, Map } from "lucide-react";
 import { ObjectUploader, type UploadedFileMetadata } from "@/components/ObjectUploader";
 import { Progress } from "@/components/ui/progress";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { DEFAULT_UPLOAD_POLICY, type UploadPolicy } from "@shared/uploadPolicy";
 
 interface UploadedDocuments {
@@ -12,6 +15,8 @@ interface UploadedDocuments {
     undertakingFormC: UploadedFileMetadata[];
     commercialElectricityBill: UploadedFileMetadata[];
     commercialWaterBill: UploadedFileMetadata[];
+    approvedMap?: UploadedFileMetadata[];
+    existingCertificate?: UploadedFileMetadata[];
 }
 
 interface Step5DocumentsProps {
@@ -22,6 +27,10 @@ interface Step5DocumentsProps {
     additionalDocuments: UploadedFileMetadata[];
     setAdditionalDocuments: Dispatch<SetStateAction<UploadedFileMetadata[]>>;
     requiresCommercialUtilityProof: boolean;
+    isApprovedMapNA?: boolean;
+    setIsApprovedMapNA?: Dispatch<SetStateAction<boolean>>;
+    approvedMapReason?: string;
+    setApprovedMapReason?: Dispatch<SetStateAction<string>>;
     isCorrection?: boolean;
     correctionNotes?: string;
     applicationKind?: string;
@@ -36,12 +45,17 @@ export function Step5Documents({
     additionalDocuments,
     setAdditionalDocuments,
     requiresCommercialUtilityProof,
+    isApprovedMapNA = false,
+    setIsApprovedMapNA,
+    approvedMapReason = "",
+    setApprovedMapReason,
     isCorrection = false,
     correctionNotes,
     applicationKind,
     isLegacyRC = false,
 }: Step5DocumentsProps) {
     const isDeleteRooms = applicationKind === 'delete_rooms';
+    const isRenewal = applicationKind === 'renewal';
 
     // Fetch upload policy from admin config
     const { data: uploadPolicyData } = useQuery<UploadPolicy>({
@@ -61,12 +75,16 @@ export function Step5Documents({
         files.length > 0 && files.every(f => f.verificationStatus === 'verified');
 
     // Calculate progress for required sections
-    const requiredSections = isLegacyRC ? 1 : (requiresCommercialUtilityProof ? 6 : 4);
+    const baseRequiredSections = isRenewal ? 3 : 5; // ApprovedMap added
+    const requiredSections = isLegacyRC ? 1 : (requiresCommercialUtilityProof ? baseRequiredSections + 2 : baseRequiredSections);
+    
     let completedSections = 0;
     if (!isLegacyRC) {
-        if (uploadedDocuments.revenuePapers.length > 0) completedSections++;
+        if (!isRenewal && uploadedDocuments.revenuePapers.length > 0) completedSections++;
         if (uploadedDocuments.affidavitSection29.length > 0) completedSections++;
         if (uploadedDocuments.undertakingFormC.length > 0) completedSections++;
+        // Count mapped sections if new registration
+        if (!isRenewal && uploadedDocuments.approvedMap && (uploadedDocuments.approvedMap.length > 0 || isApprovedMapNA)) completedSections++;
         if (propertyPhotos.length >= 2) completedSections++;
         if (requiresCommercialUtilityProof) {
             if (uploadedDocuments.commercialElectricityBill.length > 0) completedSections++;
@@ -173,35 +191,70 @@ export function Step5Documents({
                     ) : (
                         <div className="divide-y">
                             {/* Revenue Papers */}
-                            <div className={`p-6 ${hasRejectedFile(uploadedDocuments.revenuePapers) ? 'bg-amber-50 border-l-4 border-amber-400' : isFullyVerified(uploadedDocuments.revenuePapers) && isCorrection ? 'bg-green-50/50 border-l-4 border-green-300' : ''}`}>
-                                <div className="flex items-start justify-between mb-4">
-                                    <div>
-                                        <h3 className="font-medium text-gray-900 flex items-center gap-2">
-                                            Revenue Papers (Jamabandi & Tatima) <span className="text-red-500">*</span>
-                                            {hasRejectedFile(uploadedDocuments.revenuePapers) && (
-                                                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold bg-amber-500 text-white animate-pulse">⚠ ACTION REQUIRED</span>
-                                            )}
-                                            {isFullyVerified(uploadedDocuments.revenuePapers) && isCorrection && (
-                                                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-700">✓ Verified</span>
-                                            )}
-                                        </h3>
-                                        <p className="text-sm text-gray-500 mt-1">Land revenue records showing ownership of the property</p>
-                                        <p className="text-xs text-gray-400 mt-1">Allowed format: PDF only</p>
+                            {!isRenewal && (
+                                <div className={`p-6 ${hasRejectedFile(uploadedDocuments.revenuePapers) ? 'bg-amber-50 border-l-4 border-amber-400' : isFullyVerified(uploadedDocuments.revenuePapers) && isCorrection ? 'bg-green-50/50 border-l-4 border-green-300' : ''}`}>
+                                    <div className="flex items-start justify-between mb-4">
+                                        <div>
+                                            <h3 className="font-medium text-gray-900 flex items-center gap-2">
+                                                Revenue Papers (Jamabandi & Tatima) <span className="text-red-500">*</span>
+                                                {hasRejectedFile(uploadedDocuments.revenuePapers) && (
+                                                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold bg-amber-500 text-white animate-pulse">⚠ ACTION REQUIRED</span>
+                                                )}
+                                                {isFullyVerified(uploadedDocuments.revenuePapers) && isCorrection && (
+                                                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-700">✓ Verified</span>
+                                                )}
+                                            </h3>
+                                            <p className="text-sm text-gray-500 mt-1">Land revenue records showing ownership of the property</p>
+                                            <p className="text-xs text-gray-400 mt-1">Allowed format: PDF only</p>
+                                        </div>
+                                        <span className="text-xs text-gray-400">{uploadedDocuments.revenuePapers.length}/2 files</span>
                                     </div>
-                                    <span className="text-xs text-gray-400">{uploadedDocuments.revenuePapers.length}/2 files</span>
+                                    <ObjectUploader
+                                        restrictedMode={isCorrection}
+                                        label="Upload Revenue Papers"
+                                        maxFiles={2}
+                                        fileType="revenue-papers"
+                                        accept=".pdf"
+                                        onUploadComplete={(paths) => setUploadedDocuments(prev => ({ ...prev, revenuePapers: paths }))}
+                                        existingFiles={uploadedDocuments.revenuePapers}
+                                        isMissing={!isDeleteRooms && uploadedDocuments.revenuePapers.length === 0}
+                                        hideNote
+                                    />
                                 </div>
-                                <ObjectUploader
-                                    restrictedMode={isCorrection}
-                                    label="Upload Revenue Papers"
-                                    maxFiles={2}
-                                    fileType="revenue-papers"
-                                    accept=".pdf"
-                                    onUploadComplete={(paths) => setUploadedDocuments(prev => ({ ...prev, revenuePapers: paths }))}
-                                    existingFiles={uploadedDocuments.revenuePapers}
-                                    isMissing={!isDeleteRooms && uploadedDocuments.revenuePapers.length === 0}
-                                    hideNote
-                                />
-                            </div>
+                            )}
+
+                            {/* Existing RC for Renewals */}
+                            {isRenewal && (
+                                <div className={`p-6 ${hasRejectedFile(uploadedDocuments.existingCertificate) ? 'bg-amber-50 border-l-4 border-amber-400' : isFullyVerified(uploadedDocuments.existingCertificate) && isCorrection ? 'bg-green-50/50 border-l-4 border-green-300' : ''}`}>
+                                    <div className="flex items-start justify-between mb-4">
+                                        <div>
+                                            <h3 className="font-medium text-gray-900 flex items-center gap-2">
+                                                Existing RC Certificate <span className="text-red-500">*</span>
+                                                {hasRejectedFile(uploadedDocuments.existingCertificate) && (
+                                                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold bg-amber-500 text-white animate-pulse">⚠ ACTION REQUIRED</span>
+                                                )}
+                                                {isFullyVerified(uploadedDocuments.existingCertificate) && isCorrection && (
+                                                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-700">✓ Verified</span>
+                                                )}
+                                            </h3>
+                                            <p className="text-sm text-gray-500 mt-1">Upload a scanned copy of your previously approved RC application</p>
+                                            <p className="text-xs text-gray-400 mt-1">Allowed format: PDF only</p>
+                                        </div>
+                                        <span className="text-xs text-gray-400">{uploadedDocuments.existingCertificate?.length || 0}/1 files</span>
+                                    </div>
+                                    <ObjectUploader
+                                        restrictedMode={isCorrection}
+                                        label="Upload Existing RC"
+                                        maxFiles={1}
+                                        fileType="legacy-certificate"
+                                        accept=".pdf"
+                                        onUploadComplete={(paths) => setUploadedDocuments(prev => ({ ...prev, existingCertificate: paths }))}
+                                        existingFiles={uploadedDocuments.existingCertificate || []}
+                                        isMissing={!isDeleteRooms && (uploadedDocuments.existingCertificate?.length || 0) === 0}
+                                        hideNote
+                                    />
+                                </div>
+                            )}
 
                             {/* Affidavit */}
                             <div className={`p-6 ${hasRejectedFile(uploadedDocuments.affidavitSection29) ? 'bg-amber-50 border-l-4 border-amber-400' : isFullyVerified(uploadedDocuments.affidavitSection29) && isCorrection ? 'bg-green-50/50 border-l-4 border-green-300' : ''}`}>
@@ -330,6 +383,75 @@ export function Step5Documents({
                                 </>
                             )}
 
+                            {/* Approved Map */}
+                            {!isRenewal && uploadedDocuments.approvedMap && (
+                                <div className={`p-6 ${hasRejectedFile(uploadedDocuments.approvedMap) ? 'bg-amber-50 border-l-4 border-amber-400' : isFullyVerified(uploadedDocuments.approvedMap) && isCorrection ? 'bg-green-50/50 border-l-4 border-green-300' : ''}`}>
+                                    <div className="flex items-start justify-between mb-4">
+                                        <div className="flex items-center gap-2">
+                                            <Map className="w-5 h-5 text-gray-400 mt-1 flex-shrink-0" />
+                                            <div>
+                                                <h3 className="font-medium text-gray-900 flex items-center gap-2">
+                                                    Approved Map <span className="text-red-500">*</span>
+                                                    {hasRejectedFile(uploadedDocuments.approvedMap) && (
+                                                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold bg-amber-500 text-white animate-pulse">⚠ ACTION REQUIRED</span>
+                                                    )}
+                                                    {isFullyVerified(uploadedDocuments.approvedMap) && isCorrection && (
+                                                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-700">✓ Verified</span>
+                                                    )}
+                                                </h3>
+                                                <p className="text-sm text-gray-500 mt-1">Upload the Approved Map or related document (or select NA if not applicable)</p>
+                                                <p className="text-xs text-gray-400 mt-1">Allowed formats: PDF, PNG, JPG</p>
+                                            </div>
+                                        </div>
+                                        <span className="text-xs text-gray-400">{uploadedDocuments.approvedMap.length}/1 files</span>
+                                    </div>
+
+                                    {!isFullyVerified(uploadedDocuments.approvedMap) && (
+                                        <div className="flex items-center space-x-2 mb-4 bg-muted/30 p-3 rounded-md border">
+                                           <Checkbox 
+                                              id="approvedMapNA" 
+                                              checked={isApprovedMapNA} 
+                                              onCheckedChange={(checked) => {
+                                                  if (setIsApprovedMapNA) setIsApprovedMapNA(checked as boolean);
+                                                  if (!checked && setApprovedMapReason) setApprovedMapReason("");
+                                              }} 
+                                              disabled={isCorrection && isFullyVerified(uploadedDocuments.approvedMap)}
+                                           />
+                                           <Label htmlFor="approvedMapNA" className="text-sm font-medium leading-none cursor-pointer">
+                                              Not Applicable (NA)
+                                           </Label>
+                                        </div>
+                                    )}
+                                    {isApprovedMapNA && (
+                                        <div className="mb-4">
+                                            <Label htmlFor="approvedMapReason" className="text-sm mb-2 block text-gray-700">Optional comment for why this is NA:</Label>
+                                            <Textarea
+                                                id="approvedMapReason"
+                                                placeholder="Provide reason here..."
+                                                value={approvedMapReason}
+                                                onChange={(e) => setApprovedMapReason && setApprovedMapReason(e.target.value)}
+                                                disabled={isCorrection && isFullyVerified(uploadedDocuments.approvedMap)}
+                                                className="resize-none"
+                                            />
+                                        </div>
+                                    )}
+
+                                    {!isApprovedMapNA && (
+                                        <ObjectUploader
+                                            restrictedMode={isCorrection}
+                                            label="Upload Approved Map"
+                                            maxFiles={1}
+                                            fileType="approved-map"
+                                            accept=".pdf,.png,.jpg,.jpeg"
+                                            onUploadComplete={(paths) => setUploadedDocuments(prev => ({ ...prev, approvedMap: paths }))}
+                                            existingFiles={uploadedDocuments.approvedMap}
+                                            isMissing={!isDeleteRooms && uploadedDocuments.approvedMap.length === 0}
+                                            hideNote
+                                        />
+                                    )}
+                                </div>
+                            )}
+
                             {/* Property Photographs */}
                             <div className={`p-6 ${hasRejectedFile(propertyPhotos) ? 'bg-amber-50 border-l-4 border-amber-400' : isFullyVerified(propertyPhotos) && isCorrection ? 'bg-green-50/50 border-l-4 border-green-300' : 'bg-gray-50/50'}`}>
                                 <div className="flex items-start justify-between mb-4">
@@ -400,13 +522,14 @@ export function Step5Documents({
 
             {/* Validation Warning */}
             {!isLegacyRC && (() => {
-                const missingRevenue = !isDeleteRooms && uploadedDocuments.revenuePapers.length === 0;
+                const missingRevenue = !isDeleteRooms && !isRenewal && uploadedDocuments.revenuePapers.length === 0;
                 const missingAffidavit = !isDeleteRooms && uploadedDocuments.affidavitSection29.length === 0;
                 const missingUndertaking = !isDeleteRooms && uploadedDocuments.undertakingFormC.length === 0;
                 const missingElectricity = !isDeleteRooms && requiresCommercialUtilityProof && uploadedDocuments.commercialElectricityBill.length === 0;
                 const missingWater = !isDeleteRooms && requiresCommercialUtilityProof && uploadedDocuments.commercialWaterBill.length === 0;
+                const missingApprovedMap = !isDeleteRooms && !isRenewal && uploadedDocuments.approvedMap && uploadedDocuments.approvedMap.length === 0 && !isApprovedMapNA;
                 const missingPhotos = !isDeleteRooms && propertyPhotos.length < 2;
-                const showWarning = missingRevenue || missingAffidavit || missingUndertaking || missingElectricity || missingWater || missingPhotos;
+                const showWarning = missingRevenue || missingAffidavit || missingUndertaking || missingElectricity || missingWater || missingPhotos || missingApprovedMap;
 
                 if (!showWarning) return null;
 
@@ -420,6 +543,7 @@ export function Step5Documents({
                                     {missingRevenue && <li>Revenue Papers (Jamabandi & Tatima)</li>}
                                     {missingAffidavit && <li>Affidavit under Section 29</li>}
                                     {missingUndertaking && <li>Undertaking in Form-C</li>}
+                                    {missingApprovedMap && <li>Approved Map or check 'Not Applicable'</li>}
                                     {missingElectricity && <li>Proof of commercial electricity bill</li>}
                                     {missingWater && <li>Proof of commercial water bill</li>}
                                     {missingPhotos && <li>At least 2 property photos ({propertyPhotos.length}/2)</li>}

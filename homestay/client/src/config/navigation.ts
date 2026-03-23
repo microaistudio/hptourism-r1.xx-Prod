@@ -25,6 +25,7 @@ import {
   Server,
   LineChart,
   IndianRupee,
+  HelpCircle
 } from "lucide-react";
 import { LucideIcon } from "lucide-react";
 
@@ -149,12 +150,37 @@ export const officerNavigation: NavSection[] = [
     ],
   },
   {
+    title: "Grievances",
+    items: [
+      {
+        title: "Open Tickets",
+        url: "/officer/grievances",
+        icon: MessageSquare,
+      },
+    ],
+  },
+  {
     title: "Admin",
     items: [
       {
         title: "Baseline Data",
         url: "/admin/baseline-stats",
         icon: Database,
+      },
+    ],
+  },
+  {
+    title: "Tools",
+    items: [
+      {
+        title: "Search",
+        url: "/officer/search",
+        icon: Search,
+      },
+      {
+        title: "Help & FAQ",
+        url: "/help",
+        icon: MessageSquare,
       },
     ],
   },
@@ -244,6 +270,7 @@ export const superAdminNavigation: NavSection[] = [
       { title: "Test Data", url: "/admin/super-console#test-data", icon: TestTube },
       { title: "Baseline Data", url: "/admin/baseline-stats", icon: Database },
       { title: "Policy Settings", url: "/admin/policy-settings", icon: Settings },
+      { title: "Help & FAQ", url: "/admin/help-resources", icon: HelpCircle },
     ],
   },
   {
@@ -316,17 +343,6 @@ export const daNavigation: NavSection[] = [
     ],
   },
   {
-    title: "Grievances",
-    items: [
-      {
-        title: "Open Tickets",
-        url: "/da/grievances",
-        icon: MessageSquare,
-      },
-      // More grievance items in Phase 4
-    ],
-  },
-  {
     title: "Insights",
     items: [
       {
@@ -342,12 +358,28 @@ export const daNavigation: NavSection[] = [
     ],
   },
   {
+    title: "Grievances",
+    items: [
+      {
+        title: "Open Tickets",
+        url: "/da/grievances",
+        icon: MessageSquare,
+      },
+      // More grievance items in Phase 4
+    ],
+  },
+  {
     title: "Tools",
     items: [
       {
         title: "Search",
         url: "/da/search",
         icon: Search,
+      },
+      {
+        title: "Help & FAQ",
+        url: "/help",
+        icon: MessageSquare,
       },
       {
         title: "My Profile",
@@ -391,17 +423,6 @@ export const dtdoNavigation: NavSection[] = [
     ],
   },
   {
-    title: "Grievances",
-    items: [
-      {
-        title: "Open Tickets",
-        url: "/dtdo/grievances",
-        icon: MessageSquare,
-      },
-      // More grievance items in Phase 4
-    ],
-  },
-  {
     title: "Insights",
     items: [
       {
@@ -427,12 +448,28 @@ export const dtdoNavigation: NavSection[] = [
     ],
   },
   {
+    title: "Grievances",
+    items: [
+      {
+        title: "Open Tickets",
+        url: "/dtdo/grievances",
+        icon: MessageSquare,
+      },
+      // More grievance items in Phase 4
+    ],
+  },
+  {
     title: "Tools",
     items: [
       {
         title: "Search",
         url: "/dtdo/search",
         icon: Search,
+      },
+      {
+        title: "Help & FAQ",
+        url: "/help",
+        icon: MessageSquare,
       },
       {
         title: "My Profile",

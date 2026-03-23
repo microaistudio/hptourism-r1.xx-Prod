@@ -1,4 +1,5 @@
 import React from "react";
+import AdminHelpResources from "@/pages/admin/help-resources";
 import { Switch, Route, useLocation } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { Loader2 } from "lucide-react";
@@ -18,6 +19,7 @@ import Dashboard from "@/pages/dashboard";
 import OwnerDashboardNew from "@/pages/owner-dashboard-new";
 import ProfilePage from "@/pages/profile";
 import NewApplication from "@/pages/applications/new";
+import RenewalApplication from "@/pages/applications/renewal";
 import ServiceRequestHandler from "@/pages/applications/service-request";
 import ApplicationDetail from "@/pages/applications/detail";
 import HimKoshPaymentPage from "@/pages/applications/payment-himkosh";
@@ -228,6 +230,9 @@ function Router() {
       <Route path="/applications/service-request">
         {() => <ProtectedRoute component={ServiceRequestHandler} allowedRoles={['property_owner']} />}
       </Route>
+      <Route path="/applications/renewal">
+        {() => <ProtectedRoute component={RenewalApplication} allowedRoles={['property_owner']} />}
+      </Route>
       <Route path="/applications/new">
         {() => <ProtectedRoute component={NewApplication} allowedRoles={['property_owner']} />}
       </Route>
@@ -235,7 +240,7 @@ function Router() {
         {() => <ProtectedRoute component={GrievanceList} allowedRoles={['property_owner']} />}
       </Route>
       <Route path="/help">
-        {() => <ProtectedRoute component={HelpPage} allowedRoles={['property_owner']} />}
+        {() => <ProtectedRoute component={HelpPage} />}
       </Route>
       {/* Adventure Sports - Separate pipeline without Homestay sidebar */}
       <Route path="/adventure-sports/register">
@@ -423,6 +428,17 @@ function Router() {
         {() => <ProtectedRoute component={GrievanceReports} allowedRoles={['district_tourism_officer', 'district_officer']} />}
       </Route>
 
+      {/* State Officer (Supervisor HQ) Routes */}
+      <Route path="/officer/search">
+        {() => <ProtectedRoute component={OfficerApplicationSearch} allowedRoles={['state_officer', 'admin', 'super_admin']} />}
+      </Route>
+      <Route path="/officer/grievances">
+        {() => <ProtectedRoute component={GrievanceList} allowedRoles={['state_officer', 'admin', 'super_admin']} />}
+      </Route>
+
+      <Route path="/admin/help-resources">
+        {() => <ProtectedRoute component={AdminHelpResources} allowedRoles={['admin', 'super_admin', 'system_admin', 'state_officer']} />}
+      </Route>
       <Route component={NotFound} />
     </Switch>
   );

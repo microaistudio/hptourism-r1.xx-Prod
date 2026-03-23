@@ -12,12 +12,26 @@ import {
   type InsertHomestayApplication,
 } from "@shared/schema";
 import { MAX_ROOMS_ALLOWED } from "@shared/fee-calculator";
+import {
+  EXISTING_RC_RENEWAL_THRESHOLD_DAYS_SETTING_KEY,
+  DEFAULT_EXISTING_RC_RENEWAL_THRESHOLD_DAYS,
+} from "@shared/appSettings";
+import { getSystemSettingRecord } from "../../services/systemSettings";
 import { logger } from "../../logger";
 import { db } from "../../db";
 
 const serviceCenterLog = logger.child({ module: "service-center" });
 
-const NINETY_DAYS_MS = 90 * 24 * 60 * 60 * 1000;
+const getRenewalWindowDays = async (): Promise<number> => {
+  try {
+    const record = await getSystemSettingRecord(EXISTING_RC_RENEWAL_THRESHOLD_DAYS_SETTING_KEY);
+    if (record) {
+      const val = Number(record.settingValue);
+      if (Number.isFinite(val) && val >= 1) return val;
+    }
+  } catch { /* fall through */ }
+  return DEFAULT_EXISTING_RC_RENEWAL_THRESHOLD_DAYS;
+};
 const MIN_ROOMS_AFTER_DELETE = 1;
 const CLOSED_SERVICE_STATUS_LIST = ["rejected", "approved", "cancelled", "service_completed"];
 
@@ -123,16 +137,18 @@ const computeRoomAdjustment = (
   };
 };
 
-const buildRenewalWindow = (expiry: Date | null) => {
+const buildRenewalWindow = (expiry: Date | null, windowDays: number = DEFAULT_EXISTING_RC_RENEWAL_THRESHOLD_DAYS) => {
   if (!expiry) {
     return null;
   }
-  const windowStart = new Date(expiry.getTime() - NINETY_DAYS_MS);
+  const windowMs = windowDays * 24 * 60 * 60 * 1000;
+  const windowStart = new Date(expiry.getTime() - windowMs);
   const now = Date.now();
   return {
     windowStart,
     windowEnd: expiry,
     inWindow: now >= windowStart.getTime() && now <= expiry.getTime(),
+    windowDays,
   };
 };
 
@@ -167,7 +183,8 @@ async function getActiveServiceRequest(parentApplicationId: string) {
 async function buildServiceSummary(application: HomestayApplication) {
   const breakdown = extractRoomBreakdown(application);
   const expiry = application.certificateExpiryDate ? new Date(application.certificateExpiryDate) : null;
-  const window = buildRenewalWindow(expiry);
+  const renewalDays = await getRenewalWindowDays();
+  const window = buildRenewalWindow(expiry, renewalDays);
   const activeRequest = await getActiveServiceRequest(application.id);
 
   return {
@@ -264,7 +281,8 @@ export function createServiceCenterRouter() {
       }
 
       const expiryDate = baseApplication.certificateExpiryDate ? new Date(baseApplication.certificateExpiryDate) : null;
-      const renewalWindow = buildRenewalWindow(expiryDate);
+      const renewalDays = await getRenewalWindowDays();
+      const renewalWindow = buildRenewalWindow(expiryDate, renewalDays);
 
       if (serviceType === "renewal") {
         if (!expiryDate) {
@@ -272,7 +290,7 @@ export function createServiceCenterRouter() {
         }
         if (!renewalWindow?.inWindow) {
           return res.status(400).json({
-            message: "Renewal is allowed only within 90 days of certificate expiry.",
+            message: `Renewal is allowed only within ${renewalDays} days of certificate expiry.`,
             windowStart: renewalWindow?.windowStart.toISOString(),
             windowEnd: renewalWindow?.windowEnd.toISOString(),
           });

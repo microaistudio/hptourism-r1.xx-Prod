@@ -28,6 +28,7 @@ const WORKFLOW_STATUS_CONFIG = [
   { key: "dtdo_review", label: "DTDO Review", color: "#6366f1" },
   { key: "inspection_scheduled", label: "Inspection Scheduled", color: "#8b5cf6" },
   { key: "inspection_under_review", label: "Inspection Review", color: "#a855f7" },
+  { key: "payment_pending", label: "Payment Pending", color: "#f59e0b" },
   { key: "reverted_to_applicant", label: "Sent Back", color: "#facc15" },
   { key: "approved", label: "Approved", color: "#10b981" },
   { key: "rejected", label: "Rejected", color: "#ef4444" },
@@ -212,10 +213,11 @@ export default function AnalyticsPage() {
     dtdo_review: getStatusValue("dtdo_review", ["state_review"]),
     inspection_scheduled: getStatusValue("inspection_scheduled"),
     inspection_under_review: getStatusValue("inspection_under_review"),
-    reverted_to_applicant: getStatusValue("reverted_to_applicant"),
+    payment_pending: getStatusValue("payment_pending", ["verified_for_payment"]),
+    reverted_to_applicant: getStatusValue("reverted_to_applicant", ["sent_back_for_corrections", "objection_raised", "reverted_by_dtdo"]),
     approved: getStatusValue("approved", ["approved"]),
     rejected: getStatusValue("rejected", ["rejected"]),
-    draft: getStatusValue("draft", ["draft"]),
+    draft: getStatusValue("draft", ["draft", "legacy_rc_draft", "superseded", "paid_pending_submit"]),
   };
 
   const submittedCount = normalizedStatusCounts.submitted;
@@ -226,6 +228,12 @@ export default function AnalyticsPage() {
     normalizedStatusCounts.inspection_scheduled + normalizedStatusCounts.inspection_under_review;
   const approvedCount = normalizedStatusCounts.approved;
   const rejectedCount = normalizedStatusCounts.rejected;
+  const paymentPendingCount = normalizedStatusCounts.payment_pending;
+  const revertedCount = normalizedStatusCounts.reverted_to_applicant;
+
+  const draftCount = normalizedStatusCounts.draft;
+  // Use server-computed activePipeline (sum of active stages) — matches Workflow Monitoring exactly
+  const activePipelineCount = rawStatusCounts["activePipeline"] ?? (overview.total - approvedCount - rejectedCount - draftCount);
 
   // Prepare data for charts
   const statusData = WORKFLOW_STATUS_CONFIG.map(({ key, label, color }) => ({
@@ -257,6 +265,7 @@ export default function AnalyticsPage() {
       dtdo_review: "default",
       inspection_scheduled: "default",
       inspection_under_review: "default",
+      payment_pending: "default",
       reverted_to_applicant: "outline",
       approved: "default",
       rejected: "destructive",
@@ -316,110 +325,72 @@ export default function AnalyticsPage() {
           </div>
         </div>
 
-        {/* Production Portal Statistics (Live) - Hero Grid */}
-        {liveProductionStats && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            {/* Total Stats */}
-            <Card className="relative overflow-hidden border-blue-200 bg-blue-50/50">
-              <div className="absolute top-0 right-0 p-3 opacity-10">
-                <Globe className="w-24 h-24 text-blue-600" />
+        {/* Hero Stats - derived from same data as Processing Pipeline */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          {/* Total Applications */}
+          <Card className="relative overflow-hidden border-blue-200 bg-blue-50/50">
+            <div className="absolute top-0 right-0 p-3 opacity-10">
+              <Globe className="w-24 h-24 text-blue-600" />
+            </div>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-blue-700">Total Applications</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-3xl font-bold text-blue-700 mb-1">
+                {overview.total}
               </div>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium text-blue-700">Total Applications</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-3xl font-bold text-blue-700 mb-1">
-                  {liveProductionStats.totalApplications.toLocaleString('en-IN')}
-                </div>
-                <div className="flex flex-wrap gap-1 mt-2">
-                  {(liveProductionStats.legacy?.total || '0') > 0 && (
-                    <Badge variant="secondary" className="bg-blue-100 text-blue-700 border-blue-200 text-[10px] px-1.5">
-                      {parseInt(liveProductionStats.legacy?.total || '0').toLocaleString('en-IN')} Legacy
-                    </Badge>
-                  )}
-                  <Badge className="bg-blue-600 hover:bg-blue-700 text-[10px] px-1.5">
-                    {liveProductionStats.realtime?.total || 0} New
-                  </Badge>
-                </div>
-              </CardContent>
-            </Card>
+              <p className="text-xs text-muted-foreground mt-1">All pipeline applications</p>
+            </CardContent>
+          </Card>
 
-            {/* Approved Stats */}
-            <Card className="relative overflow-hidden border-emerald-200 bg-emerald-50/50">
-              <div className="absolute top-0 right-0 p-3 opacity-10">
-                <CheckCircle className="w-24 h-24 text-emerald-600" />
+          {/* Approved */}
+          <Card className="relative overflow-hidden border-emerald-200 bg-emerald-50/50">
+            <div className="absolute top-0 right-0 p-3 opacity-10">
+              <CheckCircle className="w-24 h-24 text-emerald-600" />
+            </div>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-emerald-700">Approved</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-3xl font-bold text-emerald-700 mb-1">
+                {approvedCount}
               </div>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium text-emerald-700">Approved</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-3xl font-bold text-emerald-700 mb-1">
-                  {liveProductionStats.approvedApplications.toLocaleString('en-IN')}
-                </div>
-                <div className="flex flex-wrap gap-1 mt-2">
-                  {(liveProductionStats.legacy?.approved || '0') > 0 && (
-                    <Badge variant="secondary" className="bg-emerald-100 text-emerald-700 border-emerald-200 text-[10px] px-1.5">
-                      {parseInt(liveProductionStats.legacy?.approved || '0').toLocaleString('en-IN')} Legacy
-                    </Badge>
-                  )}
-                  <Badge className="bg-emerald-600 hover:bg-emerald-700 text-[10px] px-1.5">
-                    {liveProductionStats.realtime?.approved || 0} New
-                  </Badge>
-                </div>
-              </CardContent>
-            </Card>
+              <p className="text-xs text-muted-foreground mt-1">RC Issued</p>
+            </CardContent>
+          </Card>
 
-            {/* Pending Stats */}
-            <Card className="relative overflow-hidden border-amber-200 bg-amber-50/50">
-              <div className="absolute top-0 right-0 p-3 opacity-10">
-                <Clock className="w-24 h-24 text-amber-600" />
+          {/* Active Pipeline */}
+          <Card className="relative overflow-hidden border-amber-200 bg-amber-50/50">
+            <div className="absolute top-0 right-0 p-3 opacity-10">
+              <Clock className="w-24 h-24 text-amber-600" />
+            </div>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-amber-700">Active Pipeline</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-3xl font-bold text-amber-700 mb-1">
+                {activePipelineCount}
               </div>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium text-amber-700">Pending</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-3xl font-bold text-amber-700 mb-1">
-                  {liveProductionStats.pendingApplications.toLocaleString('en-IN')}
-                </div>
-                <div className="flex flex-wrap gap-1 mt-2">
-                  {(liveProductionStats.legacy?.pending || '0') > 0 && (
-                    <Badge variant="secondary" className="bg-amber-100 text-amber-700 border-amber-200 text-[10px] px-1.5">
-                      {parseInt(liveProductionStats.legacy?.pending || '0').toLocaleString('en-IN')} Legacy
-                    </Badge>
-                  )}
-                  <Badge className="bg-amber-600 hover:bg-amber-700 text-[10px] px-1.5">
-                    {liveProductionStats.realtime?.pending || 0} New
-                  </Badge>
-                </div>
-              </CardContent>
-            </Card>
+              <p className="text-xs text-muted-foreground mt-1">In progress (excl. drafts)</p>
+            </CardContent>
+          </Card>
 
-            {/* Rejected Stats */}
-            <Card className="relative overflow-hidden border-rose-200 bg-rose-50/50">
-              <div className="absolute top-0 right-0 p-3 opacity-10">
-                <AlertCircle className="w-24 h-24 text-rose-600" />
+          {/* Rejected */}
+          <Card className="relative overflow-hidden border-rose-200 bg-rose-50/50">
+            <div className="absolute top-0 right-0 p-3 opacity-10">
+              <AlertCircle className="w-24 h-24 text-rose-600" />
+            </div>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-rose-700">Rejected</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-3xl font-bold text-rose-700 mb-1">
+                {rejectedCount}
               </div>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium text-rose-700">Rejected</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-3xl font-bold text-rose-700 mb-1">
-                  {liveProductionStats.rejectedApplications.toLocaleString('en-IN')}
-                </div>
-                <div className="flex flex-wrap gap-1 mt-2">
-                  {(liveProductionStats.legacy?.rejected || '0') > 0 && (
-                    <Badge variant="secondary" className="bg-rose-100 text-rose-700 border-rose-200 text-[10px] px-1.5">
-                      {parseInt(liveProductionStats.legacy?.rejected || '0').toLocaleString('en-IN')} Legacy
-                    </Badge>
-                  )}
-                  <Badge className="bg-rose-600 hover:bg-rose-700 text-[10px] px-1.5">
-                    {liveProductionStats.realtime?.rejected || 0} New
-                  </Badge>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        )}
+              <p className="text-xs text-muted-foreground mt-1">Applications rejected</p>
+            </CardContent>
+          </Card>
+        </div>
 
         {/* Workflow Snapshot */}
         <div>
@@ -427,7 +398,7 @@ export default function AnalyticsPage() {
             <div className="h-6 w-1 rounded-full bg-blue-500" />
             <h3 className="text-lg font-semibold text-slate-800">Processing Pipeline</h3>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
             <Card
               className="cursor-pointer hover:shadow-lg transition-all hover:-translate-y-1 border-slate-200 group"
               onClick={() => setLocation("/workflow-monitoring?status=submitted&tab=pipeline")}
@@ -484,6 +455,36 @@ export default function AnalyticsPage() {
                 <div>
                   <div className="text-2xl font-bold text-slate-900">{dtdoReviewCount + inspectionQueueCount}</div>
                   <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Inspection / Review</p>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card
+              className="cursor-pointer hover:shadow-lg transition-all hover:-translate-y-1 border-slate-200 group"
+              onClick={() => setLocation("/workflow-monitoring?status=payment_pending&tab=pipeline")}
+            >
+              <CardContent className="p-6 flex items-center gap-4">
+                <div className="p-3 rounded-xl bg-amber-100 text-amber-600 group-hover:bg-amber-600 group-hover:text-white transition-colors">
+                  <Clock className="w-6 h-6" />
+                </div>
+                <div>
+                  <div className="text-2xl font-bold text-slate-900">{paymentPendingCount}</div>
+                  <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Payment Pending</p>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card
+              className="cursor-pointer hover:shadow-lg transition-all hover:-translate-y-1 border-slate-200 group"
+              onClick={() => setLocation("/workflow-monitoring?status=sent_back_for_corrections&tab=pipeline")}
+            >
+              <CardContent className="p-6 flex items-center gap-4">
+                <div className="p-3 rounded-xl bg-rose-100 text-rose-600 group-hover:bg-rose-600 group-hover:text-white transition-colors">
+                  <AlertCircle className="w-6 h-6" />
+                </div>
+                <div>
+                  <div className="text-2xl font-bold text-slate-900">{revertedCount}</div>
+                  <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Sent Back / Objections</p>
                 </div>
               </CardContent>
             </Card>

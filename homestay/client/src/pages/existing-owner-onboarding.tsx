@@ -1,15 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { formatDistanceToNow, addYears } from "date-fns";
+import { formatDistanceToNow, addYears, differenceInDays } from "date-fns";
 import { formatDateInputIST } from "@/lib/dateUtils";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { z } from "zod";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Handshake, AlertCircle, CheckCircle2, Loader2, Calendar } from "lucide-react";
+import { Handshake, AlertCircle, CheckCircle2, Loader2, Calendar, ShieldCheck, ArrowRight } from "lucide-react";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Input } from "@/components/ui/input";
@@ -32,7 +32,7 @@ import {
 
 import { ObjectUploader, type UploadedFileMetadata } from "@/components/ObjectUploader";
 import { useToast } from "@/hooks/use-toast";
-import { DEFAULT_EXISTING_RC_MIN_ISSUE_DATE } from "@shared/appSettings";
+import { DEFAULT_EXISTING_RC_MIN_ISSUE_DATE, DEFAULT_EXISTING_RC_RENEWAL_THRESHOLD_DAYS } from "@shared/appSettings";
 import { getDistricts, getTehsilsForDistrict } from "@shared/regions";
 import { DEFAULT_UPLOAD_POLICY, type UploadPolicy } from "@shared/uploadPolicy";
 
@@ -41,20 +41,20 @@ import type { User, HomestayApplication } from "@shared/schema";
 
 const intakeSchema = z.object({
   ownerName: z.string().min(3, "Owner name is required"),
-  ownerMobile: z.string().min(8, "Enter a valid mobile number"),
+  ownerMobile: z.string().regex(/^[6-9]\d{9}$/, "Enter a valid 10-digit mobile number"),
   ownerEmail: z.string().email("Invalid email").optional().or(z.literal("")),
   propertyName: z.string().min(3, "Property name is required"),
   district: z.string().min(2, "District is required"),
   tehsil: z.string().min(2, "Tehsil is required"),
   address: z.string().min(5, "Address is required"),
-  pincode: z.string().min(4, "Pincode is required"),
+  pincode: z.string().regex(/^[1-9]\d{5}$/, "Pincode must be exactly 6 digits"),
   locationType: z.enum(["gp", "mc", "tcp"]),
   totalRooms: z.coerce.number().int().min(1).max(12),
   guardianRelation: z.enum(["s_o", "d_o", "w_o", "c_o", "father", "husband", "guardian"]).default("s_o"),
   guardianName: z.string().min(3, "Relative / Guardian name is required"),
   rcNumber: z.string().min(3, "RC number is required"),
   rcIssueDate: z.string().min(4, "Issue date is required"),
-  certificateValidityYears: z.enum(["1", "3"]).default("1"),
+  certificateValidityYears: z.enum(["1", "2", "3", "4", "5"]).default("1"),
   rcExpiryDate: z.string().min(4, "Expiry date is required"),
   notes: z.string().optional(),
 });
@@ -110,6 +110,8 @@ export default function ExistingOwnerOnboarding() {
   const photosMaxMB = uploadPolicy.photos.maxFileSizeMB;
   const [certificateFiles, setCertificateFiles] = useState<UploadedFileMetadata[]>([]);
   const [identityProofFiles, setIdentityProofFiles] = useState<UploadedFileMetadata[]>([]);
+  const [affidavitFiles, setAffidavitFiles] = useState<UploadedFileMetadata[]>([]);
+  const [undertakingFiles, setUndertakingFiles] = useState<UploadedFileMetadata[]>([]);
   const [additionalDocuments, setAdditionalDocuments] = useState<UploadedFileMetadata[]>([]);
   const [submissionResult, setSubmissionResult] = useState<{ applicationNumber: string } | null>(null);
   const [lastSavedDraftAt, setLastSavedDraftAt] = useState<string | null>(null);
@@ -137,6 +139,11 @@ export default function ExistingOwnerOnboarding() {
     }),
     [user],
   );
+
+  const [isPreQualified, setIsPreQualified] = useState(false);
+  const [showRenewalAlert, setShowRenewalAlert] = useState(false);
+  const [showExpiredAlert, setShowExpiredAlert] = useState(false);
+  const [isCheckingDuplicate, setIsCheckingDuplicate] = useState(false);
 
   const form = useForm<IntakeFormValues>({
     resolver: zodResolver(intakeSchema),
@@ -187,9 +194,25 @@ export default function ExistingOwnerOnboarding() {
         const expiryDate = addYears(issueDate, years);
         const formattedExpiry = formatDateInputIST(expiryDate);
         form.setValue("rcExpiryDate", formattedExpiry, { shouldValidate: true });
+
+        // REACTIVE RENEWAL CHECK: Prevent users from bypassing the gate by changing the date inside the form
+        const daysToExpiry = differenceInDays(expiryDate, new Date());
+        const threshold = intakeSettings?.renewalThresholdDays ?? DEFAULT_EXISTING_RC_RENEWAL_THRESHOLD_DAYS;
+        if (daysToExpiry < 0) {
+           setShowExpiredAlert(true);
+           setShowRenewalAlert(false);
+           setIsPreQualified(false);
+        } else if (daysToExpiry <= threshold) {
+           setShowExpiredAlert(false);
+           setShowRenewalAlert(true);
+           setIsPreQualified(false);
+        } else {
+           setShowExpiredAlert(false);
+           setShowRenewalAlert(false);
+        }
       }
     }
-  }, [watchedIssueDate, watchedValidityYears, form]);
+  }, [watchedIssueDate, watchedValidityYears, form, intakeSettings]);
 
   const [isHydrated, setIsHydrated] = useState(false);
   const loadedDraft = useRef(false);
@@ -202,6 +225,8 @@ export default function ExistingOwnerOnboarding() {
       values: Partial<IntakeFormValues>;
       certificateDocuments: UploadedFileMetadata[];
       identityProofDocuments: UploadedFileMetadata[];
+      affidavitDocuments: UploadedFileMetadata[];
+      undertakingDocuments: UploadedFileMetadata[];
       savedAt: string;
     } | null;
   }>({
@@ -229,7 +254,7 @@ export default function ExistingOwnerOnboarding() {
       return;
     }
 
-    const { values, certificateDocuments, identityProofDocuments, savedAt } = draftData.draft;
+    const { values, certificateDocuments, identityProofDocuments, affidavitDocuments, undertakingDocuments, savedAt } = draftData.draft;
 
     if (values) {
       form.reset({
@@ -242,6 +267,25 @@ export default function ExistingOwnerOnboarding() {
           form.setValue("tehsil", values.tehsil, { shouldValidate: true });
         }, 50);
       }
+      
+      // If we loaded a draft that ALREADY has RC details filled, let's pre-qualify automatically
+      if (values.rcNumber && values.rcIssueDate && values.rcExpiryDate) {
+         const daysUntilExpiry = differenceInDays(new Date(values.rcExpiryDate), new Date());
+         const threshold = intakeSettings?.renewalThresholdDays ?? DEFAULT_EXISTING_RC_RENEWAL_THRESHOLD_DAYS;
+         if (daysUntilExpiry < 0) {
+            setShowExpiredAlert(true);
+            setShowRenewalAlert(false);
+            setIsPreQualified(false);
+         } else if (daysUntilExpiry <= threshold) {
+            setShowExpiredAlert(false);
+            setShowRenewalAlert(true);
+            setIsPreQualified(false);
+         } else {
+            setShowExpiredAlert(false);
+            setShowRenewalAlert(false);
+            setIsPreQualified(true);
+         }
+      }
     }
     if (Array.isArray(certificateDocuments)) {
       setCertificateFiles(certificateDocuments);
@@ -249,16 +293,89 @@ export default function ExistingOwnerOnboarding() {
     if (Array.isArray(identityProofDocuments)) {
       setIdentityProofFiles(identityProofDocuments);
     }
+    if (Array.isArray(affidavitDocuments)) {
+      setAffidavitFiles(affidavitDocuments);
+    }
+    if (Array.isArray(undertakingDocuments)) {
+      setUndertakingFiles(undertakingDocuments);
+    }
     if (savedAt) {
       setLastSavedDraftAt(savedAt);
     }
   }, [isHydrated, draftData, defaults, form]);
+
+  const handleVerifyClick = async () => {
+    const issueDate = form.getValues("rcIssueDate");
+    const validity = form.getValues("certificateValidityYears");
+    const rcNumber = form.getValues("rcNumber");
+
+    if (!issueDate || !validity || rcNumber.trim().length === 0) {
+      toast({
+        title: "Missing details",
+        description: "Please enter RC Number and Issue Date to verify.",
+        variant: "destructive",
+      });
+      form.trigger(["rcNumber", "rcIssueDate", "certificateValidityYears"]);
+      return;
+    }
+
+    setIsCheckingDuplicate(true);
+    try {
+      const res = await fetch(`/api/existing-owners/check-duplicate?rcNumber=${encodeURIComponent(rcNumber.trim())}`, { credentials: "include" });
+      if (res.ok) {
+        const { isDuplicate } = await res.json();
+        if (isDuplicate) {
+          toast({
+            title: "Duplicate RC Number",
+            description: `RC Number (${rcNumber}) is already registered in the system.`,
+            variant: "destructive",
+          });
+          setIsPreQualified(false);
+          setShowRenewalAlert(false);
+          setShowExpiredAlert(false);
+          setIsCheckingDuplicate(false);
+          return;
+        }
+      }
+    } catch (e) {
+      console.error("Duplicate check failed", e);
+    }
+    setIsCheckingDuplicate(false);
+
+    // Force Expiry Calculation just in case
+    const pIssueDate = new Date(issueDate);
+    if (!Number.isNaN(pIssueDate.getTime())) {
+      const pExpiryDate = addYears(pIssueDate, parseInt(validity, 10));
+      const formattedExpiry = formatDateInputIST(pExpiryDate);
+      form.setValue("rcExpiryDate", formattedExpiry, { shouldValidate: true });
+
+      // Compare Expiry to Today
+      const daysUntilExpiry = differenceInDays(pExpiryDate, new Date());
+      const threshold = intakeSettings?.renewalThresholdDays ?? DEFAULT_EXISTING_RC_RENEWAL_THRESHOLD_DAYS;
+
+      if (daysUntilExpiry < 0) {
+         setShowExpiredAlert(true);
+         setShowRenewalAlert(false);
+         setIsPreQualified(false);
+      } else if (daysUntilExpiry <= threshold) {
+         setShowExpiredAlert(false);
+         setShowRenewalAlert(true);
+         setIsPreQualified(false);
+      } else {
+         setShowExpiredAlert(false);
+         setShowRenewalAlert(false);
+         setIsPreQualified(true);
+      }
+    }
+  };
 
   const intakeMutation = useMutation({
     mutationFn: async (payload: {
       values: IntakeFormValues;
       documents: UploadedFileMetadata[];
       identityProof: UploadedFileMetadata[];
+      affidavitDocuments: UploadedFileMetadata[];
+      undertakingDocuments: UploadedFileMetadata[];
     }) => {
       const response = await fetch("/api/existing-owners", {
         method: "POST",
@@ -269,6 +386,8 @@ export default function ExistingOwnerOnboarding() {
           ...payload.values,
           certificateDocuments: payload.documents,
           identityProofDocuments: payload.identityProof,
+          affidavitDocuments: payload.affidavitDocuments,
+          undertakingDocuments: payload.undertakingDocuments,
         }),
       });
 
@@ -297,6 +416,8 @@ export default function ExistingOwnerOnboarding() {
       form.reset(defaults);
       setCertificateFiles([]);
       setIdentityProofFiles([]);
+      setAffidavitFiles([]);
+      setUndertakingFiles([]);
       if (draftStorageKey) {
         localStorage.removeItem(draftStorageKey);
         setLastSavedDraftAt(null);
@@ -357,6 +478,8 @@ export default function ExistingOwnerOnboarding() {
         ...values,
         certificateDocuments: certificateFiles,
         identityProofDocuments: identityProofFiles,
+        affidavitDocuments: affidavitFiles,
+        undertakingDocuments: undertakingFiles,
       };
 
       const response = await fetch("/api/existing-owners/draft", {
@@ -406,13 +529,37 @@ export default function ExistingOwnerOnboarding() {
       });
       return;
     }
-    intakeMutation.mutate({ values, documents: certificateFiles, identityProof: identityProofFiles });
+    if (affidavitFiles.length === 0) {
+      toast({
+        variant: "destructive",
+        title: "Affidavit required",
+        description: "Upload your notarized affidavit (Section 29) to continue.",
+      });
+      return;
+    }
+    if (undertakingFiles.length === 0) {
+      toast({
+        variant: "destructive",
+        title: "Undertaking required",
+        description: "Upload your Form-C undertaking to continue.",
+      });
+      return;
+    }
+    intakeMutation.mutate({ 
+      values, 
+      documents: certificateFiles, 
+      identityProof: identityProofFiles,
+      affidavitDocuments: affidavitFiles,
+      undertakingDocuments: undertakingFiles 
+    });
   };
 
   const canSubmit =
     form.formState.isValid &&
     certificateFiles.length > 0 &&
     identityProofFiles.length > 0 &&
+    affidavitFiles.length > 0 &&
+    undertakingFiles.length > 0 &&
     !intakeMutation.isPending;
 
   return (
@@ -436,6 +583,148 @@ export default function ExistingOwnerOnboarding() {
         </AlertDescription>
       </Alert>
 
+      {!isPreQualified && !existingApplication && (
+        <Card className="border-primary shadow-sm bg-blue-50/50">
+          <CardHeader>
+            <CardTitle className="text-xl flex items-center gap-2">
+              <ShieldCheck className="w-5 h-5 text-primary" />
+              Verify Current Certificate
+            </CardTitle>
+            <CardDescription>
+              To ensure you are routed to the correct process, please provide your current RC details.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Form {...form}>
+              <form className="space-y-6">
+                <div className="grid gap-4 md:grid-cols-6 lg:grid-cols-5">
+                  <FormField
+                    control={form.control}
+                    name="rcNumber"
+                    render={({ field }) => (
+                      <FormItem className="md:col-span-3 lg:col-span-1">
+                        <FormLabel>RC / Certificate Number</FormLabel>
+                        <FormControl>
+                          <Input placeholder="HP-HS-XXXX-000123" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="rcIssueDate"
+                    render={({ field }) => (
+                      <FormItem className="md:col-span-3 lg:col-span-1">
+                        <FormLabel>Issue Date</FormLabel>
+                        <FormControl>
+                          <Input type="date" min={cutoffIsoDate} {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="certificateValidityYears"
+                    render={({ field }) => (
+                      <FormItem className="md:col-span-4 lg:col-span-2">
+                        <FormLabel className="flex items-center gap-1.5">
+                          <Calendar className="h-3.5 w-3.5" />
+                          Validity Period
+                        </FormLabel>
+                        <FormControl>
+                          <div className="h-9 flex items-center">
+                            <RadioGroup
+                              value={field.value}
+                              onValueChange={field.onChange}
+                              className="flex gap-4"
+                            >
+                              <div className="flex items-center gap-2">
+                                <RadioGroupItem value="1" id="gate-val-1" />
+                                <label htmlFor="gate-val-1" className="text-sm cursor-pointer">1 Yr</label>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <RadioGroupItem value="2" id="gate-val-2" />
+                                <label htmlFor="gate-val-2" className="text-sm cursor-pointer">2 Yrs</label>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <RadioGroupItem value="3" id="gate-val-3" />
+                                <label htmlFor="gate-val-3" className="text-sm cursor-pointer">3 Yrs</label>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <RadioGroupItem value="4" id="gate-val-4" />
+                                <label htmlFor="gate-val-4" className="text-sm cursor-pointer">4 Yrs</label>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <RadioGroupItem value="5" id="gate-val-5" />
+                                <label htmlFor="gate-val-5" className="text-sm cursor-pointer">5 Yrs</label>
+                              </div>
+                            </RadioGroup>
+                          </div>
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+              </form>
+            </Form>
+          </CardContent>
+          <CardFooter>
+            <Button type="button" onClick={handleVerifyClick} className="w-full sm:w-auto" disabled={isCheckingDuplicate}>
+              {isCheckingDuplicate ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Verifying...
+                </>
+              ) : (
+                <>
+                  Verify Certificate <ArrowRight className="w-4 h-4 ml-2" />
+                </>
+              )}
+            </Button>
+          </CardFooter>
+        </Card>
+      )}
+
+      {showRenewalAlert && !existingApplication && (
+        <Alert className="border-amber-400 bg-amber-50">
+          <AlertCircle className="h-5 w-5 text-amber-600" />
+          <AlertTitle className="text-amber-800 text-lg font-bold">Renewal Required</AlertTitle>
+          <AlertDescription className="text-amber-800 mt-2 space-y-4">
+            <p>
+              Your certificate expires on <strong>{form.watch("rcExpiryDate")}</strong> (within {intakeSettings?.renewalThresholdDays ?? DEFAULT_EXISTING_RC_RENEWAL_THRESHOLD_DAYS} days). 
+              To ensure continuous compliance, your application must be processed as a standard <strong>Renewal</strong>.
+            </p>
+            <div>
+              <Button onClick={() => setLocation(`/applications/renewal?rcNumber=${form.watch("rcNumber") || ''}&issueDate=${form.watch("rcIssueDate") || ''}`)} className="bg-amber-600 hover:bg-amber-700 text-white">
+                Proceed to Renewal Pipeline <ArrowRight className="w-4 h-4 ml-2" />
+              </Button>
+            </div>
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {showExpiredAlert && !existingApplication && (
+        <Alert className="border-destructive bg-destructive/10">
+          <AlertCircle className="h-5 w-5 text-destructive" />
+          <AlertTitle className="text-destructive text-lg font-bold">Certificate Expired</AlertTitle>
+          <AlertDescription className="text-destructive mt-2 space-y-4">
+            <p>
+              Your certificate expired on <strong>{form.watch("rcExpiryDate")}</strong>. 
+              Since the validity period has lapsed, you must apply for a <strong>New Registration</strong>.
+            </p>
+            <div>
+              <Button onClick={() => setLocation(`/applications/new`)} className="bg-destructive hover:bg-destructive/90 text-white">
+                Start New Registration <ArrowRight className="w-4 h-4 ml-2" />
+              </Button>
+            </div>
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {isPreQualified && (
       <Card>
         <CardHeader className="space-y-1">
           <CardTitle>Submit your current license</CardTitle>
@@ -480,6 +769,19 @@ export default function ExistingOwnerOnboarding() {
           {!existingApplication && (
             <Form {...form}>
               <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
+                <div className="grid gap-4 md:grid-cols-3 mb-2">
+                  <FormItem>
+                    <FormLabel>Aadhaar Number</FormLabel>
+                    <FormControl>
+                      <Input
+                        value={user?.aadhaarNumber ? `XXXX-XXXX-${user.aadhaarNumber.slice(-4)}` : "Not provided"}
+                        readOnly
+                        className="bg-muted text-muted-foreground font-mono"
+                      />
+                    </FormControl>
+                    <p className="text-[0.8rem] text-muted-foreground">Fetched from profile</p>
+                  </FormItem>
+                </div>
                 <div className="grid gap-4 md:grid-cols-2">
                   <FormField
                     control={form.control}
@@ -501,7 +803,15 @@ export default function ExistingOwnerOnboarding() {
                       <FormItem>
                         <FormLabel>Mobile Number</FormLabel>
                         <FormControl>
-                          <Input placeholder="10-digit mobile" {...field} />
+                          <Input
+                            placeholder="10-digit mobile"
+                            maxLength={10}
+                            {...field}
+                            onChange={(e) => {
+                              const v = e.target.value.replace(/\D/g, "");
+                              field.onChange(v);
+                            }}
+                          />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -644,7 +954,15 @@ export default function ExistingOwnerOnboarding() {
                       <FormItem>
                         <FormLabel>Pincode</FormLabel>
                         <FormControl>
-                          <Input placeholder="6-digit pincode" {...field} />
+                          <Input
+                            placeholder="6-digit pincode"
+                            maxLength={6}
+                            {...field}
+                            onChange={(e) => {
+                              const v = e.target.value.replace(/\D/g, "");
+                              field.onChange(v);
+                            }}
+                          />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -707,12 +1025,12 @@ export default function ExistingOwnerOnboarding() {
                   <div className="hidden md:block" />
                 </div>
 
-                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+                <div className="grid gap-4 md:grid-cols-6 lg:grid-cols-5">
                   <FormField
                     control={form.control}
                     name="rcNumber"
                     render={({ field }) => (
-                      <FormItem>
+                      <FormItem className="md:col-span-3 lg:col-span-1">
                         <FormLabel>RC / Certificate Number</FormLabel>
                         <FormControl>
                           <Input placeholder="HP-HS-XXXX-000123" {...field} />
@@ -725,7 +1043,7 @@ export default function ExistingOwnerOnboarding() {
                     control={form.control}
                     name="rcIssueDate"
                     render={({ field }) => (
-                      <FormItem>
+                      <FormItem className="md:col-span-3 lg:col-span-1">
                         <FormLabel>Issue Date</FormLabel>
                         <FormControl>
                           <Input type="date" min={cutoffIsoDate} {...field} />
@@ -741,7 +1059,7 @@ export default function ExistingOwnerOnboarding() {
                     control={form.control}
                     name="certificateValidityYears"
                     render={({ field }) => (
-                      <FormItem>
+                      <FormItem className="md:col-span-4 lg:col-span-2">
                         <FormLabel className="flex items-center gap-1.5">
                           <Calendar className="h-3.5 w-3.5" />
                           Validity Period
@@ -751,15 +1069,27 @@ export default function ExistingOwnerOnboarding() {
                             <RadioGroup
                               value={field.value}
                               onValueChange={field.onChange}
-                              className="flex gap-4"
+                              className="flex flex-wrap gap-3 lg:gap-4"
                             >
                               <div className="flex items-center gap-2">
                                 <RadioGroupItem value="1" id="validity-1" />
                                 <label htmlFor="validity-1" className="text-sm cursor-pointer">1 Year</label>
                               </div>
                               <div className="flex items-center gap-2">
+                                <RadioGroupItem value="2" id="validity-2" />
+                                <label htmlFor="validity-2" className="text-sm cursor-pointer">2 Years</label>
+                              </div>
+                              <div className="flex items-center gap-2">
                                 <RadioGroupItem value="3" id="validity-3" />
                                 <label htmlFor="validity-3" className="text-sm cursor-pointer">3 Years</label>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <RadioGroupItem value="4" id="validity-4" />
+                                <label htmlFor="validity-4" className="text-sm cursor-pointer">4 Years</label>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <RadioGroupItem value="5" id="validity-5" />
+                                <label htmlFor="validity-5" className="text-sm cursor-pointer">5 Years</label>
                               </div>
                             </RadioGroup>
                           </div>
@@ -775,7 +1105,7 @@ export default function ExistingOwnerOnboarding() {
                     control={form.control}
                     name="rcExpiryDate"
                     render={({ field }) => (
-                      <FormItem>
+                      <FormItem className="md:col-span-2 lg:col-span-1">
                         <FormLabel>Validity Upto</FormLabel>
                         <FormControl>
                           <Input type="date" min={form.watch("rcIssueDate") || cutoffIsoDate} {...field} />
@@ -848,6 +1178,50 @@ export default function ExistingOwnerOnboarding() {
                 </div>
 
                 <div className="space-y-2">
+                  <p className="text-sm font-medium">Notarized Affidavit (Section 29) <span className="text-destructive">*</span></p>
+                  <ObjectUploader
+                    label={affidavitFiles.length > 0 ? "Replace Affidavit" : "Upload Affidavit"}
+                    maxFiles={1}
+                    accept=".pdf"
+                    onUploadComplete={setAffidavitFiles}
+                    existingFiles={affidavitFiles}
+                    isMissing={affidavitFiles.length === 0}
+                    hideNote
+                  />
+                  {affidavitFiles.length === 0 && (
+                    <div className="text-xs text-muted-foreground flex items-start gap-1">
+                      <AlertCircle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                      <p>
+                        Upload a PDF of your Notarized Affidavit. {" "}
+                        <a href="/print/affidavit" target="_blank" className="text-primary hover:underline font-medium">Download Format</a>
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <p className="text-sm font-medium">Undertaking (Form-C) <span className="text-destructive">*</span></p>
+                  <ObjectUploader
+                    label={undertakingFiles.length > 0 ? "Replace Undertaking" : "Upload Undertaking"}
+                    maxFiles={1}
+                    accept=".pdf"
+                    onUploadComplete={setUndertakingFiles}
+                    existingFiles={undertakingFiles}
+                    isMissing={undertakingFiles.length === 0}
+                    hideNote
+                  />
+                  {undertakingFiles.length === 0 && (
+                    <div className="text-xs text-muted-foreground flex items-start gap-1">
+                      <AlertCircle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                      <p>
+                        Upload a signed PDF of Form-C. {" "}
+                        <a href="/print/undertaking" target="_blank" className="text-primary hover:underline font-medium">Download Format</a>
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                <div className="space-y-2">
                   <p className="text-sm font-medium">Additional Supporting Documents (Optional)</p>
                   <ObjectUploader
                     label={additionalDocuments.length > 0 ? "Add More Documents" : "Add Documents"}
@@ -902,6 +1276,7 @@ export default function ExistingOwnerOnboarding() {
           )}
         </CardContent>
       </Card>
+      )}
     </div>
   );
 }

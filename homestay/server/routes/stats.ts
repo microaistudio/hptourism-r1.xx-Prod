@@ -14,7 +14,7 @@ router.get("/state", async (req, res) => {
         // ----------------------------------------------------------------
         const [heroData] = await db
             .select({
-                totalApplications: sql<number>`count(*) filter (where ${homestayApplications.status} != 'draft' AND ${homestayApplications.status} != 'superseded')`,
+                totalApplications: sql<number>`count(*) filter (where ${homestayApplications.status} NOT IN ('draft', 'superseded', 'paid_pending_submit', 'legacy_rc_draft'))`,
                 totalRevenue: sql<number>`coalesce((
                     SELECT sum(${himkoshTransactions.totalAmount})
                     FROM ${himkoshTransactions}
@@ -46,7 +46,7 @@ router.get("/state", async (req, res) => {
         // Normalize Funnel
         const funnelMap = new Map(funnelRaw.map(f => [f.status, Number(f.count)]));
         const funnelData = [
-            { name: "Draft", value: funnelMap.get("draft") || 0, fill: "#94a3b8" },
+            { name: "Draft", value: (funnelMap.get("draft") || 0) + (funnelMap.get("legacy_rc_draft") || 0) + (funnelMap.get("paid_pending_submit") || 0), fill: "#94a3b8" },
             { name: "Submitted", value: funnelMap.get("submitted") || 0, fill: "#3b82f6" },
             { name: "DA Scrutiny", value: (funnelMap.get("under_scrutiny") || 0) + (funnelMap.get("legacy_rc_review") || 0), fill: "#f59e0b" },
             { name: "Inspection", value: (funnelMap.get("inspection_scheduled") || 0) + (funnelMap.get("inspection_completed") || 0) + (funnelMap.get("inspection_under_review") || 0), fill: "#8b5cf6" },
@@ -197,7 +197,7 @@ router.get("/state", async (req, res) => {
                 applications: appTrendRaw.map(r => ({ date: r.date, value: Number(r.count) }))
             },
             pipeline_counts: {
-                draft: funnelMap.get("draft") || 0,
+                draft: (funnelMap.get("draft") || 0) + (funnelMap.get("legacy_rc_draft") || 0) + (funnelMap.get("paid_pending_submit") || 0) + (funnelMap.get("superseded") || 0),
                 submitted: funnelMap.get("submitted") || 0,
                 scrutiny: (funnelMap.get("under_scrutiny") || 0) + (funnelMap.get("legacy_rc_review") || 0),
                 district: (funnelMap.get("forwarded_to_dtdo") || 0) + (funnelMap.get("dtdo_review") || 0),
@@ -375,13 +375,24 @@ router.get("/trends", async (req, res) => {
 
 // GET /api/stats/treasury-forecast
 // Returns financial metrics for Treasury Forecasting page
+// Uses REAL pipeline statuses from shared/status-groups.ts
 router.get("/treasury-forecast", async (req, res) => {
     try {
-        // 1. Renewal Forecasting (Expected Revenue next 12 months)
+        // Active pipeline statuses (applications currently being processed)
+        const activePipelineStatuses = [
+            'submitted', 'under_scrutiny', 'legacy_rc_review',
+            'forwarded_to_dtdo', 'dtdo_review',
+            'inspection_scheduled', 'inspection_completed', 'inspection_under_review',
+            'verified_for_payment', 'payment_pending',
+            'sent_back_for_corrections', 'reverted_to_applicant', 'reverted_by_dtdo',
+            'objection_raised'
+        ];
+
+        // 1. Renewal Forecasting — use totalFee (full renewal cost, not baseFee)
         const upcomingRenewals = await db
             .select({
                 expiryMonth: sql<string>`to_char(${homestayApplications.certificateExpiryDate}, 'YYYY-MM')`,
-                revenue: sql<number>`sum(${homestayApplications.baseFee})`, // assuming renewal cost is similar to base fee
+                revenue: sql<number>`coalesce(sum(${homestayApplications.totalFee}), 0)`,
                 count: sql<number>`count(*)`
             })
             .from(homestayApplications)
@@ -396,25 +407,33 @@ router.get("/treasury-forecast", async (req, res) => {
             .groupBy(sql`to_char(${homestayApplications.certificateExpiryDate}, 'YYYY-MM')`)
             .orderBy(sql`to_char(${homestayApplications.certificateExpiryDate}, 'YYYY-MM') asc`);
 
-        // 2. Lost/Stuck Revenue (in pipeline)
+        // 2. Pipeline Revenue — use REAL active statuses
         const [pipelineRevenue] = await db
             .select({
-                stuckRevenue: sql<number>`sum(${homestayApplications.totalFee})`,
-                count: sql<number>`count(*)`
+                expectedRevenue: sql<number>`coalesce(sum(${homestayApplications.totalFee}), 0)`,
+                count: sql<number>`count(*)`,
+                avgFee: sql<number>`coalesce(round(avg(${homestayApplications.totalFee})), 0)`
             })
             .from(homestayApplications)
-            .where(inArray(homestayApplications.status, [
-                'document_verification', 'clarification_requested',
-                'site_inspection_scheduled', 'site_inspection_complete'
-            ]));
+            .where(inArray(homestayApplications.status, activePipelineStatuses));
 
-        // 3. Discount Impact Tracking (How much subsidy given)
+        // 3. Collected Revenue — actual money received via Himkosh (all time)
+        const [collectedRevenue] = await db
+            .select({
+                totalCollected: sql<number>`coalesce(sum(${himkoshTransactions.totalAmount}), 0)`,
+                transactionCount: sql<number>`count(*)`
+            })
+            .from(himkoshTransactions)
+            .where(eq(himkoshTransactions.transactionStatus, 'success'));
+
+        // 4. Discount Impact Tracking (How much subsidy given)
         const [discountTotals] = await db
             .select({
-                femaleOwnerSubsidy: sql<number>`sum(${homestayApplications.femaleOwnerDiscount})`,
-                pangiSubsidy: sql<number>`sum(${homestayApplications.pangiDiscount})`,
-                validitySubsidy: sql<number>`sum(${homestayApplications.validityDiscount})`,
-                totalSubsidized: sql<number>`sum(${homestayApplications.totalDiscount})`
+                femaleOwnerSubsidy: sql<number>`coalesce(sum(${homestayApplications.femaleOwnerDiscount}), 0)`,
+                pangiSubsidy: sql<number>`coalesce(sum(${homestayApplications.pangiDiscount}), 0)`,
+                validitySubsidy: sql<number>`coalesce(sum(${homestayApplications.validityDiscount}), 0)`,
+                totalSubsidized: sql<number>`coalesce(sum(${homestayApplications.totalDiscount}), 0)`,
+                beneficiaryCount: sql<number>`count(*)`
             })
             .from(homestayApplications)
             .where(
@@ -424,21 +443,31 @@ router.get("/treasury-forecast", async (req, res) => {
                 )
             );
 
-        // 4. Monthly Actuals (last 6 months real revenue for historical baseline)
+        // 5. Monthly Actuals (last 12 months for better trend visibility)
         const pastRevenue = await db
             .select({
                 month: sql<string>`to_char(${himkoshTransactions.createdAt}, 'YYYY-MM')`,
-                amount: sql<number>`sum(${himkoshTransactions.totalAmount})`
+                amount: sql<number>`coalesce(sum(${himkoshTransactions.totalAmount}), 0)`,
+                txnCount: sql<number>`count(*)`
             })
             .from(himkoshTransactions)
             .where(
                 and(
                     eq(himkoshTransactions.transactionStatus, 'success'),
-                    sql`${himkoshTransactions.createdAt} >= NOW() - INTERVAL '6 months'`
+                    sql`${himkoshTransactions.createdAt} >= NOW() - INTERVAL '12 months'`
                 )
             )
             .groupBy(sql`to_char(${himkoshTransactions.createdAt}, 'YYYY-MM')`)
             .orderBy(sql`to_char(${himkoshTransactions.createdAt}, 'YYYY-MM') asc`);
+
+        // 6. Approved summary (for collection efficiency)
+        const [approvedSummary] = await db
+            .select({
+                totalApproved: sql<number>`count(*)`,
+                totalApprovedFees: sql<number>`coalesce(sum(${homestayApplications.totalFee}), 0)`
+            })
+            .from(homestayApplications)
+            .where(eq(homestayApplications.status, 'approved'));
 
         res.json({
             renewals: upcomingRenewals.map(r => ({
@@ -447,18 +476,29 @@ router.get("/treasury-forecast", async (req, res) => {
                 propertiesCount: Number(r.count || 0)
             })),
             pipeline: {
-                stuckRevenue: Number(pipelineRevenue?.stuckRevenue || 0),
-                applicationsCount: Number(pipelineRevenue?.count || 0)
+                expectedRevenue: Number(pipelineRevenue?.expectedRevenue || 0),
+                applicationsCount: Number(pipelineRevenue?.count || 0),
+                avgFeePerApplication: Number(pipelineRevenue?.avgFee || 0)
+            },
+            collected: {
+                totalCollected: Number(collectedRevenue?.totalCollected || 0),
+                transactionCount: Number(collectedRevenue?.transactionCount || 0)
+            },
+            approved: {
+                count: Number(approvedSummary?.totalApproved || 0),
+                totalFees: Number(approvedSummary?.totalApprovedFees || 0)
             },
             subsidies: {
                 femaleOwner: Number(discountTotals?.femaleOwnerSubsidy || 0),
                 pangi: Number(discountTotals?.pangiSubsidy || 0),
                 validity: Number(discountTotals?.validitySubsidy || 0),
-                total: Number(discountTotals?.totalSubsidized || 0)
+                total: Number(discountTotals?.totalSubsidized || 0),
+                beneficiaryCount: Number(discountTotals?.beneficiaryCount || 0)
             },
             historical: pastRevenue.map(r => ({
                 month: r.month,
-                actualRevenue: Number(r.amount || 0)
+                actualRevenue: Number(r.amount || 0),
+                transactionCount: Number(r.txnCount || 0)
             }))
         });
 

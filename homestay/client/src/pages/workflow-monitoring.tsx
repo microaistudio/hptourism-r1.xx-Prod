@@ -106,7 +106,7 @@ export default function WorkflowMonitoringPage() {
   // Base applications: filter out drafts when incomplete apps setting is disabled
   const applications = useMemo(() => {
     if (showIncompleteApps) return rawApplications;
-    const draftStatuses = new Set(['draft', 'legacy_rc_draft']);
+    const draftStatuses = new Set(['draft', 'legacy_rc_draft', 'superseded', 'paid_pending_submit']);
     return rawApplications.filter(app => !draftStatuses.has(app.status || 'draft'));
   }, [rawApplications, showIncompleteApps]);
 
@@ -522,42 +522,99 @@ function VisualPipelineFlow({
         </CardDescription>
       </CardHeader>
       <CardContent className="pt-4 pb-8">
-        <div className="flex flex-row items-start gap-2">
-          {stageCount.map((stage, index) => (
-            <div key={stage.id} className="flex items-center gap-2 flex-1 min-w-0">
-              <div className="flex-1 flex flex-col min-w-0">
-                <button
-                  onClick={() => onStageClick(activeFilter === stage.id ? null : stage.id)}
-                  className={`
-                    w-full ${stage.color} text-white rounded-xl p-3 text-center 
-                    shadow-lg hover:shadow-2xl hover:scale-105 
-                    transition-all duration-200 cursor-pointer
-                    h-[110px] flex flex-col items-center justify-center
-                    ${activeFilter === stage.id ? "ring-4 ring-white ring-offset-2 ring-offset-background scale-105" : ""}
-                  `}
-                  data-testid={`filter-stage-${stage.id}`}
-                >
-                  <div className="text-2xl font-bold">{stage.count}</div>
-                  <div className="text-[11px] font-semibold opacity-90 mt-1 leading-tight text-center px-1">
-                    {stage.label}
-                  </div>
-                  <div className="text-[10px] mt-1.5 px-2 py-0.5 bg-white/20 rounded-full">
-                    {stage.count > 0 ? `${Math.round((stage.count / Math.max(stageCount.reduce((s, st) => s + st.count, 0), 1)) * 100)}%` : "—"}
-                  </div>
-                </button>
-                {stage.returned ? (
-                  <div className="text-[10px] text-muted-foreground flex items-center justify-center gap-1 mt-2 h-4">
-                    ↩️ {stage.returned}
-                  </div>
-                ) : (
-                  <div className="h-4 mt-2"></div>
-                )}
-              </div>
-              {index < stageCount.length - 1 && (
-                <ArrowRight className="h-4 w-4 text-muted-foreground/50 flex-shrink-0" />
-              )}
+        <div className="flex flex-row items-stretch gap-4">
+          {/* Active Pipeline Breakdown Group */}
+          <div className="relative flex-[5] rounded-xl border border-dashed border-border/80 bg-muted/10 p-4 pt-8 shadow-sm">
+            <div className="absolute top-2 left-4 text-[10px] font-bold uppercase tracking-wider text-muted-foreground/70">
+              Active Pipeline Breakdown
             </div>
-          ))}
+            <div className="flex flex-row items-start gap-2 h-full">
+              {stageCount.slice(0, 5).map((stage, index) => (
+                <div key={stage.id} className="flex items-center gap-2 flex-1 min-w-0">
+                  <div className="flex-1 flex flex-col min-w-0">
+                    <button
+                      onClick={() => onStageClick(activeFilter === stage.id ? null : stage.id)}
+                      className={`
+                        w-full ${stage.color} text-white rounded-xl p-3 text-center 
+                        shadow-lg hover:shadow-2xl hover:scale-105 
+                        transition-all duration-200 cursor-pointer
+                        h-[110px] flex flex-col items-center justify-center
+                        ${activeFilter === stage.id ? "ring-4 ring-white ring-offset-2 ring-offset-background scale-105" : ""}
+                      `}
+                      data-testid={`filter-stage-${stage.id}`}
+                    >
+                      <div className="text-2xl font-bold">{stage.count}</div>
+                      <div className="text-[11px] font-semibold opacity-90 mt-1 leading-tight text-center px-1">
+                        {stage.label}
+                      </div>
+                      <div className="text-[10px] mt-1.5 px-2 py-0.5 bg-white/20 rounded-full">
+                        {stage.count > 0 ? `${Math.round((stage.count / Math.max(stageCount.reduce((s, st) => s + st.count, 0), 1)) * 100)}%` : "—"}
+                      </div>
+                    </button>
+                    {stage.returned ? (
+                      <div className="text-[10px] text-muted-foreground flex items-center justify-center gap-1 mt-2 h-4">
+                        ↩️ {stage.returned}
+                      </div>
+                    ) : (
+                      <div className="h-4 mt-2"></div>
+                    )}
+                  </div>
+                  {index < 4 && (
+                    <ArrowRight className="h-4 w-4 text-muted-foreground/40 flex-shrink-0" />
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Separator Arrow */}
+          <div className="flex items-center justify-center pt-[55px]">
+            <ArrowRight className="h-5 w-5 text-muted-foreground/30 shrink-0" />
+          </div>
+
+          {/* Completed Group */}
+          <div className="relative flex-[2] rounded-xl border border-dashed border-border/80 bg-muted/10 p-4 pt-8 shadow-sm">
+            <div className="absolute top-2 left-4 text-[10px] font-bold uppercase tracking-wider text-muted-foreground/70">
+              Completed
+            </div>
+            <div className="flex flex-row items-start gap-2 h-full w-full">
+              {stageCount.slice(5).map((stage, index) => (
+                <div key={stage.id} className="flex items-center gap-2 flex-1 min-w-0">
+                  <div className="flex-1 flex flex-col min-w-0">
+                    <button
+                      onClick={() => onStageClick(activeFilter === stage.id ? null : stage.id)}
+                      className={`
+                        w-full ${stage.color} text-white rounded-xl p-3 text-center 
+                        shadow-lg hover:shadow-2xl hover:scale-105 
+                        transition-all duration-200 cursor-pointer
+                        h-[110px] flex flex-col items-center justify-center
+                        ${activeFilter === stage.id ? "ring-4 ring-white ring-offset-2 ring-offset-background scale-105" : ""}
+                      `}
+                      data-testid={`filter-stage-${stage.id}`}
+                    >
+                      <div className="text-2xl font-bold">{stage.count}</div>
+                      <div className="text-[11px] font-semibold opacity-90 mt-1 leading-tight text-center px-1">
+                        {stage.label}
+                      </div>
+                      <div className="text-[10px] mt-1.5 px-2 py-0.5 bg-white/20 rounded-full">
+                        {stage.count > 0 ? `${Math.round((stage.count / Math.max(stageCount.reduce((s, st) => s + st.count, 0), 1)) * 100)}%` : "—"}
+                      </div>
+                    </button>
+                    {stage.returned ? (
+                      <div className="text-[10px] text-muted-foreground flex items-center justify-center gap-1 mt-2 h-4">
+                        ↩️ {stage.returned}
+                      </div>
+                    ) : (
+                      <div className="h-4 mt-2"></div>
+                    )}
+                  </div>
+                  {index === 0 && (
+                    <ArrowRight className="h-4 w-4 text-muted-foreground/40 flex-shrink-0" />
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
 
         {/* Secondary row: Reverts / Action needed */}

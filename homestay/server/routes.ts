@@ -208,6 +208,7 @@ declare module "express-session" {
   }
 }
 
+import { createHelpRouter } from "./routes/help";
 const routeLog = logger.child({ module: "routes" });
 const adminHimkoshCrypto = new HimKoshCrypto();
 
@@ -637,6 +638,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Grievance Management
   const grievanceRouter = (await import("./routes/grievances")).default;
   app.use("/api/grievances", grievanceRouter);
+  app.use("/api/help", createHelpRouter());
 
   // Grievance Reports & Analytics
   const grievanceReportsRouter = (await import("./routes/grievances/reports")).default;
@@ -1056,7 +1058,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         'alternatePhone', 'latitude', 'longitude',
         'singleBedRooms', 'doubleBedRooms', 'familySuites',
         'singleBedRoomRate', 'doubleBedRoomRate', 'familySuiteRate',
-        'nearestHospital', 'distanceAirport', 'distanceRailway', 'distanceCityCenter', 'distanceBusStand'
+        'nearestHospital', 'distanceAirport', 'distanceRailway', 'distanceCityCenter', 'distanceBusStand',
+        'certificateNumber'
       ];
 
       const updates: Record<string, unknown> = {};
@@ -1578,12 +1581,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // 2. Fetch real-time counts from DB (P)
       const allApplications = await query;
 
-      const realtime = allApplications.reduce(
+      // Exclude legacy RC apps from realtime counts (they have their own section)
+      const isLegacyRC = (app: any) => (app.applicationNumber || '').startsWith('LG-HS-');
+      const realtimeApps = allApplications.filter(app => !isLegacyRC(app));
+      
+      const realtime = realtimeApps.reduce(
         (acc, app) => {
+          const status = (app.status ?? '').trim().toLowerCase();
           acc.total++;
-          if (app.status === "approved") acc.approved++;
-          else if (app.status === "rejected") acc.rejected++;
-          else if (app.status === "submitted" || app.status === "under_review" || app.status === "payment_pending") acc.pending++;
+          if (status === "approved") acc.approved++;
+          else if (status === "rejected") acc.rejected++;
+          else if (status !== "draft" && status !== "") {
+            // "Pending" = everything that is actively in the pipeline (not draft, not terminal)
+            acc.pending++;
+          }
           return acc;
         },
         { total: 0, approved: 0, rejected: 0, pending: 0 }
@@ -1689,22 +1700,52 @@ export async function registerRoutes(app: Express): Promise<Server> {
         ? allUsers.filter((user) => user.role === "property_owner" && isCoveredBySplitDistrict(currentUser!.district ?? "", user.district))
         : allUsers.filter((user) => user.role === "property_owner");
 
-      // Separate Existing RC (legacy onboarded) from regular pipeline apps
+      // Count Existing RC separately (for display only), but include ALL apps in pipeline counts
+      // This ensures Analytics matches Workflow Monitoring exactly (same dataset)
       const isLegacyRC = (app: any) => (app.applicationNumber || '').startsWith('LG-HS-');
-      const pipelineApps = scopedApplications.filter((app) => !isLegacyRC(app));
       const existingRCCount = scopedApplications.filter((app) => isLegacyRC(app)).length;
+      const pipelineApps = scopedApplications; // ALL apps — same as Workflow Monitoring
 
+      // Use CANONICAL status groupings (shared/status-groups.ts) - single source of truth
+      const statusGroups = await import("../shared/status-groups");
+      const { PIPELINE_STAGES, SECONDARY_STAGES, EXCLUDED_STATUSES } = statusGroups;
+      
+      const countByStage = (apps: any[], stages: typeof PIPELINE_STAGES) => {
+        const counts: Record<string, number> = {};
+        for (const stage of stages) {
+          counts[stage.id] = apps.filter(
+            (app: any) => stage.statuses.includes(normalizeStatus(app.status))
+          ).length;
+        }
+        return counts;
+      };
+      
+      const pipelineCounts = countByStage(pipelineApps, PIPELINE_STAGES);
+      const secondaryCounts = countByStage(pipelineApps, SECONDARY_STAGES);
+      
+      // Active pipeline = sum of all active pipeline stages + secondary stages
+      const activePipeline = 
+        [...PIPELINE_STAGES.filter(s => s.isActive), ...SECONDARY_STAGES]
+          .reduce((sum, stage) => {
+            const stageApps = PIPELINE_STAGES.find(s => s.id === stage.id) 
+              ? pipelineCounts[stage.id] || 0 
+              : secondaryCounts[stage.id] || 0;
+            return sum + stageApps;
+          }, 0);
+      
       const byStatusNew = {
-        submitted: pipelineApps.filter((app) => normalizeStatus(app.status) === "submitted").length,
-        under_scrutiny: pipelineApps.filter((app) => normalizeStatus(app.status) === "under_scrutiny").length,
-        forwarded_to_dtdo: pipelineApps.filter((app) => normalizeStatus(app.status) === "forwarded_to_dtdo").length,
-        dtdo_review: pipelineApps.filter((app) => normalizeStatus(app.status) === "dtdo_review").length,
-        inspection_scheduled: pipelineApps.filter((app) => normalizeStatus(app.status) === "inspection_scheduled").length,
-        inspection_under_review: pipelineApps.filter((app) => normalizeStatus(app.status) === "inspection_under_review").length,
-        reverted_to_applicant: pipelineApps.filter((app) => normalizeStatus(app.status) === "reverted_to_applicant").length,
-        approved: pipelineApps.filter((app) => normalizeStatus(app.status) === "approved").length,
-        rejected: pipelineApps.filter((app) => normalizeStatus(app.status) === "rejected").length,
-        draft: pipelineApps.filter((app) => normalizeStatus(app.status) === "draft").length,
+        submitted: pipelineCounts["submission"] || 0,
+        under_scrutiny: pipelineCounts["da_scrutiny"] || 0,
+        forwarded_to_dtdo: pipelineCounts["district_review"] || 0,
+        dtdo_review: 0, // merged into district_review
+        inspection_scheduled: pipelineCounts["inspection"] || 0,
+        inspection_under_review: 0, // merged into inspection
+        payment_pending: pipelineCounts["payment_pending"] || 0,
+        reverted_to_applicant: (secondaryCounts["awaiting_applicant"] || 0) + (secondaryCounts["resubmitted_to_da"] || 0),
+        approved: pipelineCounts["rc_issued"] || 0,
+        rejected: pipelineCounts["rejected"] || 0,
+        draft: pipelineApps.filter((app) => EXCLUDED_STATUSES.includes(normalizeStatus(app.status))).length,
+        activePipeline, // explicit count for hero card
       } as const;
 
       const byStatusLegacy = {
@@ -1717,7 +1758,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const byStatus = { ...byStatusNew, ...byStatusLegacy };
 
-      const total = pipelineApps.length;
+      // Total = all meaningful apps (exclude drafts, superseded, paid_pending_submit)
+      // Matches Workflow Monitoring's "X submitted applications" count
+      const total = pipelineApps.filter((app) => !EXCLUDED_STATUSES.includes(normalizeStatus(app.status))).length;
       const newApplications = byStatus.submitted;
 
       const byCategory = {

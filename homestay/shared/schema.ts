@@ -2040,3 +2040,36 @@ export const insertCreditLedgerSchema = createInsertSchema(creditLedger, {
 export const selectCreditLedgerSchema = createSelectSchema(creditLedger);
 export type InsertCreditLedger = z.infer<typeof insertCreditLedgerSchema>;
 export type CreditLedger = typeof creditLedger.$inferSelect;
+
+
+// ============================================================================
+// HELP & FAQ RESOURCES
+// ============================================================================
+
+export const HELP_RESOURCE_TYPES = ['video', 'pdf', 'faq'] as const;
+
+export const helpResources = pgTable("help_resources", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  title: varchar("title", { length: 255 }).notNull(),
+  description: text("description"),
+  type: varchar("type", { length: 20 }).notNull(), // 'video', 'pdf', 'faq'
+  contentUrl: text("content_url"), // URLs to video/pdf
+  contentBody: text("content_body"), // Rich text or simple text for FAQ answer
+  isActive: boolean("is_active").default(true),
+  displayOrder: integer("display_order").default(0),
+
+  createdBy: varchar("created_by").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertHelpResourceSchema = createInsertSchema(helpResources, {
+  type: z.enum(HELP_RESOURCE_TYPES),
+  title: z.string().min(3, "Title is too short"),
+}).omit({ id: true, createdAt: true, updatedAt: true });
+
+export const selectHelpResourceSchema = createSelectSchema(helpResources);
+export type InsertHelpResource = z.infer<typeof insertHelpResourceSchema>;
+export type HelpResource = typeof helpResources.$inferSelect;
+
+

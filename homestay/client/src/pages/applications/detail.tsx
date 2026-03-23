@@ -604,6 +604,12 @@ export default function ApplicationDetail() {
               <p className="text-xs uppercase text-gray-500">Application Number</p>
               <p className="font-semibold">{displayValue(app.applicationNumber)}</p>
             </div>
+            {app.certificateNumber && (
+              <div>
+                <p className="text-xs uppercase text-gray-500">Current RC Number</p>
+                <p className="font-semibold">{app.certificateNumber}</p>
+              </div>
+            )}
             <div>
               <p className="text-xs uppercase text-gray-500">Current Status</p>
               <p className="font-semibold">{statusLabel}</p>
@@ -922,6 +928,12 @@ export default function ApplicationDetail() {
                     <p className="text-xs uppercase text-muted-foreground">Application Number</p>
                     <p className="font-semibold" data-testid="text-application-number">{displayValue(app.applicationNumber)}</p>
                   </div>
+                  {app.certificateNumber && (
+                    <div>
+                      <p className="text-xs uppercase text-muted-foreground">Current RC Number</p>
+                      <p className="font-semibold">{app.certificateNumber}</p>
+                    </div>
+                  )}
                   <div>
                     <p className="text-xs uppercase text-muted-foreground">Current Status</p>
                     <p className="font-semibold">{statusLabel}</p>

@@ -509,11 +509,10 @@ export default function DTDOApplicationReview() {
   const actionRequiresRemarks = (action: typeof actionType) =>
     action === 'accept' || action === 'reject' || action === 'revert' || action === 'approve-cancellation' || action === 'approve-bypass' || action === 'reset-revert' || action === 'reactivate';
 
-  // Calculate minimum selectable date for scheduling (tomorrow)
-  const tomorrow = new Date();
-  tomorrow.setDate(tomorrow.getDate() + 1);
-  tomorrow.setHours(0, 0, 0, 0);
-  const minSelectableDate = tomorrow;
+  // Calculate minimum selectable date for scheduling (today)
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const minSelectableDate = today;
 
   const availableDAs = dasData?.das || [];
 
@@ -1551,14 +1550,27 @@ export default function DTDOApplicationReview() {
                           </div>
                         </div>
 
-                        <div className="mt-2 border-t border-amber-200/50 dark:border-amber-700/50 pt-2">
-                          <Label className="text-xs text-gray-600">Owner Aadhaar</Label>
-                          <Input
-                            value={getFieldValue('ownerAadhaar') ?? ''}
-                            onChange={(e) => handleEditField('ownerAadhaar', e.target.value)}
-                            placeholder="12-digit Aadhaar"
-                            className="h-8 text-sm"
-                          />
+                        <div className="grid grid-cols-2 gap-2 mt-2 border-t border-amber-200/50 dark:border-amber-700/50 pt-2">
+                          <div>
+                            <Label className="text-xs text-gray-600">Owner Aadhaar</Label>
+                            <Input
+                              value={getFieldValue('ownerAadhaar') ?? ''}
+                              onChange={(e) => handleEditField('ownerAadhaar', e.target.value)}
+                              placeholder="12-digit Aadhaar"
+                              className="h-8 text-sm"
+                            />
+                          </div>
+                          {isLegacyRC && (
+                            <div>
+                              <Label className="text-xs text-gray-600">Current RC Number</Label>
+                              <Input
+                                value={getFieldValue('certificateNumber') ?? ''}
+                                onChange={(e) => handleEditField('certificateNumber', e.target.value)}
+                                placeholder="RC Number"
+                                className="h-8 text-sm uppercase"
+                              />
+                            </div>
+                          )}
                         </div>
                       </div>
 
@@ -1757,7 +1769,7 @@ export default function DTDOApplicationReview() {
                       </Select>
                     </div>
                     <p className="text-xs text-muted-foreground">
-                      Schedule starts from tomorrow. Time slots in 15-minute intervals.
+                      Schedule starts from today. Time slots in 15-minute intervals.
                     </p>
                   </div>
 

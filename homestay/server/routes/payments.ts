@@ -56,7 +56,7 @@ export function createPaymentsRouter() {
                 return res.status(404).json({ message: "Application not found" });
             }
 
-            const certificateNumber = `HP-HST-${new Date().getFullYear()}-${String(Math.floor(Math.random() * 100000)).padStart(5, '0')}`;
+            const certificateNumber = application.certificateNumber || `HP-HST-${new Date().getFullYear()}-${String(Math.floor(Math.random() * 100000)).padStart(5, '0')}`;
             const issueDate = new Date();
             let expiryDate = new Date(issueDate);
 
